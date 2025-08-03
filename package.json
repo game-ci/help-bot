@@ -1,0 +1,22 @@
+{
+  "name": "open-source-assist-bot",
+  "version": "0.1.0",
+  "description": "Discord assistant for open-source project support",
+  "main": "bot/bot.js",
+  "scripts": {
+    "start": "node bot/bot.js",
+    "test": "echo \"No tests specified\"",
+    "index": "node indexer/index.js"
+  },
+  "dependencies": {
+    "@octokit/rest": "^20.0.1",
+    "axios": "^1.6.7",
+    "cheerio": "^1.0.0-rc.12",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.5",
+    "marked": "^11.1.1",
+    "node-fetch": "^3.3.2",
+    "openai": "^4.0.0",
+    "pinecone-client": "^2.0.1"
+  }
+}

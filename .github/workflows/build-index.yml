@@ -1,0 +1,22 @@
+name: Build Knowledge Index
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: [self-hosted, windows]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: npm ci
+      - name: Build index
+        run: npm run index
+      - name: Deploy baked database
+        run: |
+          echo "Add deployment steps here"
