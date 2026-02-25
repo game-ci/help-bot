@@ -8,6 +8,7 @@ data/github/discussions/*
 data/docs/*.md
 data/responses/discord/*.md
 data/responses/github/*.md
+data/logs/
 
 # Node
 node_modules/

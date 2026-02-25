@@ -1,0 +1,56 @@
+{
+  "bot": {
+    "name": "GameCI Help Bot",
+    "version": "2.0.0",
+    "max_responses_per_cycle": 10,
+    "response_cooldown_minutes": 60,
+    "dry_run": false
+  },
+  "discord": {
+    "guild_id_env": "DISCORD_GUILD_ID",
+    "channels": [
+      "help",
+      "support",
+      "general",
+      "bugs",
+      "unity-builder",
+      "unity-test-runner",
+      "docker"
+    ],
+    "sync_hours": 6,
+    "ignore_bots": true,
+    "ignore_prefixes": ["!", "/", "$", "."],
+    "min_message_length": 15
+  },
+  "github": {
+    "repos": [
+      "game-ci/unity-builder",
+      "game-ci/unity-test-runner",
+      "game-ci/unity-actions",
+      "game-ci/docker",
+      "game-ci/steam-deploy"
+    ],
+    "sync_days": 7,
+    "max_issues_per_repo": 200,
+    "max_discussions_per_repo": 50,
+    "skip_labels": ["wontfix", "invalid", "duplicate"],
+    "priority_labels": ["bug", "help wanted", "good first issue"]
+  },
+  "docs": {
+    "base_url": "https://game.ci/docs",
+    "pages": [
+      "github/getting-started",
+      "github/activation",
+      "github/builder",
+      "github/test-runner",
+      "github/returning-a-license",
+      "docker/docker-images",
+      "docker/versions",
+      "github/deployment/steam"
+    ]
+  },
+  "claude": {
+    "model": "claude-sonnet-4-20250514",
+    "max_turns": 30
+  }
+}

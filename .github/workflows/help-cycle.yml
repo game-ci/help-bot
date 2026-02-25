@@ -13,7 +13,7 @@ on:
     # Allow manual triggering for testing
     inputs:
       dry_run:
-        description: 'Dry run (skip posting responses)'
+        description: 'Dry run (draft responses but do not post them)'
         required: false
         default: 'false'
         type: choice
@@ -23,11 +23,27 @@ on:
       sync_hours:
         description: 'Hours of Discord history to sync'
         required: false
-        default: '24'
+        default: '6'
       sync_days:
         description: 'Days of GitHub history to sync'
         required: false
         default: '7'
+      skip_sync:
+        description: 'Skip data syncing (use cached data)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      skip_github_post:
+        description: 'Skip posting GitHub comments (draft only)'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 env:
   DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
@@ -38,49 +54,91 @@ env:
 jobs:
   help-cycle:
     name: Run Help Cycle
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
-    # Prevent concurrent runs — if a cycle is still running, skip the new one
+    # Prevent concurrent runs -- if a cycle is still running, skip the new one
     concurrency:
       group: help-cycle
       cancel-in-progress: false
 
     timeout-minutes: 15
 
+    permissions:
+      issues: write
+      contents: read
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Claude Code CLI
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          echo "Claude Code version: $(claude --version 2>/dev/null || echo 'installed')"
+
+      - name: Set up GitHub CLI
+        run: |
+          # gh is pre-installed on ubuntu-latest runners
+          gh --version
+          # Authenticate with the default GITHUB_TOKEN
+          echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token 2>/dev/null || true
+
       - name: Verify prerequisites
-        shell: bash
         run: |
           echo "Checking required tools..."
           for cmd in curl python3 gh claude; do
             if command -v "$cmd" &>/dev/null; then
-              echo "  $cmd: $(command -v $cmd)"
+              echo "  [OK] $cmd: $(command -v $cmd)"
             else
-              echo "  ERROR: $cmd not found"
+              echo "  [FAIL] $cmd not found"
               exit 1
             fi
           done
           echo ""
           echo "Checking required secrets..."
-          if [[ -z "${DISCORD_BOT_TOKEN}" ]]; then echo "ERROR: DISCORD_BOT_TOKEN not set"; exit 1; fi
-          if [[ -z "${DISCORD_GUILD_ID}" ]]; then echo "ERROR: DISCORD_GUILD_ID not set"; exit 1; fi
-          if [[ -z "${DISCORD_WEBHOOK_URL}" ]]; then echo "ERROR: DISCORD_WEBHOOK_URL not set"; exit 1; fi
-          if [[ -z "${ANTHROPIC_API_KEY}" ]]; then echo "ERROR: ANTHROPIC_API_KEY not set"; exit 1; fi
+          MISSING=0
+          for var in DISCORD_BOT_TOKEN DISCORD_GUILD_ID DISCORD_WEBHOOK_URL ANTHROPIC_API_KEY; do
+            val=$(printenv "$var" 2>/dev/null || echo "")
+            if [[ -z "$val" ]]; then
+              echo "  [FAIL] $var not set"
+              MISSING=1
+            else
+              echo "  [OK] $var is set"
+            fi
+          done
+          if [[ $MISSING -eq 1 ]]; then
+            echo ""
+            echo "ERROR: Missing required secrets. Configure them in Settings > Secrets > Actions."
+            exit 1
+          fi
+          echo ""
           echo "All prerequisites met."
 
       - name: Make scripts executable
-        shell: bash
         run: chmod +x automation/*.sh
 
+      - name: Create data directories
+        run: |
+          mkdir -p data/discord/channels
+          mkdir -p data/github/issues
+          mkdir -p data/github/discussions
+          mkdir -p data/docs
+          mkdir -p data/responses/discord
+          mkdir -p data/responses/github
+          mkdir -p data/logs
+
       - name: Run help cycle
-        shell: bash
         env:
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-          SYNC_HOURS: ${{ github.event.inputs.sync_hours || '24' }}
+          SYNC_HOURS: ${{ github.event.inputs.sync_hours || '6' }}
           SYNC_DAYS: ${{ github.event.inputs.sync_days || '7' }}
+          SKIP_SYNC: ${{ github.event.inputs.skip_sync || 'false' }}
+          SKIP_GITHUB_POST: ${{ github.event.inputs.skip_github_post || 'true' }}
         run: bash automation/run-help-cycle.sh
 
       - name: Upload response artifacts
@@ -88,6 +146,49 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: help-cycle-responses-${{ github.run_number }}
-          path: data/responses/
-          retention-days: 7
+          path: |
+            data/responses/
+            data/logs/
+          retention-days: 14
           if-no-files-found: ignore
+
+      - name: Upload synced data snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: help-cycle-data-${{ github.run_number }}
+          path: |
+            data/discord/
+            data/github/
+            data/docs/
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Help Cycle Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          DISCORD_COUNT=$(find data/responses/discord -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
+          GITHUB_COUNT=$(find data/responses/github -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
+
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Discord responses | ${DISCORD_COUNT} |" >> $GITHUB_STEP_SUMMARY
+          echo "| GitHub responses | ${GITHUB_COUNT} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dry run | ${{ github.event.inputs.dry_run || 'false' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Trigger | ${{ github.event_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [[ -d data/logs ]]; then
+            LATEST_LOG=$(ls -t data/logs/cycle-*.log 2>/dev/null | head -1)
+            if [[ -n "$LATEST_LOG" ]]; then
+              echo "<details><summary>Cycle Log (last 50 lines)</summary>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              tail -50 "$LATEST_LOG" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "</details>" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi

@@ -4,49 +4,75 @@
 # Downloads GameCI documentation pages from game.ci/docs and saves them as
 # markdown files to data/docs/ for use by the help bot.
 #
-# This uses a simple approach: download a known list of documentation pages
-# via curl and convert HTML to a readable text/markdown format. The page list
-# is maintained manually — add new pages as the docs site evolves.
-#
-# Requires: curl, python3 (for HTML-to-text conversion)
+# Uses curl to download HTML pages and python3 to extract content from the
+# Docusaurus-based game.ci site, converting to markdown.
 #
 # Output structure:
 #   data/docs/{section}--{page-slug}.md
+#
+# Requires: curl, python3
 
 set -euo pipefail
 
 # --- Configuration ---
 
-DATA_DIR="$(cd "$(dirname "$0")/.." && pwd)/data/docs"
-DOCS_BASE_URL="https://game.ci/docs"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+DATA_DIR="${REPO_DIR}/data/docs"
+CONFIG_FILE="${REPO_DIR}/config.json"
+
+# Load settings from config.json if available
+if [[ -f "${CONFIG_FILE}" ]] && command -v python3 &>/dev/null; then
+  DOCS_BASE_URL=$(python3 -c "
+import json
+with open('${CONFIG_FILE}') as f:
+    cfg = json.load(f)
+print(cfg.get('docs', {}).get('base_url', 'https://game.ci/docs'))
+" 2>/dev/null || echo "https://game.ci/docs")
+
+  CONFIG_PAGES=$(python3 -c "
+import json
+with open('${CONFIG_FILE}') as f:
+    cfg = json.load(f)
+pages = cfg.get('docs', {}).get('pages', [])
+for p in pages:
+    # Convert url path to output filename: github/builder -> github--builder.md
+    filename = p.replace('/', '--') + '.md'
+    print(f'{p}|{filename}')
+" 2>/dev/null || echo "")
+else
+  DOCS_BASE_URL="https://game.ci/docs"
+  CONFIG_PAGES=""
+fi
 
 # Known documentation pages to download.
 # Format: "url_path|output_filename"
-# Update this list when new pages are added to game.ci/docs.
-PAGES=(
-  # Getting Started
-  "github/getting-started|github--getting-started.md"
-  "github/activation|github--activation.md"
+# If config.json provides pages, use those; otherwise use the default list.
+if [[ -n "$CONFIG_PAGES" ]]; then
+  IFS=$'\n' read -r -d '' -a PAGES <<< "$CONFIG_PAGES" || true
+else
+  PAGES=(
+    # Getting Started
+    "github/getting-started|github--getting-started.md"
+    "github/activation|github--activation.md"
 
-  # Builder
-  "github/builder|github--builder.md"
+    # Builder
+    "github/builder|github--builder.md"
 
-  # Test Runner
-  "github/test-runner|github--test-runner.md"
+    # Test Runner
+    "github/test-runner|github--test-runner.md"
 
-  # Returning a License
-  "github/returning-a-license|github--returning-a-license.md"
+    # Returning a License
+    "github/returning-a-license|github--returning-a-license.md"
 
-  # Docker
-  "docker/docker-images|docker--docker-images.md"
-  "docker/versions|docker--versions.md"
+    # Docker
+    "docker/docker-images|docker--docker-images.md"
+    "docker/versions|docker--versions.md"
 
-  # Deployment
-  "github/deployment/steam|github--deployment--steam.md"
-
-  # Other pages (add as discovered)
-  # "path/to/page|filename.md"
-)
+    # Deployment
+    "github/deployment/steam|github--deployment--steam.md"
+  )
+fi
 
 # --- Helper Functions ---
 
@@ -60,67 +86,122 @@ download_page() {
 
   echo "  Downloading: ${full_url}"
 
-  # Download the HTML page
+  # Download the HTML page with a reasonable timeout and user agent
   local html
-  html=$(curl -s -L --max-time 30 "${full_url}" 2>/dev/null || echo "")
+  html=$(curl -s -L --max-time 30 \
+    -H "User-Agent: GameCI-HelpBot/2.0 (https://github.com/game-ci/help-bot)" \
+    "${full_url}" 2>/dev/null || echo "")
 
   if [[ -z "$html" ]]; then
     echo "    WARNING: Failed to download ${full_url}"
     return 1
   fi
 
-  # Convert HTML to markdown-like text using Python.
-  # This is a simple extraction — it pulls text from the main content area,
-  # strips HTML tags, and preserves basic structure.
-  python3 -c "
+  # Check for common error pages
+  if echo "$html" | grep -q "404" | head -1 && echo "$html" | grep -q "not found" | head -1; then
+    echo "    WARNING: Page appears to be 404: ${full_url}"
+    return 1
+  fi
+
+  # Convert HTML to markdown using Python.
+  # Extracts from the Docusaurus article/main content area, converts common
+  # HTML elements to markdown, and strips remaining tags.
+  python3 << 'PYEOF' > "${output_path}" 2>/dev/null
 import sys
 import re
 from html import unescape
 
-html = sys.stdin.read()
+# Read HTML from file descriptor (passed via heredoc redirection below)
+import os
+html_file = os.environ.get('HTML_FILE', '')
+if html_file and os.path.exists(html_file):
+    with open(html_file, 'r', encoding='utf-8', errors='replace') as f:
+        html = f.read()
+else:
+    html = sys.stdin.read()
+
+full_url = os.environ.get('FULL_URL', '')
 
 # Try to extract the main content area (game.ci uses Docusaurus)
-# Look for the article or main content div
 main_match = re.search(r'<article[^>]*>(.*?)</article>', html, re.DOTALL)
 if not main_match:
     main_match = re.search(r'<main[^>]*>(.*?)</main>', html, re.DOTALL)
 if not main_match:
-    # Fallback: use the whole body
+    main_match = re.search(r'<div\s+class="[^"]*markdown[^"]*"[^>]*>(.*?)</div>', html, re.DOTALL)
+if not main_match:
     main_match = re.search(r'<body[^>]*>(.*?)</body>', html, re.DOTALL)
 
 if not main_match:
-    print('Failed to extract content', file=sys.stderr)
+    print(f'---\nsource: {full_url}\n---\n\nFailed to extract content from page.', file=sys.stderr)
     sys.exit(1)
 
 content = main_match.group(1)
 
+# Remove script and style tags entirely
+content = re.sub(r'<script[^>]*>.*?</script>', '', content, flags=re.DOTALL)
+content = re.sub(r'<style[^>]*>.*?</style>', '', content, flags=re.DOTALL)
+
+# Remove navigation elements
+content = re.sub(r'<nav[^>]*>.*?</nav>', '', content, flags=re.DOTALL)
+content = re.sub(r'<footer[^>]*>.*?</footer>', '', content, flags=re.DOTALL)
+
 # Convert common HTML elements to markdown
 # Headers
 for i in range(6, 0, -1):
-    content = re.sub(rf'<h{i}[^>]*>(.*?)</h{i}>', r'\\n' + '#' * i + r' \\1\\n', content, flags=re.DOTALL)
+    content = re.sub(
+        rf'<h{i}[^>]*>(.*?)</h{i}>',
+        lambda m, level=i: '\n' + '#' * level + ' ' + m.group(1).strip() + '\n',
+        content, flags=re.DOTALL
+    )
 
-# Code blocks
-content = re.sub(r'<pre[^>]*><code[^>]*class=\"[^\"]*language-(\w+)\"[^>]*>(.*?)</code></pre>',
-                  r'\\n\`\`\`\\1\\n\\2\\n\`\`\`\\n', content, flags=re.DOTALL)
-content = re.sub(r'<pre[^>]*><code[^>]*>(.*?)</code></pre>',
-                  r'\\n\`\`\`\\n\\1\\n\`\`\`\\n', content, flags=re.DOTALL)
+# Code blocks (pre > code with language class)
+content = re.sub(
+    r'<pre[^>]*><code[^>]*class="[^"]*language-(\w+)"[^>]*>(.*?)</code></pre>',
+    lambda m: f'\n```{m.group(1)}\n{unescape(m.group(2)).strip()}\n```\n',
+    content, flags=re.DOTALL
+)
+content = re.sub(
+    r'<pre[^>]*><code[^>]*>(.*?)</code></pre>',
+    lambda m: f'\n```\n{unescape(m.group(1)).strip()}\n```\n',
+    content, flags=re.DOTALL
+)
 
 # Inline code
-content = re.sub(r'<code[^>]*>(.*?)</code>', r'\`\\1\`', content, flags=re.DOTALL)
+content = re.sub(r'<code[^>]*>(.*?)</code>', r'`\1`', content, flags=re.DOTALL)
 
 # Bold and italic
-content = re.sub(r'<strong[^>]*>(.*?)</strong>', r'**\\1**', content, flags=re.DOTALL)
-content = re.sub(r'<em[^>]*>(.*?)</em>', r'*\\1*', content, flags=re.DOTALL)
+content = re.sub(r'<strong[^>]*>(.*?)</strong>', r'**\1**', content, flags=re.DOTALL)
+content = re.sub(r'<em[^>]*>(.*?)</em>', r'*\1*', content, flags=re.DOTALL)
 
-# Links
-content = re.sub(r'<a[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>', r'[\\2](\\1)', content, flags=re.DOTALL)
+# Links -- convert relative to absolute
+def fix_link(m):
+    href = m.group(1)
+    text = m.group(2).strip()
+    if href.startswith('/'):
+        href = f'https://game.ci{href}'
+    elif href.startswith('#'):
+        pass  # Keep anchor links as-is
+    return f'[{text}]({href})'
+
+content = re.sub(r'<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', fix_link, content, flags=re.DOTALL)
 
 # List items
-content = re.sub(r'<li[^>]*>(.*?)</li>', r'- \\1', content, flags=re.DOTALL)
+content = re.sub(r'<li[^>]*>(.*?)</li>', r'- \1', content, flags=re.DOTALL)
+
+# Table handling (basic)
+content = re.sub(r'<th[^>]*>(.*?)</th>', r'| \1 ', content, flags=re.DOTALL)
+content = re.sub(r'<td[^>]*>(.*?)</td>', r'| \1 ', content, flags=re.DOTALL)
+content = re.sub(r'<tr[^>]*>(.*?)</tr>', r'\1|\n', content, flags=re.DOTALL)
 
 # Paragraphs and line breaks
-content = re.sub(r'<p[^>]*>(.*?)</p>', r'\\n\\1\\n', content, flags=re.DOTALL)
-content = re.sub(r'<br\s*/?>', r'\\n', content)
+content = re.sub(r'<p[^>]*>(.*?)</p>', r'\n\1\n', content, flags=re.DOTALL)
+content = re.sub(r'<br\s*/?>', '\n', content)
+
+# Blockquotes
+content = re.sub(r'<blockquote[^>]*>(.*?)</blockquote>',
+    lambda m: '\n' + '\n'.join('> ' + line for line in m.group(1).strip().split('\n')) + '\n',
+    content, flags=re.DOTALL
+)
 
 # Strip all remaining HTML tags
 content = re.sub(r'<[^>]+>', '', content)
@@ -129,15 +210,110 @@ content = re.sub(r'<[^>]+>', '', content)
 content = unescape(content)
 
 # Clean up whitespace
-content = re.sub(r'\\n{3,}', '\\n\\n', content)
+content = re.sub(r'\n{3,}', '\n\n', content)
+content = re.sub(r'[ \t]+\n', '\n', content)  # Trailing whitespace
 content = content.strip()
 
-# Add a source header
-source_url = '${full_url}'
-print(f'---\\nsource: {source_url}\\n---\\n\\n{content}')
-" <<< "$html" > "${output_path}" 2>/dev/null
+# Add source header
+print(f'---\nsource: {full_url}\n---\n\n{content}')
+PYEOF
 
-  if [[ $? -eq 0 ]] && [[ -s "${output_path}" ]]; then
+  # The python script needs the HTML and URL -- pass via temp file and env vars
+  local tmpfile
+  tmpfile=$(mktemp)
+  echo "$html" > "$tmpfile"
+
+  FULL_URL="${full_url}" HTML_FILE="${tmpfile}" python3 << 'PYEOF' > "${output_path}" 2>/dev/null
+import sys
+import re
+import os
+from html import unescape
+
+html_file = os.environ.get('HTML_FILE', '')
+full_url = os.environ.get('FULL_URL', '')
+
+with open(html_file, 'r', encoding='utf-8', errors='replace') as f:
+    html = f.read()
+
+# Try to extract the main content area (game.ci uses Docusaurus)
+main_match = re.search(r'<article[^>]*>(.*?)</article>', html, re.DOTALL)
+if not main_match:
+    main_match = re.search(r'<main[^>]*>(.*?)</main>', html, re.DOTALL)
+if not main_match:
+    main_match = re.search(r'<div\s+class="[^"]*markdown[^"]*"[^>]*>(.*?)</div>', html, re.DOTALL)
+if not main_match:
+    main_match = re.search(r'<body[^>]*>(.*?)</body>', html, re.DOTALL)
+
+if not main_match:
+    print(f'---\nsource: {full_url}\n---\n\nFailed to extract content from page.')
+    sys.exit(0)
+
+content = main_match.group(1)
+
+# Remove script, style, nav, footer tags
+content = re.sub(r'<script[^>]*>.*?</script>', '', content, flags=re.DOTALL)
+content = re.sub(r'<style[^>]*>.*?</style>', '', content, flags=re.DOTALL)
+content = re.sub(r'<nav[^>]*>.*?</nav>', '', content, flags=re.DOTALL)
+content = re.sub(r'<footer[^>]*>.*?</footer>', '', content, flags=re.DOTALL)
+
+# Headers
+for i in range(6, 0, -1):
+    pattern = rf'<h{i}[^>]*>(.*?)</h{i}>'
+    prefix = '#' * i
+    content = re.sub(pattern, lambda m, p=prefix: f'\n{p} {m.group(1).strip()}\n', content, flags=re.DOTALL)
+
+# Code blocks
+content = re.sub(
+    r'<pre[^>]*><code[^>]*class="[^"]*language-(\w+)"[^>]*>(.*?)</code></pre>',
+    lambda m: f'\n```{m.group(1)}\n{unescape(m.group(2)).strip()}\n```\n',
+    content, flags=re.DOTALL
+)
+content = re.sub(
+    r'<pre[^>]*><code[^>]*>(.*?)</code></pre>',
+    lambda m: f'\n```\n{unescape(m.group(1)).strip()}\n```\n',
+    content, flags=re.DOTALL
+)
+
+# Inline code
+content = re.sub(r'<code[^>]*>(.*?)</code>', r'`\1`', content, flags=re.DOTALL)
+
+# Bold and italic
+content = re.sub(r'<strong[^>]*>(.*?)</strong>', r'**\1**', content, flags=re.DOTALL)
+content = re.sub(r'<em[^>]*>(.*?)</em>', r'*\1*', content, flags=re.DOTALL)
+
+# Links
+def fix_link(m):
+    href = m.group(1)
+    text = m.group(2).strip()
+    if href.startswith('/'):
+        href = f'https://game.ci{href}'
+    return f'[{text}]({href})'
+content = re.sub(r'<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', fix_link, content, flags=re.DOTALL)
+
+# List items
+content = re.sub(r'<li[^>]*>(.*?)</li>', r'- \1', content, flags=re.DOTALL)
+
+# Paragraphs and line breaks
+content = re.sub(r'<p[^>]*>(.*?)</p>', r'\n\1\n', content, flags=re.DOTALL)
+content = re.sub(r'<br\s*/?>', '\n', content)
+
+# Strip all remaining HTML tags
+content = re.sub(r'<[^>]+>', '', content)
+
+# Unescape HTML entities
+content = unescape(content)
+
+# Clean up whitespace
+content = re.sub(r'\n{3,}', '\n\n', content)
+content = re.sub(r'[ \t]+\n', '\n', content)
+content = content.strip()
+
+print(f'---\nsource: {full_url}\n---\n\n{content}')
+PYEOF
+
+  rm -f "$tmpfile"
+
+  if [[ -s "${output_path}" ]]; then
     local size
     size=$(wc -c < "${output_path}" | tr -d ' ')
     echo "    Saved: ${output_file} (${size} bytes)"
@@ -150,8 +326,9 @@ print(f'---\\nsource: {source_url}\\n---\\n\\n{content}')
 
 # --- Main Logic ---
 
-echo "=== GameCI Help Bot — Documentation Sync ==="
+echo "=== GameCI Help Bot -- Documentation Sync ==="
 echo "Downloading ${#PAGES[@]} documentation pages"
+echo "Base URL: ${DOCS_BASE_URL}"
 echo "Data directory: ${DATA_DIR}"
 echo ""
 
@@ -167,6 +344,8 @@ for PAGE_ENTRY in "${PAGES[@]}"; do
   else
     FAILED=$((FAILED + 1))
   fi
+  # Small delay between downloads to be polite
+  sleep 0.5
 done
 
 echo ""
