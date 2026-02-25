@@ -5,7 +5,7 @@
 # data. This creates embeddings that can be searched alongside the text file
 # approach for improved answer retrieval.
 #
-# Requires: python3, pip (chromadb and sentence-transformers will be installed)
+# Requires: python3, pip (llama-index will be installed)
 #
 # The vector store is persisted to data/vector-store/ and can be re-used across
 # cycles without rebuilding (unless docs change).
@@ -32,8 +32,8 @@ if [[ -f "${CONFIG_FILE}" ]] && command -v python3 &>/dev/null; then
 import json
 with open('${CONFIG_FILE}') as f:
     cfg = json.load(f)
-print(cfg.get('vector_search', {}).get('embedding_model', 'all-MiniLM-L6-v2'))
-" 2>/dev/null || echo "all-MiniLM-L6-v2")
+print(cfg.get('vector_search', {}).get('embedding_model', 'local:BAAI/bge-small-en-v1.5'))
+" 2>/dev/null || echo "local:BAAI/bge-small-en-v1.5")
 
   COLLECTION_NAME=$(python3 -c "
 import json
@@ -42,7 +42,7 @@ with open('${CONFIG_FILE}') as f:
 print(cfg.get('vector_search', {}).get('collection_name', 'gameci-docs'))
 " 2>/dev/null || echo "gameci-docs")
 else
-  EMBEDDING_MODEL="all-MiniLM-L6-v2"
+  EMBEDDING_MODEL="local:BAAI/bge-small-en-v1.5"
   COLLECTION_NAME="gameci-docs"
 fi
 
@@ -62,11 +62,11 @@ done
 # Ensure dependencies are installed
 ensure_deps() {
   echo "Checking vector search dependencies..."
-  python3 -c "import chromadb; import sentence_transformers" 2>/dev/null || {
-    echo "Installing chromadb and sentence-transformers..."
-    pip install --quiet chromadb sentence-transformers 2>&1 || {
+  python3 -c "import llama_index" 2>/dev/null || {
+    echo "Installing llama-index..."
+    pip install --quiet llama-index 2>&1 || {
       echo "ERROR: Failed to install dependencies. Run:" >&2
-      echo "  pip install chromadb sentence-transformers" >&2
+      echo "  pip install llama-index" >&2
       exit 1
     }
   }
@@ -91,88 +91,77 @@ import json
 import glob
 
 try:
-    import chromadb
-    from chromadb.config import Settings
-    from sentence_transformers import SentenceTransformer
+    from llama_index.core import (
+        SimpleDirectoryReader,
+        VectorStoreIndex,
+        Document,
+        StorageContext,
+        Settings,
+    )
+    from llama_index.core.node_parser import SentenceSplitter
 except ImportError as e:
     print(f"ERROR: Missing dependency: {e}", file=sys.stderr)
-    print("Run: pip install chromadb sentence-transformers", file=sys.stderr)
+    print("Run: pip install llama-index", file=sys.stderr)
     sys.exit(1)
 
 REPO_DIR = os.environ.get("REPO_DIR", ".")
 VECTOR_DIR = os.environ.get("VECTOR_DIR", "data/vector-store")
 COLLECTION_NAME = os.environ.get("COLLECTION_NAME", "gameci-docs")
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "local:BAAI/bge-small-en-v1.5")
 MODE = os.environ.get("MODE", "all")
 
-print(f"Loading embedding model: {EMBEDDING_MODEL}...")
-model = SentenceTransformer(EMBEDDING_MODEL)
+# Configure LlamaIndex settings
+Settings.chunk_size = 2000
+Settings.chunk_overlap = 200
 
-print(f"Initializing ChromaDB at: {VECTOR_DIR}")
-client = chromadb.Client(Settings(
-    chroma_db_impl="duckdb+parquet",
-    persist_directory=VECTOR_DIR,
-    anonymized_telemetry=False
-))
-
-# Delete and recreate collection for fresh bake
+# Set embedding model
 try:
-    client.delete_collection(COLLECTION_NAME)
-except:
-    pass
-collection = client.create_collection(COLLECTION_NAME)
+    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+    if EMBEDDING_MODEL.startswith("local:"):
+        model_name = EMBEDDING_MODEL.split(":", 1)[1]
+    else:
+        model_name = EMBEDDING_MODEL
+    print(f"Loading embedding model: {model_name}...")
+    Settings.embed_model = HuggingFaceEmbedding(model_name=model_name)
+except ImportError:
+    print("Using default LlamaIndex embedding model...")
+
+# Disable LLM (we only need embeddings for indexing)
+Settings.llm = None
 
 documents = []
-metadatas = []
-ids = []
-doc_id = 0
 
 # Ingest documentation pages
 docs_dir = os.path.join(REPO_DIR, "data", "docs")
 if os.path.isdir(docs_dir):
-    for filepath in sorted(glob.glob(os.path.join(docs_dir, "*.md"))):
+    doc_files = sorted(glob.glob(os.path.join(docs_dir, "*.md")))
+    for filepath in doc_files:
         with open(filepath, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
 
-        # Strip YAML frontmatter
+        # Strip YAML frontmatter and extract source URL
+        source = ""
         if content.startswith("---"):
             end = content.find("---", 3)
             if end != -1:
                 frontmatter = content[3:end].strip()
                 content = content[end + 3:].strip()
-                # Extract source URL
-                source = ""
                 for line in frontmatter.split("\n"):
                     if line.startswith("source:"):
                         source = line.split(":", 1)[1].strip()
 
-        # Chunk by sections (split on ## headers)
-        chunks = []
-        current = ""
-        for line in content.split("\n"):
-            if line.startswith("## ") and current.strip():
-                chunks.append(current.strip())
-                current = line + "\n"
-            else:
-                current += line + "\n"
-        if current.strip():
-            chunks.append(current.strip())
-
         basename = os.path.basename(filepath)
-        for i, chunk in enumerate(chunks):
-            if len(chunk) < 20:
-                continue
-            doc_id += 1
-            documents.append(chunk[:2000])  # ChromaDB has size limits
-            metadatas.append({
-                "source": basename,
-                "type": "docs",
-                "chunk": i,
-                "url": source if "source" in dir() else ""
-            })
-            ids.append(f"doc-{doc_id}")
+        if len(content) >= 20:
+            documents.append(Document(
+                text=content,
+                metadata={
+                    "source": basename,
+                    "type": "docs",
+                    "url": source,
+                },
+            ))
 
-    print(f"  Documentation: {doc_id} chunks from {len(glob.glob(os.path.join(docs_dir, '*.md')))} pages")
+    print(f"  Documentation: {len(doc_files)} pages loaded")
 
 # Ingest GitHub issues (if not docs-only)
 if MODE != "docs":
@@ -200,15 +189,15 @@ if MODE != "docs":
                 if len(content) < 20:
                     continue
 
-                doc_id += 1
                 issue_count += 1
-                documents.append((title + "\n\n" + content)[:2000])
-                metadatas.append({
-                    "source": f"{repo_dir}/{os.path.basename(filepath)}",
-                    "type": "issue",
-                    "repo": repo_dir
-                })
-                ids.append(f"doc-{doc_id}")
+                documents.append(Document(
+                    text=(title + "\n\n" + content) if title else content,
+                    metadata={
+                        "source": f"{repo_dir}/{os.path.basename(filepath)}",
+                        "type": "issue",
+                        "repo": repo_dir,
+                    },
+                ))
 
     print(f"  GitHub issues: {issue_count} documents")
 
@@ -216,22 +205,17 @@ if not documents:
     print("No documents to index.")
     sys.exit(0)
 
-# Generate embeddings and add to collection
-print(f"Generating embeddings for {len(documents)} documents...")
-embeddings = model.encode(documents, show_progress_bar=True).tolist()
+# Build the index
+print(f"Building vector index for {len(documents)} documents...")
+node_parser = SentenceSplitter(chunk_size=2000, chunk_overlap=200)
+index = VectorStoreIndex.from_documents(
+    documents,
+    transformations=[node_parser],
+    show_progress=True,
+)
 
-# Add in batches (ChromaDB has batch size limits)
-BATCH_SIZE = 100
-for i in range(0, len(documents), BATCH_SIZE):
-    end = min(i + BATCH_SIZE, len(documents))
-    collection.add(
-        documents=documents[i:end],
-        embeddings=embeddings[i:end],
-        metadatas=metadatas[i:end],
-        ids=ids[i:end]
-    )
-
-client.persist()
+# Persist to disk
+index.storage_context.persist(persist_dir=VECTOR_DIR)
 print(f"Vector store built: {len(documents)} documents indexed.")
 print(f"Persisted to: {VECTOR_DIR}")
 PYEOF
@@ -248,48 +232,54 @@ import os
 import sys
 
 try:
-    import chromadb
-    from chromadb.config import Settings
-    from sentence_transformers import SentenceTransformer
+    from llama_index.core import (
+        StorageContext,
+        load_index_from_storage,
+        Settings,
+    )
 except ImportError as e:
     print(f"ERROR: Missing dependency: {e}", file=sys.stderr)
     sys.exit(1)
 
 VECTOR_DIR = os.environ.get("VECTOR_DIR", "data/vector-store")
-COLLECTION_NAME = os.environ.get("COLLECTION_NAME", "gameci-docs")
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "local:BAAI/bge-small-en-v1.5")
 QUERY = os.environ.get("QUERY", "")
 
 if not QUERY:
     print("No query provided.")
     sys.exit(1)
 
-model = SentenceTransformer(EMBEDDING_MODEL)
-client = chromadb.Client(Settings(
-    chroma_db_impl="duckdb+parquet",
-    persist_directory=VECTOR_DIR,
-    anonymized_telemetry=False
-))
+# Configure embedding model
+try:
+    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+    if EMBEDDING_MODEL.startswith("local:"):
+        model_name = EMBEDDING_MODEL.split(":", 1)[1]
+    else:
+        model_name = EMBEDDING_MODEL
+    Settings.embed_model = HuggingFaceEmbedding(model_name=model_name)
+except ImportError:
+    pass
+
+# Disable LLM (we only need retrieval, not generation)
+Settings.llm = None
 
 try:
-    collection = client.get_collection(COLLECTION_NAME)
-except:
+    storage_context = StorageContext.from_defaults(persist_dir=VECTOR_DIR)
+    index = load_index_from_storage(storage_context)
+except Exception:
     print("ERROR: Vector store not found. Run 'bash automation/vector-bake.sh' first.")
     sys.exit(1)
 
-embedding = model.encode([QUERY]).tolist()
-results = collection.query(query_embeddings=embedding, n_results=5)
+retriever = index.as_retriever(similarity_top_k=5)
+results = retriever.retrieve(QUERY)
 
-print(f"Top {len(results['documents'][0])} results:\n")
-for i, (doc, meta, dist) in enumerate(zip(
-    results["documents"][0],
-    results["metadatas"][0],
-    results["distances"][0]
-)):
-    score = 1 - dist  # Convert distance to similarity
+print(f"Top {len(results)} results:\n")
+for i, node in enumerate(results):
+    score = node.score if node.score is not None else 0.0
+    meta = node.metadata
     print(f"--- Result {i+1} (similarity: {score:.3f}) ---")
     print(f"Source: {meta.get('source', 'unknown')} ({meta.get('type', 'unknown')})")
-    print(f"Content: {doc[:300]}...")
+    print(f"Content: {node.text[:300]}...")
     print()
 PYEOF
 }

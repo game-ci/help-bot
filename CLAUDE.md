@@ -175,7 +175,7 @@ data/
   responses/
     discord/{channel}-{timestamp}.md        # Drafted Discord responses
     github/{repo}-{number}-{timestamp}.md   # Drafted GitHub responses
-  vector-store/                             # Optional: ChromaDB vector index
+  vector-store/                             # Optional: LlamaIndex vector index
   logs/
     cycle-{id}.log                          # Cycle execution logs
 ```

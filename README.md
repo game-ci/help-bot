@@ -230,7 +230,7 @@ For improved answer retrieval, you can build a vector index from the synced docu
 
 ```bash
 # Install dependencies
-pip install chromadb sentence-transformers
+pip install llama-index
 
 # Bake the vector index from synced docs
 bash automation/vector-bake.sh
@@ -246,8 +246,8 @@ The vector store persists to `data/vector-store/` and can be reused across cycle
 
 Configure in `config.json` under `vector_search`:
 - `enabled`: Set to `true` to use vector search during help cycles
-- `engine`: Vector database engine (default: `chromadb`)
-- `embedding_model`: Sentence transformer model (default: `all-MiniLM-L6-v2`)
+- `engine`: Vector search engine (default: `llamaindex`)
+- `embedding_model`: Embedding model (default: `local:BAAI/bge-small-en-v1.5`)
 
 ## Architecture: Claude Code Agent Swarm
 
@@ -292,7 +292,7 @@ data/
   docs/                                # Synced documentation pages (Markdown)
   responses/discord/                   # Drafted Discord responses
   responses/github/                    # Drafted GitHub responses
-  vector-store/                        # Optional: ChromaDB vector index
+  vector-store/                        # Optional: LlamaIndex vector index
   logs/                                # Cycle execution logs
 ```
 

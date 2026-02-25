@@ -69,9 +69,9 @@
   },
   "vector_search": {
     "enabled": false,
-    "engine": "chromadb",
+    "engine": "llamaindex",
     "collection_name": "gameci-docs",
-    "embedding_model": "all-MiniLM-L6-v2",
+    "embedding_model": "local:BAAI/bge-small-en-v1.5",
     "persist_directory": "data/vector-store"
   },
   "docker": {
