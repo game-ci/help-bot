@@ -1,0 +1,137 @@
+name: Help Cycle (Self-Hosted)
+
+# Variant of help-cycle.yml that runs on a self-hosted runner.
+# Use this when a contributor sets up their machine as a runner via
+# automation/setup-runner.sh. The runner provides the environment
+# (Claude CLI, API keys, etc.) so secrets are not needed in GitHub.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (draft responses but do not post them)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      sync_hours:
+        description: 'Hours of Discord history to sync'
+        required: false
+        default: '6'
+      sync_days:
+        description: 'Days of GitHub history to sync'
+        required: false
+        default: '7'
+      skip_sync:
+        description: 'Skip data syncing (use cached data)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      llm_provider:
+        description: 'LLM provider to use'
+        required: false
+        default: 'claude'
+        type: choice
+        options:
+          - 'claude'
+          - 'lm_studio'
+          - 'continue'
+
+jobs:
+  help-cycle:
+    name: Run Help Cycle (Self-Hosted)
+    runs-on: [self-hosted, help-bot]
+
+    concurrency:
+      group: help-cycle
+      cancel-in-progress: false
+
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify prerequisites
+        run: |
+          echo "Checking required tools..."
+          for cmd in curl python3; do
+            if command -v "$cmd" &>/dev/null; then
+              echo "  [OK] $cmd"
+            else
+              echo "  [FAIL] $cmd not found"
+              exit 1
+            fi
+          done
+
+          PROVIDER="${{ github.event.inputs.llm_provider || 'claude' }}"
+          if [[ "$PROVIDER" == "claude" ]]; then
+            if command -v claude &>/dev/null; then
+              echo "  [OK] claude"
+            else
+              echo "  [FAIL] claude CLI not found"
+              exit 1
+            fi
+          fi
+
+          echo ""
+          echo "Checking environment variables..."
+          for var in DISCORD_BOT_TOKEN DISCORD_GUILD_ID DISCORD_WEBHOOK_URL; do
+            if [[ -n "${!var:-}" ]]; then
+              echo "  [OK] $var is set"
+            else
+              echo "  [FAIL] $var not set"
+              exit 1
+            fi
+          done
+
+          if [[ "$PROVIDER" == "claude" ]] && [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+            echo "  [FAIL] ANTHROPIC_API_KEY not set (required for Claude provider)"
+            exit 1
+          fi
+
+          echo "All prerequisites met."
+
+      - name: Make scripts executable
+        run: chmod +x automation/*.sh
+
+      - name: Create data directories
+        run: |
+          mkdir -p data/discord/channels
+          mkdir -p data/github/issues
+          mkdir -p data/github/discussions
+          mkdir -p data/docs
+          mkdir -p data/responses/discord
+          mkdir -p data/responses/github
+          mkdir -p data/logs
+
+      - name: Run help cycle
+        env:
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          SYNC_HOURS: ${{ github.event.inputs.sync_hours || '6' }}
+          SYNC_DAYS: ${{ github.event.inputs.sync_days || '7' }}
+          SKIP_SYNC: ${{ github.event.inputs.skip_sync || 'false' }}
+          LLM_PROVIDER: ${{ github.event.inputs.llm_provider || 'claude' }}
+        run: bash automation/run-help-cycle.sh
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Help Cycle Results (Self-Hosted)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          DISCORD_COUNT=$(find data/responses/discord -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
+          GITHUB_COUNT=$(find data/responses/github -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
+
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Discord responses | ${DISCORD_COUNT} |" >> $GITHUB_STEP_SUMMARY
+          echo "| GitHub responses | ${GITHUB_COUNT} |" >> $GITHUB_STEP_SUMMARY
+          echo "| LLM provider | ${{ github.event.inputs.llm_provider || 'claude' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dry run | ${{ github.event.inputs.dry_run || 'false' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Runner | self-hosted |" >> $GITHUB_STEP_SUMMARY

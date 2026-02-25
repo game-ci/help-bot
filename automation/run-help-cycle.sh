@@ -39,15 +39,11 @@ DRY_RUN="${DRY_RUN:-false}"
 SKIP_SYNC="${SKIP_SYNC:-false}"
 SKIP_GITHUB_POST="${SKIP_GITHUB_POST:-false}"
 
-# Load model from config.json if available
-if [[ -f "${CONFIG_FILE}" ]] && command -v python3 &>/dev/null; then
-  DEFAULT_MODEL=$(python3 -c "
-import json
-with open('${CONFIG_FILE}') as f:
-    cfg = json.load(f)
-print(cfg.get('claude', {}).get('model', 'claude-sonnet-4-20250514'))
-" 2>/dev/null || echo "claude-sonnet-4-20250514")
+# Source LLM provider abstraction
+source "${SCRIPT_DIR}/llm-provider.sh"
 
+# Load settings from config.json if available
+if [[ -f "${CONFIG_FILE}" ]] && command -v python3 &>/dev/null; then
   MAX_RESPONSES=$(python3 -c "
 import json
 with open('${CONFIG_FILE}') as f:
@@ -55,11 +51,10 @@ with open('${CONFIG_FILE}') as f:
 print(cfg.get('bot', {}).get('max_responses_per_cycle', 10))
 " 2>/dev/null || echo "10")
 else
-  DEFAULT_MODEL="claude-sonnet-4-20250514"
   MAX_RESPONSES="10"
 fi
 
-CLAUDE_MODEL="${CLAUDE_MODEL:-${DEFAULT_MODEL}}"
+LLM_PROVIDER_NAME=$(detect_provider)
 CYCLE_TIMESTAMP=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 CYCLE_ID=$(date -u '+%Y%m%d-%H%M%S')
 
@@ -76,7 +71,7 @@ exec > >(tee -a "${LOG_FILE}") 2>&1
 echo "=== GameCI Help Bot -- Help Cycle ==="
 echo "Cycle ID: ${CYCLE_ID}"
 echo "Repository: ${REPO_DIR}"
-echo "Model: ${CLAUDE_MODEL}"
+echo "LLM provider: ${LLM_PROVIDER_NAME}"
 echo "Max responses: ${MAX_RESPONSES}"
 echo "Dry run: ${DRY_RUN}"
 echo "Skip sync: ${SKIP_SYNC}"
@@ -91,7 +86,8 @@ for cmd in curl python3; do
   fi
 done
 
-if ! command -v claude &>/dev/null; then
+# claude CLI is only required when using the Claude provider
+if [[ "$LLM_PROVIDER_NAME" == "claude" ]] && ! command -v claude &>/dev/null; then
   MISSING_TOOLS+=("claude")
 fi
 
@@ -105,7 +101,10 @@ MISSING_VARS=()
 [[ -z "${DISCORD_BOT_TOKEN:-}" ]] && MISSING_VARS+=("DISCORD_BOT_TOKEN")
 [[ -z "${DISCORD_GUILD_ID:-}" ]] && MISSING_VARS+=("DISCORD_GUILD_ID")
 [[ -z "${DISCORD_WEBHOOK_URL:-}" ]] && MISSING_VARS+=("DISCORD_WEBHOOK_URL")
-[[ -z "${ANTHROPIC_API_KEY:-}" ]] && MISSING_VARS+=("ANTHROPIC_API_KEY")
+# ANTHROPIC_API_KEY is only required for the Claude provider
+if [[ "$LLM_PROVIDER_NAME" == "claude" ]]; then
+  [[ -z "${ANTHROPIC_API_KEY:-}" ]] && MISSING_VARS+=("ANTHROPIC_API_KEY")
+fi
 
 if [[ ${#MISSING_VARS[@]} -gt 0 ]]; then
   echo "ERROR: Missing required environment variables:" >&2
@@ -247,18 +246,18 @@ Do not explain your reasoning -- just read, search, draft, and write.
 PROMPT_EOF
 )
 
-  echo "Running claude -p with model ${CLAUDE_MODEL}..."
+  echo "Running LLM provider: ${LLM_PROVIDER_NAME}..."
   echo ""
 
-  # Run Claude Code in print mode (non-interactive).
-  # The working directory is the repo root so CLAUDE.md is automatically loaded.
-  cd "${REPO_DIR}"
-  if claude -p "${CLAUDE_PROMPT}" --model "${CLAUDE_MODEL}" 2>&1; then
+  # Run the configured LLM provider.
+  # For Claude, this runs `claude -p` with the repo as working directory.
+  # For LM Studio / Continue, this calls the respective API/CLI.
+  if run_llm_provider "${CLAUDE_PROMPT}" "${REPO_DIR}" 2>&1; then
     echo ""
-    echo "Claude Code processing: SUCCESS"
+    echo "LLM processing: SUCCESS"
   else
     echo ""
-    echo "ERROR: Claude Code processing failed." >&2
+    echo "ERROR: LLM processing failed." >&2
     # Don't exit -- try to post any responses that were written before failure
   fi
 fi
@@ -397,7 +396,7 @@ echo "Help Cycle Summary"
 echo "=========================================="
 echo "  Cycle ID: ${CYCLE_ID}"
 echo "  Timestamp: ${CYCLE_TIMESTAMP}"
-echo "  Model: ${CLAUDE_MODEL}"
+echo "  LLM provider: ${LLM_PROVIDER_NAME}"
 echo "  Dry run: ${DRY_RUN}"
 echo ""
 echo "  Data synced:"

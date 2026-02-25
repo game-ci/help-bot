@@ -9,9 +9,20 @@ data/docs/*.md
 data/responses/discord/*.md
 data/responses/github/*.md
 data/logs/
+data/vector-store/
+
+# Self-hosted runner
+_runner/
+_work/
 
 # Node
 node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
 
 # Environment and secrets
 .env
@@ -30,3 +41,6 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Docker
+.docker/

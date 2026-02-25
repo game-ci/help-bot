@@ -1,10 +1,28 @@
 {
   "bot": {
     "name": "GameCI Help Bot",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "max_responses_per_cycle": 10,
     "response_cooldown_minutes": 60,
-    "dry_run": false
+    "dry_run": false,
+    "cycle_interval_minutes": 30
+  },
+  "llm": {
+    "provider": "claude",
+    "claude": {
+      "model": "claude-sonnet-4-20250514",
+      "max_turns": 30,
+      "command": "claude -p"
+    },
+    "lm_studio": {
+      "base_url": "http://localhost:1234/v1",
+      "model": "default",
+      "api_key": "lm-studio"
+    },
+    "continue_cli": {
+      "command": "continue",
+      "model": "default"
+    }
   },
   "discord": {
     "guild_id_env": "DISCORD_GUILD_ID",
@@ -49,8 +67,20 @@
       "github/deployment/steam"
     ]
   },
-  "claude": {
-    "model": "claude-sonnet-4-20250514",
-    "max_turns": 30
+  "vector_search": {
+    "enabled": false,
+    "engine": "chromadb",
+    "collection_name": "gameci-docs",
+    "embedding_model": "all-MiniLM-L6-v2",
+    "persist_directory": "data/vector-store"
+  },
+  "docker": {
+    "image_name": "gameci-help-bot",
+    "container_name": "gameci-help-bot",
+    "restart_policy": "unless-stopped"
+  },
+  "runner": {
+    "labels": ["help-bot"],
+    "work_directory": "_work"
   }
 }

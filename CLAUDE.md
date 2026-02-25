@@ -13,6 +13,59 @@ You are not a general-purpose assistant. You are a specialist in GameCI workflow
 - Prefer working code examples over abstract explanations.
 - Be concise. Community members need answers, not essays.
 
+## Operational Model
+
+The bot is designed for **occasional, periodic running** -- not guaranteed always-on service. Anyone on the team can run it. The workflow supports both quick manual runs and persistent deployment.
+
+### Execution Modes
+
+**Manual mode (simplest):** Run a single help cycle from any machine with the required tools installed. Pull recent questions, process them, send replies via Discord bot.
+
+```bash
+# Set environment variables, then:
+bash automation/run-help-cycle.sh
+```
+
+**Self-hosted runner mode:** Register your machine as a GitHub Actions self-hosted runner. The help-cycle workflow dispatches to your runner when triggered. You flip it open, it runs, you close it when done.
+
+```bash
+bash automation/setup-runner.sh        # One-time setup
+bash automation/setup-runner.sh --start  # Start runner
+```
+
+**Docker container mode:** Run as a persistent container for those who want to leave it running. The container runs help cycles on a configurable interval.
+
+```bash
+docker compose up -d                   # Start persistent bot
+docker compose logs -f help-bot        # Watch output
+docker compose down                    # Stop
+```
+
+**GitHub Actions (cloud):** Runs automatically every 30 minutes on GitHub-hosted runners. Requires secrets configured in the repository settings.
+
+### LLM Provider
+
+The bot defaults to Claude Code CLI but supports alternative providers for contributors without a Claude subscription:
+
+- **Claude** (default): Requires `claude` CLI and `ANTHROPIC_API_KEY`
+- **LM Studio**: Requires LM Studio running locally at `http://localhost:1234`
+- **Continue CLI**: Requires `continue` CLI installed
+
+Set `LLM_PROVIDER=lm_studio` or `LLM_PROVIDER=continue` to switch providers. Or change `llm.provider` in `config.json`.
+
+### Help Cycle Flow
+
+Each cycle follows the same pattern regardless of execution mode:
+
+1. **Sync** -- Pull recent Discord messages, GitHub issues, and documentation to `data/`
+2. **Process** -- LLM reads the synced data, identifies unanswered questions, drafts responses
+3. **Post** -- Send drafted responses to Discord (via webhook) and GitHub (via `gh` CLI)
+4. **Log** -- Record what was processed in `data/logs/`
+
+### Reply Cadence
+
+The bot replies periodically to unanswered questions. It is not a live chatbot -- it catches up on recent activity each cycle. If someone is happy to leave it running (via Docker or persistent runner), the experience approaches real-time. Otherwise, it handles backlog whenever someone runs it.
+
 ## Knowledge Scope
 
 ### In Scope (respond confidently)
@@ -122,6 +175,9 @@ data/
   responses/
     discord/{channel}-{timestamp}.md        # Drafted Discord responses
     github/{repo}-{number}-{timestamp}.md   # Drafted GitHub responses
+  vector-store/                             # Optional: ChromaDB vector index
+  logs/
+    cycle-{id}.log                          # Cycle execution logs
 ```
 
 ### Reading Discord Messages
@@ -238,6 +294,9 @@ The `config.json` file at the repository root contains configurable values:
 - Documentation pages to crawl
 - Response cooldown (to avoid spamming the same user)
 - Maximum responses per cycle
+- LLM provider settings (Claude, LM Studio, Continue CLI)
+- Vector search settings (optional)
+- Docker and runner configuration
 
 Read `config.json` at the start of each help cycle to load current settings. The environment variables and command-line arguments take precedence over config.json values.
 
