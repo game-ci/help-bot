@@ -1,0 +1,71 @@
+import keytar from 'keytar'
+import prompts from 'prompts'
+import { request } from 'undici'
+
+const SERVICE_NAME = 'GameCI Help Bot'
+const ACCOUNT_NAME = 'discord-bot-token'
+
+async function loadFromStore(): Promise<string | null> {
+  try {
+    return await keytar.getPassword(SERVICE_NAME, ACCOUNT_NAME)
+  } catch {
+    return null
+  }
+}
+
+async function saveToStore(token: string): Promise<void> {
+  try {
+    await keytar.setPassword(SERVICE_NAME, ACCOUNT_NAME, token)
+  } catch {
+    // ignore failures
+  }
+}
+
+async function validateToken(token: string): Promise<boolean> {
+  try {
+    const response = await request('https://discord.com/api/v10/users/@me', {
+    headers: {
+      Authorization: `Bot ${token}`,
+      'Content-Type': 'application/json',
+    },
+      method: 'GET',
+    })
+    return response.statusCode === 200
+  } catch {
+    return false
+  }
+}
+
+export async function ensureDiscordToken(): Promise<string> {
+  if (process.env.DISCORD_BOT_TOKEN) {
+    const valid = await validateToken(process.env.DISCORD_BOT_TOKEN)
+    if (valid) {
+      return process.env.DISCORD_BOT_TOKEN
+    }
+    console.warn('Existing DISCORD_BOT_TOKEN is invalid')
+  }
+
+  let stored = await loadFromStore()
+  if (stored && await validateToken(stored)) {
+    process.env.DISCORD_BOT_TOKEN = stored
+    return stored
+  }
+
+  const response = await prompts({
+    type: 'password',
+    name: 'token',
+    message: 'Discord bot token',
+  })
+
+  if (!response.token) {
+    throw new Error('Discord bot token is required')
+  }
+
+  if (!await validateToken(response.token)) {
+    throw new Error('Discord bot token validation failed')
+  }
+
+  process.env.DISCORD_BOT_TOKEN = response.token
+  await saveToStore(response.token)
+  return response.token
+}

@@ -1,0 +1,16 @@
+.git
+node_modules
+data/discord/channels/
+data/github/issues/
+data/github/discussions/
+data/docs/*.md
+data/responses/
+data/logs/
+data/vector-store/
+.env
+.env.*
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

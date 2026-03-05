@@ -1,0 +1,173 @@
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
+import { request } from 'undici'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import glob from 'glob'
+import { getConfig, getValue } from '../config'
+import { REPO_ROOT } from '../utils/paths'
+
+type Provider = 'claude' | 'lm_studio' | 'continue' | 'codex'
+
+async function readClaudeInstructions(): Promise<string> {
+  try {
+    return await readFile(join(REPO_ROOT, 'CLAUDE.md'), 'utf-8')
+  } catch {
+    return ''
+  }
+}
+
+function combinePrompt(instructions: string, prompt: string): string {
+  return [instructions.trim(), prompt.trim()].filter(Boolean).join('\n\n')
+}
+
+function normalizeUrl(url: string): string {
+  return url.replace(/\/+$/, '')
+}
+
+function listDataFiles(limit = 150): string {
+  const files = glob.sync('data/**/*.{jsonl,md}', { cwd: REPO_ROOT, nodir: true })
+  return files.slice(0, limit).join('\n')
+}
+
+async function runClaude(prompt: string, model: string): Promise<void> {
+  console.log(`Provider: Claude Code CLI (model: ${model})`)
+  const proc = spawn('claude', ['-p', '--model', model], {
+    cwd: REPO_ROOT,
+    stdio: ['pipe', 'inherit', 'inherit'],
+  })
+  proc.stdin.end(prompt)
+  await once(proc, 'exit')
+}
+
+async function runLMStudio(
+  prompt: string,
+  instructions: string,
+  baseUrl: string,
+  model: string,
+  apiKey: string,
+): Promise<void> {
+  console.log(`Provider: LM Studio (url: ${baseUrl}, model: ${model})`)
+  const endpoint = normalizeUrl(baseUrl)
+  const fileContext = listDataFiles()
+  const userPrompt = `${prompt}
+
+Available data files:
+${fileContext}
+
+Note: You cannot read files directly. Describe which files you need and what responses to craft, and the workflow will write them on your behalf.`
+
+  const response = await request(`${endpoint}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: instructions },
+        { role: 'user', content: userPrompt },
+      ],
+      max_tokens: 4096,
+      temperature: 0.3,
+    }),
+  })
+
+  const raw = await response.body.text()
+  try {
+    const data = JSON.parse(raw)
+    console.log(data.choices?.[0]?.message?.content ?? raw)
+  } catch {
+    console.log(raw)
+  }
+}
+
+async function runContinue(prompt: string, model: string): Promise<void> {
+  console.log(`Provider: Continue CLI (model: ${model})`)
+  const proc = spawn('continue', ['--model', model], {
+    cwd: REPO_ROOT,
+    stdio: ['pipe', 'inherit', 'inherit'],
+  })
+  proc.stdin.end(prompt)
+  await once(proc, 'exit')
+}
+
+async function runCodex(
+  prompt: string,
+  apiBase: string,
+  apiKey: string,
+  model: string,
+  maxTokens: number,
+  temperature: number,
+): Promise<void> {
+  console.log(`Provider: OpenAI Codex (model: ${model})`)
+  const endpoint = `${normalizeUrl(apiBase)}/completions`
+  const response = await request(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      prompt,
+      max_tokens: maxTokens,
+      temperature,
+    }),
+  })
+
+  const raw = await response.body.text()
+  try {
+    const data = JSON.parse(raw)
+    console.log(data.choices?.[0]?.text ?? raw)
+  } catch {
+    console.log(raw)
+  }
+}
+
+export interface ProviderOptions {
+  provider?: string
+}
+
+export async function runProvider(prompt: string, options: ProviderOptions = {}): Promise<void> {
+  const config = await getConfig()
+  const provider = (options.provider as Provider) ?? (getValue(config, ['llm', 'provider'], 'claude') as Provider)
+  const instructions = await readClaudeInstructions()
+  switch (provider) {
+    case 'claude': {
+      const model = (getValue(config, ['llm', 'claude', 'model'], 'claude-sonnet-4-20250514') as string)
+      const finalPrompt = combinePrompt(instructions, prompt)
+      await runClaude(finalPrompt, model)
+      break
+    }
+    case 'lm_studio': {
+      const baseUrl = (getValue(config, ['llm', 'lm_studio', 'base_url'], 'http://localhost:1234/v1') as string)
+      const model = (getValue(config, ['llm', 'lm_studio', 'model'], 'default') as string)
+      const apiKey = (getValue(config, ['llm', 'lm_studio', 'api_key'], 'lm-studio') as string)
+      await runLMStudio(prompt, instructions, baseUrl, model, apiKey)
+      break
+    }
+    case 'continue': {
+      const model = (getValue(config, ['llm', 'continue_cli', 'model'], 'default') as string)
+      const finalPrompt = combinePrompt(instructions, prompt)
+      await runContinue(finalPrompt, model)
+      break
+    }
+    case 'codex': {
+      const model = (getValue(config, ['llm', 'codex', 'model'], 'code-davinci-002') as string)
+      const temperature = Number(getValue(config, ['llm', 'codex', 'temperature'], 0.2))
+      const maxTokens = Number(getValue(config, ['llm', 'codex', 'max_tokens'], 8192))
+      const apiBase = (getValue(config, ['llm', 'codex', 'api_base'], 'https://api.openai.com/v1') as string)
+      const apiKey = process.env.OPENAI_API_KEY
+      if (!apiKey) {
+        throw new Error('OPENAI_API_KEY is required for Codex provider')
+      }
+      const finalPrompt = combinePrompt(instructions, prompt)
+      await runCodex(finalPrompt, apiBase, apiKey, model, maxTokens, temperature)
+      break
+    }
+    default:
+      throw new Error(`Unsupported provider: ${provider}`)
+  }
+}

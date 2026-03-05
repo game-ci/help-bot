@@ -1,0 +1,1 @@
+All agent guidance for the GameCI Help Bot is centralized in `CLAUDE.md`. Refer to that file for behavior rules, tone, operational modes (incremental/live/interactive), vector search handling, secure token storage, and provider details. Do not add conflicting instructions elsewhere; AGENTS should simply point back to `CLAUDE.md`.

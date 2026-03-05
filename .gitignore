@@ -1,0 +1,46 @@
+# Synced data (ephemeral, re-synced each cycle)
+# Keep directory structure via .gitkeep files
+data/discord/channels/
+data/github/issues/*
+!data/github/issues/.gitkeep
+data/github/discussions/*
+!data/github/discussions/.gitkeep
+data/docs/*.md
+data/responses/discord/*.md
+data/responses/github/*.md
+data/logs/
+data/vector-store/
+
+# Self-hosted runner
+_runner/
+_work/
+
+# Node
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Environment and secrets
+.env
+.env.*
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Docker
+.docker/

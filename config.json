@@ -1,0 +1,107 @@
+{
+  "bot": {
+    "name": "GameCI Help Bot",
+    "version": "2.1.0",
+    "max_responses_per_cycle": 10,
+    "response_cooldown_minutes": 60,
+    "dry_run": false,
+    "cycle_interval_minutes": 30
+  },
+  "llm": {
+    "provider": "claude",
+    "claude": {
+      "model": "claude-sonnet-4-20250514",
+      "max_turns": 30,
+      "command": "claude -p"
+    },
+    "lm_studio": {
+      "base_url": "http://localhost:1234/v1",
+      "model": "default",
+      "api_key": "lm-studio"
+    },
+    "continue_cli": {
+      "command": "continue",
+      "model": "default"
+    },
+    "codex": {
+      "model": "code-davinci-002",
+      "temperature": 0.2,
+      "max_tokens": 8192,
+      "api_base": "https://api.openai.com/v1"
+    }
+  },
+  "discord": {
+    "guild_id_env": "DISCORD_GUILD_ID",
+    "channels": [
+      "help",
+      "support",
+      "general",
+      "bugs",
+      "unity-builder",
+      "unity-test-runner",
+      "docker"
+    ],
+    "sync_hours": 6,
+    "ignore_bots": true,
+    "ignore_prefixes": [
+      "!",
+      "/",
+      "$",
+      "."
+    ],
+    "min_message_length": 15
+  },
+  "github": {
+    "repos": [
+      "game-ci/unity-builder",
+      "game-ci/unity-test-runner",
+      "game-ci/unity-actions",
+      "game-ci/docker",
+      "game-ci/steam-deploy"
+    ],
+    "sync_days": 7,
+    "max_issues_per_repo": 200,
+    "max_discussions_per_repo": 50,
+    "skip_labels": [
+      "wontfix",
+      "invalid",
+      "duplicate"
+    ],
+    "priority_labels": [
+      "bug",
+      "help wanted",
+      "good first issue"
+    ]
+  },
+  "docs": {
+    "base_url": "https://game.ci/docs",
+    "pages": [
+      "github/getting-started",
+      "github/activation",
+      "github/builder",
+      "github/test-runner",
+      "github/returning-a-license",
+      "docker/docker-images",
+      "docker/versions",
+      "github/deployment/steam"
+    ]
+  },
+  "vector_search": {
+    "enabled": false,
+    "engine": "llamaindex",
+    "collection_name": "gameci-docs",
+    "embedding_model": "local:BAAI/bge-small-en-v1.5",
+    "persist_directory": "data/vector-store"
+  },
+  "docker": {
+    "image_name": "gameci-help-bot",
+    "container_name": "gameci-help-bot",
+    "restart_policy": "unless-stopped"
+  },
+  "runner": {
+    "labels": [
+      "help-bot"
+    ],
+    "work_directory": "_work"
+  }
+}

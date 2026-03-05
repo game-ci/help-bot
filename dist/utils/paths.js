@@ -1,0 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.LOGS_DIR = exports.DOCS_DATA_DIR = exports.GITHUB_DATA_DIR = exports.DISCORD_DATA_DIR = exports.RESPONSES_DIR = exports.DATA_DIR = exports.REPO_ROOT = void 0;
+const node_path_1 = require("node:path");
+exports.REPO_ROOT = process.cwd();
+exports.DATA_DIR = (0, node_path_1.join)(exports.REPO_ROOT, 'data');
+exports.RESPONSES_DIR = (0, node_path_1.join)(exports.DATA_DIR, 'responses');
+exports.DISCORD_DATA_DIR = (0, node_path_1.join)(exports.DATA_DIR, 'discord', 'channels');
+exports.GITHUB_DATA_DIR = (0, node_path_1.join)(exports.DATA_DIR, 'github', 'issues');
+exports.DOCS_DATA_DIR = (0, node_path_1.join)(exports.DATA_DIR, 'docs');
+exports.LOGS_DIR = (0, node_path_1.join)(exports.DATA_DIR, 'logs');
