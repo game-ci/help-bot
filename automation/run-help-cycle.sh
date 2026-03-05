@@ -39,6 +39,15 @@ DRY_RUN="${DRY_RUN:-false}"
 SKIP_SYNC="${SKIP_SYNC:-false}"
 SKIP_GITHUB_POST="${SKIP_GITHUB_POST:-false}"
 
+TOKEN_HELPER="${SCRIPT_DIR}/discord-token-helper.sh"
+if [[ -f "${TOKEN_HELPER}" ]]; then
+  source "${TOKEN_HELPER}"
+  if ! ensure_discord_token; then
+    echo "ERROR: Unable to obtain a valid Discord bot token." >&2
+    exit 1
+  fi
+fi
+
 # Source LLM provider abstraction
 source "${SCRIPT_DIR}/llm-provider.sh"
 

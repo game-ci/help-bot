@@ -21,6 +21,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CONFIG_FILE="${REPO_DIR}/config.json"
 
+TOKEN_HELPER="${SCRIPT_DIR}/discord-token-helper.sh"
+if [[ -f "${TOKEN_HELPER}" ]]; then
+  source "${TOKEN_HELPER}"
+  if ! ensure_discord_token; then
+    echo "ERROR: Unable to obtain a valid Discord bot token." >&2
+    exit 1
+  fi
+fi
+
 # Load interval from config.json if available
 if [[ -f "${CONFIG_FILE}" ]] && command -v python3 &>/dev/null; then
   DEFAULT_INTERVAL=$(python3 -c "
