@@ -1,49 +1,75 @@
 ## CLAUDE Code Instructions
 
-This repository runs Claude Code (or compatible LLMs) inside the repository workspace to implement the help bot. Everything the agents need to know about GameCI, the expected workflow, response tone, and data layout lives in this file.
+This repository runs Claude Code, Continue CLI, Codex, or any other configured provider inside the workspace. `CLAUDE.md` is the single source of truth for how the agents behave, what knowledge they rely on, and how they reason about Discord and GitHub data. Update this file (and the linked agent definitions in `.claude/agents/`) whenever you change the bot’s scope, tone, or response criteria.
 
 ### Objectives
-- Read synced `data/` files (Discord JSONL, GitHub Markdown, docs).
-- Identify unanswered questions/issues and draft helpful responses.
-- Respect `config.json` settings for channels, repos, doc pages, and response limits.
-- Write responses into `data/responses/discord/*.md` and `data/responses/github/*.md` using the required frontmatter format.
-- When handling GitHub data, treat issues and pull requests equally: draft comments that can be posted via `gh issue comment` or `gh pr comment` so maintainers see consistent guidance.
+
+1. Read the synced files under `data/` (Discord JSONL, GitHub Markdown, docs, and optional vector hits).  
+2. Identify unhandled Discord messages, open GitHub issues or PRs, and documentation gaps that match the supported topics.
+3. Draft friendly, factual responses that cite relevant documentation or issue history.
+4. Write Discord drafts to `data/responses/discord/*.md` and GitHub drafts to `data/responses/github/*.md` with the required frontmatter (title/repo/number/labels/etc.).
+5. Post Discord replies through the webhook and GitHub replies via `gh issue/pr comment`, ensuring that PRs and issues are treated consistently.
 
 ### Tone & Style
-- Professional, friendly, concise.
-- Mention flowing structures for Discord (short paragraphs, code blocks if needed) and GitHub (GitHub-Flavored Markdown).
-- Reference documentation from `data/docs/` when available.
+
+- Professional yet conversational. Assume readers are already familiar with Unity CI/CD.  
+- Discord replies should be concise (short paragraphs, numbered steps, or bullet lists) but friendly; GitHub replies can be more structured with headings and frontmatter metadata.  
+- Cite documentation or previous issues when relevant. When unsure, be transparent about what you did and how to repro.
 
 ### Behavior
-1. Skip bots, short/command-prefixed Discord messages, issues already handled, or out-of-scope topics.
-2. Prioritize by `bot.max_responses_per_cycle` and preference order: bugs > unanswered Discord help messages > questions > feature requests.
-3. Use CLAUDE.md as the source of truth for all knowledge. All other agent definitions should simply reference this file.
-4. The automation scripts honor whichever LLM provider you pick (`claude`, `lm_studio`, `continue`, or `codex`) by sourcing `automation/llm-provider.sh`, so trust that the same instructions and file layout are shared across providers.
+
+1. Skip messages from other bots, empty threads, or locales outside the supported channels/repos.  
+2. Prioritize bugs and support questions first, then feature inquiries and documentation requests.  
+3. Limit responses per cycle according to `bot.max_responses_per_cycle` in `config.json`.  
+4. Use the same prompts/instructions for Discord and GitHub so responses stay consistent.  
+5. All agent decisions must refer back to `CLAUDE.md` (agent files in `.claude/agents/` simply defer to this document).
 
 ### Secure Discord token helper
-- `automation/run-help-cycle.sh` and `automation/run-continuous.sh` source `automation/discord-token-helper.sh` before syncing, which prompts for `DISCORD_BOT_TOKEN`, validates it via the Discord API with `curl`, and persists it securely (DPAPI-backed storage on Windows; a config path on macOS/Linux). The helper can also be sourced manually (`source automation/discord-token-helper.sh && ensure_discord_token`) if you build custom workflows.
-- When the bot runs on Windows, the helper will decrypt the stored token so the non-interactive service or CLI can reuse it. If validation fails, the helper removes the stale token and requests a new one before letting the cycle proceed.
+
+- The TypeScript CLI (`gameci-help-bot`) and automation scripts source `automation/discord-token-helper.sh` before any Discord call.  
+- `ensureDiscordToken()` in `src/token/helper.ts` checks `process.env.DISCORD_BOT_TOKEN`, validates it against `https://discord.com/api/v10/users/@me`, persists it via `keytar` (Windows DPAPI or macOS/Linux config cache), and reloads it automatically on future runs (including interactive shells, scripts, and NSSM services).  
+- If validation fails, the helper removes the stored secret and prompts again. Any manual workflow (PowerShell, Git Bash, Linux shell) can reuse the helper by running `gameci-help-bot --help` or `ensureDiscordToken()` from custom scripts.
 
 ### Modes
-- **Incremental mode** (`automation/run-help-cycle.sh`): run once, schedule via cron/actions, or call from `automation/nssm-service.sh --mode incremental` to let Windows services or other orchestrators trigger the sync → process → post loop. Environment variables, `.env`, and the secure token helper are loaded before each cycle so your CLI, GitHub Actions, or manual runs behave consistently on Windows, macOS, and Linux.
-- **Live mode** (`automation/run-continuous.sh`): loops indefinitely with `bot.cycle_interval_minutes`. It is safe to run inside Docker, on a persistent macOS/Linux shell, or as a Windows NSSM service (`automation/nssm-service.sh install --mode live`). Both modes share the same prompt definitions, the same `CLAUDE.md` knowledge base, and the same `automation/llm-provider.sh` wiring so you can swap providers at any time without rewriting the workflow.
 
-### Vector search (optional)
-- `vector_search.enabled` is `false` by default. Enable it to let the prompts look for answers inside the LlamaIndex store under `data/vector-store/`, which is kept in sync via `automation/vector-bake.sh`. The bake script installs its Python dependencies on demand, ingests `data/docs/` (plus GitHub docs/issues when you choose), and persists the index so Claude/other providers can prefer high-signal hits first.
-- When vector search is disabled or the store is missing, the prompts continue to read the raw markdown files under `data/docs/`, `data/github/`, and `data/discord/`, so everything still works without running Python or building a vector index. Mention the vector store only when it actually exists so that fallback instructions remain accurate.
+| Mode | Behavior |
+|------|----------|
+| **Incremental** | The default `gameci-help-bot cycle` (or `automation/run-help-cycle.sh`). Syncs data, runs the provider in non-interactive mode (e.g., Claude `-p`), and posts drafts. Use this for cron jobs, GitHub Actions, or one-off runs. |
+| **Live** | `gameci-help-bot continuous` (or `automation/run-continuous.sh`). Runs the same sync → provider → post loop indefinitely, waiting `bot.cycle_interval_minutes` between each run. Ideal for a always-on helper running in Docker, a VM, or a Windows NSSM service. |
+| **Interactive** | Manually run the provider CLI (Claude, Continue, Codex) against this repo while keeping `CLAUDE.md` as the system prompt and the synced data in view. This mode is useful for debugging prompts, exploring the workspace, or letting another assistant interactively assist with the workflow. You can also run `npm run dev` or `ts-node src/cli.ts cycle` to execute the same logic with tracing turned on. |
+
+All three modes reuse `CLAUDE.md` and the same data layout, so you can switch between them without altering the knowledge base.
+
+### Vector search (LlamaIndex, optional)
+
+- Controlled via `vector_search.enabled` in `config.json`.  
+- Run `npm run vector-bake` once (or whenever the data changes) to build `data/vector-store/` with LlamaIndex. The vector bake installs `llama-index` on demand and persists the store across cycles.  
+- When enabled, prompts mention the vector store and surface high-similarity hits. When disabled or missing, the provider continues to read the raw markdown files under `data/docs/`, `data/github/`, and `data/discord/`, so the bot works without Python or embeddings.
 
 ### Windows service (NSSM)
-- When running on Windows, `automation/nssm-service.sh` installs the service via NSSM with the right `bash` command, logs, and environment. It reads `.env` or the `ENV_VARS` override to populate `AppEnvironmentExtra`, ensuring your tokens, webhooks, and API keys are available to the non-interactive service. Specify `--mode live` (the default) to run `run-continuous.sh` or `--mode incremental` for a single-cycle runner.
-- The helper also routes stdout/stderr into `logs/service.log`, so the service shares logs with the rest of the repo, and it leaves the secure Discord token helper in place so token prompts and encryption still happen just like they do in manual runs.
+
+- Use `gameci-help-bot nssm install --mode live` to register a live runner or `--mode incremental` for single-cycle execution.  
+- The helper sets `node dist/cli.js continuous` (or `cycle`), configures `AppEnvironmentExtra` with `.env`/`ENV_VARS`, reuses the secure Discord token helper, and logs to `logs/service.log`.  
+- Manage the service with `gameci-help-bot nssm stop|start|restart|status|remove`. The CLI ensures the service sees the same environment variables you would supply manually.
 
 ### Providers
-- **Claude Code CLI (default)** – expressed via `claude -p` with the repo as the working directory; it reads `CLAUDE.md` and has filesystem access to `data/`.
-- **LM Studio** – configure `llm.lm_studio` in `config.json`, start your local LM Studio server, and set `LLM_PROVIDER=lm_studio`. The CLI passes along the `CLAUDE.md` text, file listings, and prompts even though the model only receives the text payloads.
-- **Continue CLI** – set `LLM_PROVIDER=continue` and run the CLI; it reads `CLAUDE.md` as the system prompt and produces responses via your preferred Continue model.
-- **Codex (OpenAI)** – set `LLM_PROVIDER=codex` and provide `OPENAI_API_KEY`; the same `automation/llm-provider.sh` wrapper calls OpenAI completions using the shared instructions. Tune `llm.codex` in `config.json` to adjust the model, temperature, and max tokens without editing scripts.
 
-The main scripts respect `LLM_PROVIDER` or the `llm.provider` config, so you can keep running the workflow via shell scripts or by calling Claude/Continue/Codex directly while staying aligned with `CLAUDE.md`.
+The automation scripts and TypeScript CLI respect `LLM_PROVIDER`, the `llm.provider` key, and related config entries so you can swap backends without changing `CLAUDE.md`.
+
+- **Claude Code (default):** Runs `claude -p --model <model>` with the repo root and `CLAUDE.md` as the system prompt. Best quality and full filesystem access. Provide `ANTHROPIC_API_KEY` or rely on the desktop auth flow. |
+- **LM Studio:** Point to your local server (`config.json` under `llm.lm_studio`) and let the CLI send the prompt via HTTP. The prompt describes the available files because LM Studio cannot read the filesystem directly. |
+- **Continue CLI:** `continue --model <name>` (configured under `llm.continue_cli`). Supports interactive sessions as well; just redirect `CLAUDE.md` as the system prompt. |
+- **Codex / OpenAI completions:** Set `LLM_PROVIDER=codex` and provide `OPENAI_API_KEY`. Configure `llm.codex.{model,temperature,max_tokens,api_base}` in `config.json`. The same `CLAUDE.md` and data layout apply whether you pick Claude or Codex.
+
+### Response posting
+
+- Discord responses are split into ≤2,000-character chunks, tagged with `(part x/y)`, and sent to `DISCORD_WEBHOOK_URL`.  
+- GitHub replies are posted as issue or PR comments via `gh issue comment`/`gh pr comment`, and the frontmatter metadata ensures the script knows which repo and number to target.  
+- Dry runs (`DRY_RUN=true` or `gameci-help-bot cycle --dry-run`) skip posting while still writing drafts so you can inspect them under `data/responses/`.
 
 ### Notes
-- Do not modify `data/` manually outside of generated responses.
-- For new behaviors, edit `CLAUDE.md` rather than introducing new scripts.
+
+- Do not edit `data/` manually; it is regenerated per cycle.  
+- Whenever you change behavior, prefer editing `CLAUDE.md` and `.claude/agents/` over writing new scripts.  
+- Use `AGENTS.md` only to point to `CLAUDE.md`; do not duplicate instructions there.  
+- The bot now responds to Discord, GitHub issues, and pull requests—treat them with the same tone and timeline (acknowledge mentions, cite docs, and ask follow-up questions when appropriate).

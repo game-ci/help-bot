@@ -1,0 +1,37 @@
+{
+  "name": "gameci-help-bot",
+  "version": "2.0.0",
+  "description": "TypeScript-styled orchestrator for the GameCI Help Bot",
+  "main": "dist/cli.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint --ext .ts src",
+    "cycle": "npm run build && node dist/cli.js cycle",
+    "continuous": "npm run build && node dist/cli.js continuous",
+    "dev": "ts-node src/cli.ts",
+    "vector-bake": "npm run build && node dist/cli.js vector-bake"
+  },
+  "bin": {
+    "gameci-help-bot": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "glob": "^13.0.6",
+    "keytar": "^7.9.0",
+    "node-html-parser": "^7.0.1",
+    "prompts": "^2.4.2",
+    "turndown": "^7.1.1",
+    "undici": "^5.0.0",
+    "yargs": "^17.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.4.2",
+    "@types/yargs": "^17.0.24",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.5.6"
+  }
+}
