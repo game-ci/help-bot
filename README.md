@@ -20,9 +20,9 @@ TypeScript-first orchestrator for the GameCI Help Bot. It syncs Discord, GitHub,
    ```
 3. **Run a help cycle**
    ```powershell
-   npm run cycle
+   yarn cycle   # or `npm run cycle` if you prefer npm
    ```
-   Dry run: `npm run cycle -- --dry-run`
+   Dry run: `yarn cycle -- --dry-run` (or `npm run cycle -- --dry-run`)
 
 ## Core commands
 
