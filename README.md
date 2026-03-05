@@ -43,7 +43,7 @@ The bot runs a **sync-reason-respond** cycle periodically:
   |              Post responses                     |
   |                                                 |
   |  Discord: via webhook (post-discord.sh)         |
-  |  GitHub:  via gh CLI (gh issue comment)         |
+  |  GitHub:  via gh CLI (gh issue comment/pr reply)|
   +------------------------------------------------+
 ```
 
@@ -123,7 +123,7 @@ bash automation/sync-docs.sh
 
 The helper scripts are cross-platform (Windows via Git Bash/PowerShell, macOS, Linux) and automatically source environment variables, `.env`, and the secure Discord token helper so you only get prompted for credentials when absolutely necessary. You can also run the same workflow with any supported provider by overriding `LLM_PROVIDER` (`claude`, `lm_studio`, `continue`, or `codex`) so the CLI you choose follows the shared instructions in `CLAUDE.md`.
 
-Values such as `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_WEBHOOK_URL`, `ANTHROPIC_API_KEY`, and `LLM_PROVIDER` can be supplied via environment variables, a `.env`, or Windows secret storage through `automation/discord-token-helper.sh`.
+Values such as `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_WEBHOOK_URL`, `ANTHROPIC_API_KEY`, and `LLM_PROVIDER` can be supplied via environment variables, a `.env`, or Windows secret storage through `automation/discord-token-helper.sh`. The `run-help-cycle.sh` script also writes GitHub issue or pull request comments via `gh` so every cycle can respond to Discord, GitHub issues, and PRs in the monitored repositories.
 
 ### Live (continuous/daemon)
 

@@ -7,6 +7,7 @@ This repository runs Claude Code (or compatible LLMs) inside the repository work
 - Identify unanswered questions/issues and draft helpful responses.
 - Respect `config.json` settings for channels, repos, doc pages, and response limits.
 - Write responses into `data/responses/discord/*.md` and `data/responses/github/*.md` using the required frontmatter format.
+- When handling GitHub data, treat issues and pull requests equally: draft comments that can be posted via `gh issue comment` or `gh pr comment` so maintainers see consistent guidance.
 
 ### Tone & Style
 - Professional, friendly, concise.
