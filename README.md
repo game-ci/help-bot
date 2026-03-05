@@ -1,3 +1,5 @@
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/6ed2a212-06f3-4b68-99aa-f3923501e4be" />
+
 # GameCI Help Bot
 
 TypeScript-first orchestrator for the GameCI Help Bot. It syncs Discord, GitHub, and docs, feeds the workspace into Claude/Continue/Codex (or your chosen provider), drafts replies, and posts them back to Discord and GitHub. The CLI follows the unity-builder style (`yarn`/`npm` scripts, clean command surface, secure token handling) so you can run it on Windows PowerShell, macOS, or Linux with the same experience.
