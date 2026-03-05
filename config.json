@@ -22,6 +22,12 @@
     "continue_cli": {
       "command": "continue",
       "model": "default"
+    },
+    "codex": {
+      "model": "code-davinci-002",
+      "temperature": 0.2,
+      "max_tokens": 8192,
+      "api_base": "https://api.openai.com/v1"
     }
   },
   "discord": {
@@ -37,7 +43,12 @@
     ],
     "sync_hours": 6,
     "ignore_bots": true,
-    "ignore_prefixes": ["!", "/", "$", "."],
+    "ignore_prefixes": [
+      "!",
+      "/",
+      "$",
+      "."
+    ],
     "min_message_length": 15
   },
   "github": {
@@ -51,8 +62,16 @@
     "sync_days": 7,
     "max_issues_per_repo": 200,
     "max_discussions_per_repo": 50,
-    "skip_labels": ["wontfix", "invalid", "duplicate"],
-    "priority_labels": ["bug", "help wanted", "good first issue"]
+    "skip_labels": [
+      "wontfix",
+      "invalid",
+      "duplicate"
+    ],
+    "priority_labels": [
+      "bug",
+      "help wanted",
+      "good first issue"
+    ]
   },
   "docs": {
     "base_url": "https://game.ci/docs",
@@ -80,7 +99,9 @@
     "restart_policy": "unless-stopped"
   },
   "runner": {
-    "labels": ["help-bot"],
+    "labels": [
+      "help-bot"
+    ],
     "work_directory": "_work"
   }
 }

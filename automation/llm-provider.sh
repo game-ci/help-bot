@@ -5,6 +5,7 @@
 #   - claude    : Claude Code CLI (default)
 #   - lm_studio : LM Studio local server (OpenAI-compatible API)
 #   - continue  : Continue CLI
+#   - codex     : OpenAI Codex completions
 #
 # This script is sourced by run-help-cycle.sh to get the provider-specific
 # invocation function.
@@ -47,6 +48,23 @@ import json
 with open('${CONFIG_FILE}') as f:
     cfg = json.load(f)
 print(cfg.get('llm', {}).get('lm_studio', {}).get('${key}', '${default}'))
+" 2>/dev/null || echo "$default"
+  else
+    echo "$default"
+  fi
+}
+
+# Get Codex configuration from config.json
+get_codex_config() {
+  local key="$1"
+  local default="$2"
+
+  if [[ -f "${CONFIG_FILE}" ]] && command -v python3 &>/dev/null; then
+    python3 -c "
+import json
+with open('${CONFIG_FILE}') as f:
+    cfg = json.load(f)
+print(cfg.get('llm', {}).get('codex', {}).get('${key}', '${default}'))
 " 2>/dev/null || echo "$default"
   else
     echo "$default"
@@ -184,6 +202,80 @@ print(cfg.get('llm', {}).get('continue_cli', {}).get('model', 'default'))
   fi
 }
 
+# Run OpenAI Codex via completions
+run_codex() {
+  local prompt="$1"
+  local workdir="$2"
+
+  local model
+  model=$(get_codex_config "model" "code-davinci-002")
+  local temperature
+  temperature=$(get_codex_config "temperature" "0.2")
+  local max_tokens
+  max_tokens=$(get_codex_config "max_tokens" "8192")
+  local api_base
+  api_base=$(get_codex_config "api_base" "https://api.openai.com/v1")
+  api_base="${OPENAI_API_BASE:-${api_base}}"
+
+  local api_key="${OPENAI_API_KEY:-}"
+  if [[ -z "$api_key" ]]; then
+    echo "ERROR: OPENAI_API_KEY is not set. Set it to use the Codex provider." >&2
+    return 1
+  fi
+
+  echo "Provider: OpenAI Codex (model: ${model})"
+
+  local response
+  response=$(CODEX_MODEL="${model}" \
+    CODEX_BASE="${api_base}" \
+    CODEX_API_KEY="${api_key}" \
+    CODEX_MAX_TOKENS="${max_tokens}" \
+    CODEX_TEMPERATURE="${temperature}" \
+    python3 - <<'PY'
+import json, os, sys, urllib.request, urllib.error
+model = os.environ["CODEX_MODEL"]
+api_base = os.environ["CODEX_BASE"].rstrip("/")
+api_key = os.environ["CODEX_API_KEY"]
+max_tokens = int(os.environ["CODEX_MAX_TOKENS"])
+temperature = float(os.environ["CODEX_TEMPERATURE"])
+prompt = sys.stdin.read()
+
+payload = json.dumps({
+    "model": model,
+    "prompt": prompt,
+    "max_tokens": max_tokens,
+    "temperature": temperature,
+})
+
+req = urllib.request.Request(
+    f"{api_base}/completions",
+    data=payload.encode(),
+    headers={
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    },
+)
+
+try:
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        data = json.loads(resp.read().decode())
+        choices = data.get("choices", [])
+        if not choices:
+            print("ERROR: No choices returned from Codex.", file=sys.stderr)
+            sys.exit(1)
+        print(choices[0].get("text", "").lstrip())
+except urllib.error.HTTPError as err:
+    print(f"Codex API error: {err}", file=sys.stderr)
+    sys.exit(1)
+except Exception as err:
+    print(f"Codex API error: {err}", file=sys.stderr)
+    sys.exit(1)
+PY
+  <<< "$prompt" 2>&1)
+
+  echo "$response"
+}
+
 # Main dispatcher
 run_llm_provider() {
   local prompt="$1"
@@ -201,9 +293,12 @@ run_llm_provider() {
     continue)
       run_continue_cli "$prompt" "$workdir"
       ;;
+    codex)
+      run_codex "$prompt" "$workdir"
+      ;;
     *)
       echo "ERROR: Unknown LLM provider: ${provider}" >&2
-      echo "Supported providers: claude, lm_studio, continue" >&2
+      echo "Supported providers: claude, lm_studio, continue, codex" >&2
       return 1
       ;;
   esac
