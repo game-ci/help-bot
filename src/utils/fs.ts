@@ -19,3 +19,8 @@ export async function appendText(filePath: string, text: string): Promise<void> 
   await ensureDir(dirname(filePath))
   await appendFile(filePath, text, 'utf-8')
 }
+
+export async function writeJson(filePath: string, data: object): Promise<void> {
+  await ensureDir(dirname(filePath))
+  await writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8')
+}

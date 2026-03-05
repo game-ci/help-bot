@@ -6,6 +6,7 @@ const promises_1 = require("node:fs/promises");
 const node_path_1 = require("node:path");
 const frontmatter_1 = require("../utils/frontmatter");
 const paths_1 = require("../utils/paths");
+const metrics_1 = require("../metrics");
 const MAX_LENGTH = 2000;
 function splitContent(content) {
     const chunks = [];
@@ -32,7 +33,10 @@ async function postToWebhook(webhook, payload) {
     });
     return response.statusCode === 204 || response.statusCode === 200;
 }
-async function postDiscordResponses(dryRun = false) {
+async function sendSeenYouNotification(webhook, message) {
+    await postToWebhook(webhook, { content: message });
+}
+async function postDiscordResponses(options) {
     const discordDir = (0, node_path_1.join)(paths_1.RESPONSES_DIR, 'discord');
     let files = [];
     try {
@@ -48,13 +52,24 @@ async function postDiscordResponses(dryRun = false) {
     for (const file of files.filter((f) => f.endsWith('.md'))) {
         const fullPath = (0, node_path_1.join)(discordDir, file);
         const content = await (0, promises_1.readFile)(fullPath, 'utf-8');
-        const { body } = (0, frontmatter_1.parseFrontMatter)(content);
-        const trimmed = body.trim();
-        if (!trimmed) {
+        const { meta, body } = (0, frontmatter_1.parseFrontMatter)(content);
+        const responseId = meta.response_id ?? file.replace(/\.md$/, '');
+        const isOfficial = String(meta.official_response)?.toLowerCase() === 'true';
+        if (isOfficial && !options.allowOfficial && options.forceReplyId !== responseId) {
+            console.log(`Skipping Discord response ${responseId} because an official contributor already replied.`);
+            (0, metrics_1.recordStat)('discordResponsesSkipped', 1);
+            if (!options.dryRun && options.seenYouMessage) {
+                const emojiPrefix = options.seenYouEmoji ? `${options.seenYouEmoji} ` : '';
+                await sendSeenYouNotification(webhook, `${emojiPrefix}${options.seenYouMessage}`);
+            }
             continue;
         }
-        if (dryRun) {
+        if (options.dryRun) {
             console.log(`DRY RUN: would post Discord response from ${file}`);
+            continue;
+        }
+        const trimmed = body.trim();
+        if (!trimmed) {
             continue;
         }
         const chunks = splitContent(trimmed);
@@ -70,6 +85,7 @@ async function postDiscordResponses(dryRun = false) {
             if (!success) {
                 console.warn(`Failed to post Discord chunk ${index + 1}/${chunks.length} for ${file}`);
             }
+            (0, metrics_1.recordStat)('discordResponsesPosted', 1);
             await new Promise((resolve) => setTimeout(resolve, 1500));
         }
     }

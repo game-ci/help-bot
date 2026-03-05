@@ -4,19 +4,22 @@ import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parseFrontMatter } from '../utils/frontmatter'
 import { RESPONSES_DIR } from '../utils/paths'
+import { recordStat } from '../metrics'
 
 const execFileAsync = promisify(execFile)
 
-export async function postGitHubResponses(dryRun = false): Promise<void> {
+export interface PostGitHubOptions {
+  dryRun: boolean
+  allowOfficial?: boolean
+  forceReplyId?: string
+}
+
+export async function postGitHubResponses(options: PostGitHubOptions): Promise<void> {
   const repoDir = join(RESPONSES_DIR, 'github')
   let files: string[] = []
   try {
     files = await readdir(repoDir)
   } catch {
-    return
-  }
-  if (dryRun) {
-    console.log('GitHub posting skipped (dry run)')
     return
   }
   for (const file of files.filter((f) => f.endsWith('.md'))) {
@@ -29,9 +32,20 @@ export async function postGitHubResponses(dryRun = false): Promise<void> {
       console.warn(`Skipping ${file}: missing repo or issue number`)
       continue
     }
-
+    const responseId = meta.response_id ?? file.replace(/\.md$/, '')
+    const isOfficial = String(meta.official_response)?.toLowerCase() === 'true'
+    if (isOfficial && !options.allowOfficial && options.forceReplyId !== responseId) {
+      console.log(`Skipping GitHub response ${responseId} because an official collaborator already replied.`)
+      recordStat('githubResponsesSkipped', 1)
+      continue
+    }
+    if (options.dryRun) {
+      console.log(`DRY RUN: would post GitHub response for ${repo}#${number}`)
+      continue
+    }
     try {
       await execFileAsync('gh', ['issue', 'comment', String(number), '--repo', repo, '--body', body])
+      recordStat('githubResponsesPosted', 1)
     } catch (error: any) {
       console.warn(`Failed to post GitHub response for ${repo}#${number}: ${error.message ?? error}`)
     }

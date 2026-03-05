@@ -7,18 +7,15 @@ const promises_1 = require("node:fs/promises");
 const node_path_1 = require("node:path");
 const frontmatter_1 = require("../utils/frontmatter");
 const paths_1 = require("../utils/paths");
+const metrics_1 = require("../metrics");
 const execFileAsync = (0, node_util_1.promisify)(node_child_process_1.execFile);
-async function postGitHubResponses(dryRun = false) {
+async function postGitHubResponses(options) {
     const repoDir = (0, node_path_1.join)(paths_1.RESPONSES_DIR, 'github');
     let files = [];
     try {
         files = await (0, promises_1.readdir)(repoDir);
     }
     catch {
-        return;
-    }
-    if (dryRun) {
-        console.log('GitHub posting skipped (dry run)');
         return;
     }
     for (const file of files.filter((f) => f.endsWith('.md'))) {
@@ -31,8 +28,20 @@ async function postGitHubResponses(dryRun = false) {
             console.warn(`Skipping ${file}: missing repo or issue number`);
             continue;
         }
+        const responseId = meta.response_id ?? file.replace(/\.md$/, '');
+        const isOfficial = String(meta.official_response)?.toLowerCase() === 'true';
+        if (isOfficial && !options.allowOfficial && options.forceReplyId !== responseId) {
+            console.log(`Skipping GitHub response ${responseId} because an official collaborator already replied.`);
+            (0, metrics_1.recordStat)('githubResponsesSkipped', 1);
+            continue;
+        }
+        if (options.dryRun) {
+            console.log(`DRY RUN: would post GitHub response for ${repo}#${number}`);
+            continue;
+        }
         try {
             await execFileAsync('gh', ['issue', 'comment', String(number), '--repo', repo, '--body', body]);
+            (0, metrics_1.recordStat)('githubResponsesPosted', 1);
         }
         catch (error) {
             console.warn(`Failed to post GitHub response for ${repo}#${number}: ${error.message ?? error}`);

@@ -3,6 +3,8 @@ import { ensureDir, appendText } from '../utils/fs'
 import { DISCORD_DATA_DIR } from '../utils/paths'
 import { getConfig, getValue } from '../config'
 import { join } from 'node:path'
+import { loadState, saveState } from '../state'
+import { recordStat } from '../metrics'
 
 const DISCORD_API = 'https://discord.com/api/v10'
 
@@ -65,6 +67,10 @@ export async function syncDiscord(): Promise<void> {
   const channelList = JSON.parse(await channelResponse.body.text())
   const channels = Array.isArray(channelList) ? channelList : []
 
+  const state = await loadState()
+  state.discord ??= {}
+  const officialRoles = ((getValue(config, ['discord', 'official_roles'], []) as string[]).map((role) => role.toLowerCase()))
+  const officialUsers = ((getValue(config, ['discord', 'official_users'], []) as string[]).map((id) => id.toLowerCase()))
   await ensureDir(DISCORD_DATA_DIR)
 
   for (const channelName of rawChannels) {
@@ -76,7 +82,8 @@ export async function syncDiscord(): Promise<void> {
     const channelId = channel.id
     console.log(`Syncing channel ${channelName} (${channelId})...`)
 
-    let currentAfter = afterSnowflake
+    const storedCursor = state.discord[channelId]
+    let currentAfter = storedCursor ? BigInt(storedCursor) : afterSnowflake
     while (true) {
       const url = `${DISCORD_API}/channels/${channelId}/messages?limit=100&after=${currentAfter}`
       const response = await fetchWithRetry(url, headers)
@@ -91,6 +98,8 @@ export async function syncDiscord(): Promise<void> {
         break
       }
 
+      recordStat('discordMessagesSynced', messages.length)
+
       for (const msg of messages) {
         if (ignoreBots && msg?.author?.bot) {
           continue
@@ -104,6 +113,10 @@ export async function syncDiscord(): Promise<void> {
         }
         const timestamp = msg.timestamp ?? new Date().toISOString()
         const dateKey = new Date(timestamp).toISOString().slice(0, 10)
+        const memberRoles = (msg.member?.roles ?? []) as string[]
+        const isOfficial =
+          memberRoles.some((role: string) => officialRoles.includes(role.toLowerCase())) ||
+          officialUsers.includes((msg.author?.id ?? '').toLowerCase())
         const record = JSON.stringify({
           id: msg.id,
           author: msg?.author?.username ?? 'unknown',
@@ -115,6 +128,7 @@ export async function syncDiscord(): Promise<void> {
           is_bot: msg?.author?.bot ?? false,
           has_reply: Boolean(msg.referenced_message),
           message_type: msg.type ?? 0,
+          is_official: isOfficial,
         })
         const targetFile = join(DISCORD_DATA_DIR, channelName, `${dateKey}.jsonl`)
         await appendText(targetFile, `${record}\n`)
@@ -129,5 +143,7 @@ export async function syncDiscord(): Promise<void> {
         break
       }
     }
+    state.discord[channelId] = currentAfter.toString()
   }
+  await saveState(state)
 }

@@ -6,6 +6,8 @@ const fs_1 = require("../utils/fs");
 const paths_1 = require("../utils/paths");
 const config_1 = require("../config");
 const node_path_1 = require("node:path");
+const state_1 = require("../state");
+const metrics_1 = require("../metrics");
 const DISCORD_API = 'https://discord.com/api/v10';
 function buildHeaders(token) {
     return {
@@ -59,6 +61,10 @@ async function syncDiscord() {
     }
     const channelList = JSON.parse(await channelResponse.body.text());
     const channels = Array.isArray(channelList) ? channelList : [];
+    const state = await (0, state_1.loadState)();
+    state.discord ??= {};
+    const officialRoles = ((0, config_1.getValue)(config, ['discord', 'official_roles'], []).map((role) => role.toLowerCase()));
+    const officialUsers = ((0, config_1.getValue)(config, ['discord', 'official_users'], []).map((id) => id.toLowerCase()));
     await (0, fs_1.ensureDir)(paths_1.DISCORD_DATA_DIR);
     for (const channelName of rawChannels) {
         const channel = channels.find((c) => c.name === channelName && c.type === 0);
@@ -68,7 +74,8 @@ async function syncDiscord() {
         }
         const channelId = channel.id;
         console.log(`Syncing channel ${channelName} (${channelId})...`);
-        let currentAfter = afterSnowflake;
+        const storedCursor = state.discord[channelId];
+        let currentAfter = storedCursor ? BigInt(storedCursor) : afterSnowflake;
         while (true) {
             const url = `${DISCORD_API}/channels/${channelId}/messages?limit=100&after=${currentAfter}`;
             const response = await fetchWithRetry(url, headers);
@@ -81,6 +88,7 @@ async function syncDiscord() {
             if (!Array.isArray(messages) || messages.length === 0) {
                 break;
             }
+            (0, metrics_1.recordStat)('discordMessagesSynced', messages.length);
             for (const msg of messages) {
                 if (ignoreBots && msg?.author?.bot) {
                     continue;
@@ -94,6 +102,9 @@ async function syncDiscord() {
                 }
                 const timestamp = msg.timestamp ?? new Date().toISOString();
                 const dateKey = new Date(timestamp).toISOString().slice(0, 10);
+                const memberRoles = (msg.member?.roles ?? []);
+                const isOfficial = memberRoles.some((role) => officialRoles.includes(role.toLowerCase())) ||
+                    officialUsers.includes((msg.author?.id ?? '').toLowerCase());
                 const record = JSON.stringify({
                     id: msg.id,
                     author: msg?.author?.username ?? 'unknown',
@@ -105,6 +116,7 @@ async function syncDiscord() {
                     is_bot: msg?.author?.bot ?? false,
                     has_reply: Boolean(msg.referenced_message),
                     message_type: msg.type ?? 0,
+                    is_official: isOfficial,
                 });
                 const targetFile = (0, node_path_1.join)(paths_1.DISCORD_DATA_DIR, channelName, `${dateKey}.jsonl`);
                 await (0, fs_1.appendText)(targetFile, `${record}\n`);
@@ -118,5 +130,7 @@ async function syncDiscord() {
                 break;
             }
         }
+        state.discord[channelId] = currentAfter.toString();
     }
+    await (0, state_1.saveState)(state);
 }

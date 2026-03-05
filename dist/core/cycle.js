@@ -12,11 +12,14 @@ const github_2 = require("../post/github");
 const promises_1 = require("node:fs/promises");
 const node_path_1 = require("node:path");
 const config_1 = require("../config");
+const metrics_1 = require("../metrics");
+const state_1 = require("../state");
 async function runCycle(options = {}) {
     await (0, fs_1.ensureDir)(paths_1.RESPONSES_DIR);
     await (0, fs_1.ensureDir)((0, node_path_1.join)(paths_1.RESPONSES_DIR, 'discord'));
     await (0, fs_1.ensureDir)((0, node_path_1.join)(paths_1.RESPONSES_DIR, 'github'));
     await (0, fs_1.ensureDir)(paths_1.LOGS_DIR);
+    (0, metrics_1.resetStats)();
     const config = await (0, config_1.getConfig)();
     const dryRun = options.dryRun ?? Boolean((0, config_1.getValue)(config, ['bot', 'dry_run'], false));
     const skipSync = options.skipSync ?? process.env.SKIP_SYNC === 'true';
@@ -41,12 +44,30 @@ Process the synced data under data/ and write structured responses into data/res
     console.log('Running LLM provider...');
     await (0, llm_1.runProvider)(prompt, { provider: options.provider });
     console.log('Posting Discord responses (dry run: ' + dryRun + ')...');
-    await (0, discord_2.postDiscordResponses)(dryRun);
+    const seenYouMessage = options.seenYouMessage ?? (0, config_1.getValue)(config, ['discord', 'seen_you_message'], '');
+    const seenYouEmoji = options.seenYouEmoji ?? (0, config_1.getValue)(config, ['discord', 'seen_you_emoji'], '');
+    await (0, discord_2.postDiscordResponses)({
+        dryRun,
+        allowOfficial: options.allowOfficial,
+        forceReplyId: options.forceReplyId,
+        seenYouMessage: seenYouMessage || undefined,
+        seenYouEmoji: seenYouEmoji || undefined,
+    });
     if (skipGithubPost) {
         console.log('Skipping GitHub posting (skipGithubPost=true)');
     }
     else {
         console.log('Posting GitHub responses (dry run: ' + dryRun + ')...');
-        await (0, github_2.postGitHubResponses)(dryRun);
+        await (0, github_2.postGitHubResponses)({
+            dryRun,
+            allowOfficial: options.allowOfficial,
+            forceReplyId: options.forceReplyId,
+        });
     }
+    const stats = (0, metrics_1.getStats)();
+    await (0, state_1.updateState)((state) => {
+        state.meta ??= {};
+        state.meta.lastCycleStats = stats;
+        state.meta.lastCycleAt = new Date().toISOString();
+    });
 }

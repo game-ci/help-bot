@@ -13,15 +13,30 @@ const docs_1 = require("./sync/docs");
 const vector_bake_1 = require("./core/vector-bake");
 const nssm_service_1 = require("./core/nssm-service");
 const helper_1 = require("./token/helper");
+const feedback_1 = require("./feedback");
+const report_1 = require("./report");
 (0, yargs_1.default)((0, helpers_1.hideBin)(process.argv))
     .scriptName('gameci-help-bot')
     .command('cycle', 'run a single help cycle', (y) => y
     .option('dry-run', { type: 'boolean', description: 'Draft responses without posting' })
     .option('skip-sync', { type: 'boolean', description: 'Skip data syncing' })
     .option('skip-github-post', { type: 'boolean', description: 'Do not post to GitHub' })
+    .option('allow-official', { type: 'boolean', description: 'Allow posting even if an official responded' })
+    .option('force-reply-id', { type: 'string', description: 'Force posting for this response id even if a reply already exists' })
+    .option('seen-you-message', { type: 'string', description: 'Custom text for the seen-you notification' })
+    .option('seen-you-emoji', { type: 'string', description: 'Emoji to prefix the seen-you notification' })
     .option('provider', { type: 'string', description: 'Override LLM provider (claude|lm_studio|continue|codex)' }), async (args) => {
     await (0, helper_1.ensureDiscordToken)();
-    await (0, cycle_1.runCycle)({ dryRun: args['dry-run'] || false, skipSync: args['skip-sync'] || false, skipGithubPost: args['skip-github-post'] || false, provider: args.provider });
+    await (0, cycle_1.runCycle)({
+        dryRun: args['dry-run'] || false,
+        skipSync: args['skip-sync'] || false,
+        skipGithubPost: args['skip-github-post'] || false,
+        allowOfficial: args['allow-official'] || false,
+        forceReplyId: args['force-reply-id'],
+        seenYouMessage: args['seen-you-message'],
+        seenYouEmoji: args['seen-you-emoji'],
+        provider: args.provider,
+    });
 })
     .command('continuous', 'run continuous mode', (y) => y
     .option('interval', { type: 'number', description: 'Cycle interval in minutes' })
@@ -43,6 +58,29 @@ const helper_1 = require("./token/helper");
         throw new Error('NSSM action is required');
     }
     await (0, nssm_service_1.manageService)(action, { mode: args.mode, envFile: args['env-file'], envVars: args['env-vars'] });
+})
+    .command('feedback mark-good <responseId>', 'Mark a response as helpful', (y) => y
+    .positional('responseId', { type: 'string', description: 'ID of the response file (without extension)' })
+    .option('note', { type: 'string', description: 'Optional note describing why the response was helpful' }), async (args) => {
+    const id = args.responseId;
+    if (!id) {
+        throw new Error('responseId is required');
+    }
+    await (0, feedback_1.markFeedback)(id, 'good', args.note);
+    console.log(`Marked ${id} as good`);
+})
+    .command('feedback mark-bad <responseId>', 'Flag a response for review', (y) => y
+    .positional('responseId', { type: 'string', description: 'ID of the response file (without extension)' })
+    .option('note', { type: 'string', description: 'Optional note describing why it needs improvement' }), async (args) => {
+    const id = args.responseId;
+    if (!id) {
+        throw new Error('responseId is required');
+    }
+    await (0, feedback_1.markFeedback)(id, 'bad', args.note);
+    console.log(`Marked ${id} as needing review`);
+})
+    .command('report summary', 'Show the most recent cycle statistics', () => { }, async () => {
+    await (0, report_1.reportSummary)();
 })
     .demandCommand(1, 'Specify a command')
     .strict()

@@ -49,7 +49,11 @@
       "$",
       "."
     ],
-    "min_message_length": 15
+    "min_message_length": 15,
+    "official_roles": [],
+    "official_users": [],
+    "seen_you_message": "I see an official reply already; react with 👀 or reply to me to continue.",
+    "seen_you_emoji": "👀"
   },
   "github": {
     "repos": [
@@ -71,7 +75,8 @@
       "bug",
       "help wanted",
       "good first issue"
-    ]
+    ],
+    "collaborators": []
   },
   "docs": {
     "base_url": "https://game.ci/docs",

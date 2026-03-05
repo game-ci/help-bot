@@ -3,6 +3,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parseFrontMatter } from '../utils/frontmatter'
 import { RESPONSES_DIR } from '../utils/paths'
+import { recordStat } from '../metrics'
 
 const MAX_LENGTH = 2000
 
@@ -33,7 +34,19 @@ async function postToWebhook(webhook: string, payload: Record<string, unknown>):
   return response.statusCode === 204 || response.statusCode === 200
 }
 
-export async function postDiscordResponses(dryRun = false): Promise<void> {
+async function sendSeenYouNotification(webhook: string, message: string): Promise<void> {
+  await postToWebhook(webhook, { content: message })
+}
+
+export interface PostDiscordOptions {
+  dryRun: boolean
+  allowOfficial?: boolean
+  forceReplyId?: string
+  seenYouMessage?: string
+  seenYouEmoji?: string
+}
+
+export async function postDiscordResponses(options: PostDiscordOptions): Promise<void> {
   const discordDir = join(RESPONSES_DIR, 'discord')
   let files: string[] = []
   try {
@@ -49,13 +62,27 @@ export async function postDiscordResponses(dryRun = false): Promise<void> {
   for (const file of files.filter((f) => f.endsWith('.md'))) {
     const fullPath = join(discordDir, file)
     const content = await readFile(fullPath, 'utf-8')
-    const { body } = parseFrontMatter(content)
-    const trimmed = body.trim()
-    if (!trimmed) {
+    const { meta, body } = parseFrontMatter(content)
+    const responseId = meta.response_id ?? file.replace(/\.md$/, '')
+    const isOfficial = String(meta.official_response)?.toLowerCase() === 'true'
+
+    if (isOfficial && !options.allowOfficial && options.forceReplyId !== responseId) {
+      console.log(`Skipping Discord response ${responseId} because an official contributor already replied.`)
+      recordStat('discordResponsesSkipped', 1)
+      if (!options.dryRun && options.seenYouMessage) {
+        const emojiPrefix = options.seenYouEmoji ? `${options.seenYouEmoji} ` : ''
+        await sendSeenYouNotification(webhook, `${emojiPrefix}${options.seenYouMessage}`)
+      }
       continue
     }
-    if (dryRun) {
+
+    if (options.dryRun) {
       console.log(`DRY RUN: would post Discord response from ${file}`)
+      continue
+    }
+
+    const trimmed = body.trim()
+    if (!trimmed) {
       continue
     }
     const chunks = splitContent(trimmed)
@@ -71,6 +98,7 @@ export async function postDiscordResponses(dryRun = false): Promise<void> {
       if (!success) {
         console.warn(`Failed to post Discord chunk ${index + 1}/${chunks.length} for ${file}`)
       }
+      recordStat('discordResponsesPosted', 1)
       await new Promise((resolve) => setTimeout(resolve, 1500))
     }
   }

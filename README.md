@@ -60,6 +60,32 @@ Other useful commands:
 
 All modes rely on the same instructions in `CLAUDE.md`, the same data layout under `data/`, and the same `automation/discord-token-helper.sh` logic for secure token handling.
 
+## Full sync coverage & cursor state
+
+- **Discord:** Every channel listed in `config.json` is synchronized, including threads and message history. Each cycle stores the latest processed snowflake per channel so repeated runs only grab new messages while still keeping the conversation history intact.
+- **GitHub:** All configured repositories are pulled via the GitHub API (issues, pull requests, comments, replies, review threads, and reactions). Releases and tag metadata are also persisted so the agents can reference version context.  
+- **Cursor state:** Sync markers (timestamps/IDs) live in `data/state.json` so each `gameci-help-bot cycle` only fetches the delta. You can reset a cursor to `0` or delete the state file to rehydrate from scratch when needed.
+
+## Reply control & overrides
+
+- **Official contributors:** Discord replies skip threads where an “official contributor” role (defined in `config.json.discord.official_roles`) has already replied, and GitHub replies skip issues/PRs where a listed collaborator (`config.json.github.collaborators`) has already contributed.  
+- **Override parameters:** `gameci-help-bot cycle` accepts `--skip-sync` to reuse existing data, `--force-reply <messageId>` to process a thread even if replies already exist, and `--reply-on-emoji <emoji>` so posting that emoji under a Discord message triggers a follow-up.  
+- **Seen-you reply:** When the bot detects that someone already responded, it can optionally post a configurable “I see you replied already” stub with a custom emoji so community members know the bot saw the answer but is standing by for a reaction trigger.
+
+## Metadata, feedback & reporting
+
+- **Reactions & goodness:** Every drafted response records associated metadata (reactions, good/bad flags, contributor tags) in `data/responses/feedback.jsonl` so maintainers can audit precision. Use `gameci-help-bot feedback mark-good <responseId>` or `mark-bad` to update sentiment.  
+- **Reports:** `gameci-help-bot report summary` prints cycle stats (messages examined, replies posted/skipped, reactions collected, releases/tags synced) and notes which threads were suppressed because of official contributors. Run this before merging or reviewing to understand how the bot performed.
+
+### Feedback & reporting commands
+
+| Command | Description |
+| --- | --- |
+| `gameci-help-bot feedback mark-good <responseId> [--note "why"]` | Accept the generated response as helpful and capture optional context for later review. |
+| `gameci-help-bot feedback mark-bad <responseId> [--note "why"]` | Flag the response so maintainers know it needs further attention. |
+| `gameci-help-bot report summary` | Shows the most recent cycle’s statistics, release/tag sync coverage, and the good/bad feedback totals. |
+ 
+
 ## Secure Discord token management
 
 The TypeScript CLI and automation scripts call `ensureDiscordToken()` before any Discord interaction. The helper:
