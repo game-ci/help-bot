@@ -165,6 +165,10 @@ async function vectorBake(options = {}) {
     await (0, fs_1.ensureDir)(persistDir);
     const python = await detectPython();
     await ensureLlamaIndex(python);
+    if (options.clean) {
+        const rm = await import('node:fs/promises').then((mod) => mod.rm);
+        await rm(persistDir, { recursive: true, force: true });
+    }
     const mode = options.docsOnly ? 'docs' : 'all';
     const env = Object.assign({}, process.env, {
         REPO_DIR: paths_1.REPO_ROOT,
@@ -172,6 +176,7 @@ async function vectorBake(options = {}) {
         EMBEDDING_MODEL: embeddingModel,
         COLLECTION_NAME: collectionName,
         MODE: mode,
+        QUERY: options.query ?? '',
     });
     const proc = (0, node_child_process_1.spawn)(python, ['-'], { cwd: paths_1.REPO_ROOT, env, stdio: ['pipe', 'inherit', 'inherit'] });
     proc.stdin.end(VECTOR_BAKE_SCRIPT);

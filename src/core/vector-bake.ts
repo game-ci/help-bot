@@ -7,6 +7,8 @@ import { ensureDir } from '../utils/fs'
 
 interface VectorBakeOptions {
   docsOnly?: boolean
+  query?: string
+  clean?: boolean
 }
 
 const VECTOR_BAKE_SCRIPT = String.raw`import glob
@@ -170,6 +172,10 @@ export async function vectorBake(options: VectorBakeOptions = {}): Promise<void>
   const python = await detectPython()
   await ensureLlamaIndex(python)
 
+  if (options.clean) {
+    const rm = await import('node:fs/promises').then((mod) => mod.rm)
+    await rm(persistDir, { recursive: true, force: true })
+  }
   const mode = options.docsOnly ? 'docs' : 'all'
   const env = Object.assign({}, process.env, {
     REPO_DIR: REPO_ROOT,
@@ -177,6 +183,7 @@ export async function vectorBake(options: VectorBakeOptions = {}): Promise<void>
     EMBEDDING_MODEL: embeddingModel,
     COLLECTION_NAME: collectionName,
     MODE: mode,
+    QUERY: options.query ?? '',
   })
 
   const proc = spawn(python, ['-'], { cwd: REPO_ROOT, env, stdio: ['pipe', 'inherit', 'inherit'] })
