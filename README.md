@@ -52,9 +52,9 @@ Responses log metadata in `data/responses/feedback.jsonl`; use `gameci-help-bot 
 
 ## Additional resources
 
-- `docs/sync-and-state.md` – GitHub/Discord sync coverage, cursor files, overrides/private roles, release/tag storage, and contributor filters.  
-- `docs/vector-knowledge.md` – LlamaIndex bake/query/clean commands, enabling/disabling opt-in vector search, and how to keep the store in sync with docs.  
-- `docs/feedback-reporting.md` – Feedback workflow, report output fields, and how the metrics/logging map back to responses.  
-- `docs/windows-secrets.md` – Secure Discord token helper behavior (keytar, DPAPI/keychain, prompts) and how CLI/automation reuse stored secrets.  
-- `.github/workflows/ci.yml` – Runs `npm run build` and `npm run lint` for every push/PR on `main`.  
-- `.claude/agents/` – Agent prompts (link to `CLAUDE.md` for behavior).  
+- [`docs/sync-and-state.md`](docs/sync-and-state.md) – GitHub/Discord sync coverage, cursor files, overrides/private roles, release/tag storage, and contributor filters.  
+- [`docs/vector-knowledge.md`](docs/vector-knowledge.md) – LlamaIndex bake/query/clean commands, enabling/disabling opt-in vector search, and how to keep the store in sync with docs.  
+- [`docs/feedback-reporting.md`](docs/feedback-reporting.md) – Feedback workflow, report output fields, and how the metrics/logging map back to responses.  
+- [`docs/windows-secrets.md`](docs/windows-secrets.md) – Secure Discord token helper behavior (keytar, DPAPI/keychain, prompts) and how CLI/automation reuse stored secrets.  
+- [`.github/workflows/ci.yml`](.github/workflows/ci.yml) – Runs `yarn lint` and `yarn build` (via `yarn install --frozen-lockfile`) for every push/PR on `main`.  
+- [`.claude/agents/`](.claude/agents/) – Agent prompts (link to `CLAUDE.md` for behavior).  
