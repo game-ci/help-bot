@@ -31,15 +31,38 @@
     }
   },
   "discord": {
-    "guild_id_env": "DISCORD_GUILD_ID",
-    "channels": [
-      "help",
-      "support",
-      "general",
-      "bugs",
-      "unity-builder",
-      "unity-test-runner",
-      "docker"
+    "system_prompt": "You are the GameCI help bot. You assist with Unity CI/CD, Docker, and build automation.",
+    "guilds": [
+      {
+        "name": "game-ci",
+        "guild_id_env": "DISCORD_GUILD_ID",
+        "webhook_url_env": "DISCORD_WEBHOOK_URL",
+        "channels": [
+          {
+            "name": "help",
+            "system_prompt": "Focus on troubleshooting Unity build issues and CI pipeline problems."
+          },
+          {
+            "name": "unity-builder",
+            "system_prompt": "You are an expert on game-ci/unity-builder GitHub Action. Help with configuration, custom builds, and Docker-based Unity builds."
+          },
+          {
+            "name": "support"
+          },
+          {
+            "name": "general"
+          },
+          {
+            "name": "bugs"
+          },
+          {
+            "name": "unity-test-runner"
+          },
+          {
+            "name": "docker"
+          }
+        ]
+      }
     ],
     "sync_hours": 6,
     "ignore_bots": true,
@@ -52,8 +75,8 @@
     "min_message_length": 15,
     "official_roles": [],
     "official_users": [],
-    "seen_you_message": "I see an official reply already; react with 👀 or reply to me to continue.",
-    "seen_you_emoji": "👀"
+    "seen_you_message": "I see an official reply already; react with \ud83d\udc40 or reply to me to continue.",
+    "seen_you_emoji": "\ud83d\udc40"
   },
   "github": {
     "repos": [

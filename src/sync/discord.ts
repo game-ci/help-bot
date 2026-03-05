@@ -1,9 +1,9 @@
 import { request } from 'undici'
 import { ensureDir, appendText } from '../utils/fs'
-import { DISCORD_DATA_DIR } from '../utils/paths'
-import { getConfig, getValue } from '../config'
+import { guildChannelDir } from '../utils/paths'
+import { getConfig, getValue, resolveGuilds, GuildConfig } from '../config'
 import { join } from 'node:path'
-import { loadState, saveState } from '../state'
+import { loadState, saveState, getGuildCursor, setGuildCursor } from '../state'
 import { recordStat } from '../metrics'
 
 const DISCORD_API = 'https://discord.com/api/v10'
@@ -35,61 +35,62 @@ async function fetchWithRetry(url: string, headers: Record<string, string>) {
   return res
 }
 
-export async function syncDiscord(): Promise<void> {
-  const token = process.env.DISCORD_BOT_TOKEN
-  const guildId = process.env.DISCORD_GUILD_ID
-  if (!token || !guildId) {
-    throw new Error('DISCORD_BOT_TOKEN and DISCORD_GUILD_ID are required')
+async function syncGuild(
+  guild: GuildConfig,
+  token: string,
+  config: Record<string, unknown>,
+): Promise<void> {
+  const guildId = process.env[guild.guild_id_env]
+  if (!guildId) {
+    console.warn(`Skipping guild "${guild.name}": env var ${guild.guild_id_env} is not set`)
+    return
   }
 
-  const config = await getConfig()
   const syncHours = Number(getValue(config, ['discord', 'sync_hours'], 6))
   const ignoreBots = Boolean(getValue(config, ['discord', 'ignore_bots'], true))
   const minMessage = Number(getValue(config, ['discord', 'min_message_length'], 15))
-  const ignorePrefixes = (getValue(config, ['discord', 'ignore_prefixes'], ['!', '/', '$', '.']) as string[])
-  const rawChannels = (getValue(config, ['discord', 'channels'], [
-    'help',
-    'support',
-    'general',
-    'bugs',
-    'unity-builder',
-    'unity-test-runner',
-    'docker',
-  ]) as string[])
+  const ignorePrefixes = getValue(config, ['discord', 'ignore_prefixes'], ['!', '/', '$', '.']) as string[]
+  const officialRoles = (getValue(config, ['discord', 'official_roles'], []) as string[]).map((role) =>
+    role.toLowerCase(),
+  )
+  const officialUsers = (getValue(config, ['discord', 'official_users'], []) as string[]).map((id) =>
+    id.toLowerCase(),
+  )
 
+  const channelNames = guild.channels.map((ch) => ch.name)
   const afterSnowflake = snowflakeFromHoursAgo(syncHours)
   const headers = buildHeaders(token)
 
   const channelResponse = await fetchWithRetry(`${DISCORD_API}/guilds/${guildId}/channels`, headers)
   if (channelResponse.statusCode >= 400) {
-    throw new Error(`Failed to list guild channels: ${channelResponse.statusCode}`)
+    throw new Error(`Failed to list guild channels for "${guild.name}": ${channelResponse.statusCode}`)
   }
   const channelList = JSON.parse(await channelResponse.body.text())
   const channels = Array.isArray(channelList) ? channelList : []
 
   const state = await loadState()
-  state.discord ??= {}
-  const officialRoles = ((getValue(config, ['discord', 'official_roles'], []) as string[]).map((role) => role.toLowerCase()))
-  const officialUsers = ((getValue(config, ['discord', 'official_users'], []) as string[]).map((id) => id.toLowerCase()))
-  await ensureDir(DISCORD_DATA_DIR)
 
-  for (const channelName of rawChannels) {
+  for (const channelName of channelNames) {
     const channel = channels.find((c: any) => c.name === channelName && c.type === 0)
     if (!channel) {
-      console.warn(`Channel ${channelName} not found, skipping.`)
+      console.warn(`Channel ${channelName} not found in guild "${guild.name}", skipping.`)
       continue
     }
     const channelId = channel.id
-    console.log(`Syncing channel ${channelName} (${channelId})...`)
+    console.log(`Syncing guild "${guild.name}" channel ${channelName} (${channelId})...`)
 
-    const storedCursor = state.discord[channelId]
+    const storedCursor = getGuildCursor(state, guild.name, channelId)
     let currentAfter = storedCursor ? BigInt(storedCursor) : afterSnowflake
+
+    const channelDir = guildChannelDir(guild.name, channelName)
+    await ensureDir(channelDir)
+
     while (true) {
       const url = `${DISCORD_API}/channels/${channelId}/messages?limit=100&after=${currentAfter}`
       const response = await fetchWithRetry(url, headers)
       const text = await response.body.text()
       if (response.statusCode !== 200) {
-        console.warn(`Discord API returned ${response.statusCode} for ${channelName}`)
+        console.warn(`Discord API returned ${response.statusCode} for ${channelName} in guild "${guild.name}"`)
         break
       }
 
@@ -98,7 +99,7 @@ export async function syncDiscord(): Promise<void> {
         break
       }
 
-      recordStat('discordMessagesSynced', messages.length)
+      recordStat('discordMessagesSynced', messages.length, guild.name)
 
       for (const msg of messages) {
         if (ignoreBots && msg?.author?.bot) {
@@ -125,12 +126,13 @@ export async function syncDiscord(): Promise<void> {
           timestamp,
           channel_id: channelId,
           channel_name: channelName,
+          guild_name: guild.name,
           is_bot: msg?.author?.bot ?? false,
           has_reply: Boolean(msg.referenced_message),
           message_type: msg.type ?? 0,
           is_official: isOfficial,
         })
-        const targetFile = join(DISCORD_DATA_DIR, channelName, `${dateKey}.jsonl`)
+        const targetFile = join(channelDir, `${dateKey}.jsonl`)
         await appendText(targetFile, `${record}\n`)
       }
 
@@ -143,7 +145,27 @@ export async function syncDiscord(): Promise<void> {
         break
       }
     }
-    state.discord[channelId] = currentAfter.toString()
+    setGuildCursor(state, guild.name, channelId, currentAfter.toString())
   }
   await saveState(state)
+}
+
+export async function syncDiscord(): Promise<void> {
+  const token = process.env.DISCORD_BOT_TOKEN
+  if (!token) {
+    throw new Error('DISCORD_BOT_TOKEN is required')
+  }
+
+  const config = await getConfig()
+  const discordConfig = getValue(config, ['discord'], {} as Record<string, unknown>)
+  const guilds = resolveGuilds(discordConfig)
+
+  if (guilds.length === 0) {
+    console.warn('No Discord guilds configured. Skipping Discord sync.')
+    return
+  }
+
+  for (const guild of guilds) {
+    await syncGuild(guild, token, config)
+  }
 }

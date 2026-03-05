@@ -7,21 +7,14 @@ export interface CycleStats {
   githubTagsSynced: number
   githubResponsesPosted: number
   githubResponsesSkipped: number
+  /** Per-guild Discord message sync counts */
+  discordGuildStats: Record<string, { messagesSynced: number }>
 }
 
-let currentStats: CycleStats = {
-  discordMessagesSynced: 0,
-  discordResponsesPosted: 0,
-  discordResponsesSkipped: 0,
-  githubIssuesSynced: 0,
-  githubReleasesSynced: 0,
-  githubTagsSynced: 0,
-  githubResponsesPosted: 0,
-  githubResponsesSkipped: 0,
-}
+let currentStats: CycleStats = makeEmptyStats()
 
-export function resetStats(): void {
-  currentStats = {
+function makeEmptyStats(): CycleStats {
+  return {
     discordMessagesSynced: 0,
     discordResponsesPosted: 0,
     discordResponsesSkipped: 0,
@@ -30,13 +23,35 @@ export function resetStats(): void {
     githubTagsSynced: 0,
     githubResponsesPosted: 0,
     githubResponsesSkipped: 0,
+    discordGuildStats: {},
   }
 }
 
-export function recordStat<K extends keyof CycleStats>(key: K, amount = 1): void {
-  currentStats[key] += amount
+export function resetStats(): void {
+  currentStats = makeEmptyStats()
+}
+
+/**
+ * Record a stat increment. When guildName is provided and the key is a Discord-related
+ * stat, per-guild tracking is also updated.
+ */
+export function recordStat<K extends keyof CycleStats>(key: K, amount = 1, guildName?: string): void {
+  if (key === 'discordGuildStats') {
+    // This key is an object, not a number -- don't increment directly
+    return
+  }
+  ;(currentStats[key] as number) += amount
+
+  // Per-guild tracking for Discord messages
+  if (guildName && key === 'discordMessagesSynced') {
+    currentStats.discordGuildStats[guildName] ??= { messagesSynced: 0 }
+    currentStats.discordGuildStats[guildName].messagesSynced += amount
+  }
 }
 
 export function getStats(): CycleStats {
-  return { ...currentStats }
+  return {
+    ...currentStats,
+    discordGuildStats: { ...currentStats.discordGuildStats },
+  }
 }

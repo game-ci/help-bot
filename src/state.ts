@@ -10,9 +10,18 @@ export interface GitHubRepoState {
   tagCursor?: string
 }
 
+export interface DiscordGuildCursors {
+  [channelId: string]: string
+}
+
 export interface SyncState {
   github?: Record<string, GitHubRepoState>
+  /** Legacy flat cursor map -- kept for backward compatibility */
   discord?: Record<string, string>
+  /** Per-guild cursor state: cursors.discord.{guildName}.{channelId} */
+  cursors?: {
+    discord?: Record<string, DiscordGuildCursors>
+  }
   meta?: Record<string, unknown>
 }
 
@@ -43,4 +52,17 @@ export async function updateState(mutator: (state: SyncState) => void): Promise<
   const state = await loadState()
   mutator(state)
   await saveState(state)
+}
+
+// --- Guild-namespaced cursor helpers ---
+
+export function getGuildCursor(state: SyncState, guildName: string, channelId: string): string | undefined {
+  return state.cursors?.discord?.[guildName]?.[channelId]
+}
+
+export function setGuildCursor(state: SyncState, guildName: string, channelId: string, cursor: string): void {
+  state.cursors ??= {}
+  state.cursors.discord ??= {}
+  state.cursors.discord[guildName] ??= {}
+  state.cursors.discord[guildName][channelId] = cursor
 }

@@ -3,6 +3,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parseFrontMatter } from '../utils/frontmatter'
 import { RESPONSES_DIR } from '../utils/paths'
+import { getConfig, getValue, resolveGuilds, GuildConfig } from '../config'
 import { recordStat } from '../metrics'
 
 const MAX_LENGTH = 2000
@@ -46,17 +47,38 @@ export interface PostDiscordOptions {
   seenYouEmoji?: string
 }
 
+/**
+ * Post Discord responses, iterating over configured guilds to resolve
+ * per-guild webhook URLs.
+ */
 export async function postDiscordResponses(options: PostDiscordOptions): Promise<void> {
+  const config = await getConfig()
+  const discordConfig = getValue(config, ['discord'], {} as Record<string, unknown>)
+  const guilds = resolveGuilds(discordConfig)
+
+  if (guilds.length === 0) {
+    console.warn('No Discord guilds configured. Skipping Discord posting.')
+    return
+  }
+
+  // Build a lookup from guild name to webhook URL
+  const guildWebhooks = new Map<string, string>()
+  for (const guild of guilds) {
+    const webhookUrl = process.env[guild.webhook_url_env]
+    if (webhookUrl) {
+      guildWebhooks.set(guild.name, webhookUrl)
+    }
+  }
+
+  // Fallback: global DISCORD_WEBHOOK_URL for any guild without a specific one
+  const globalWebhook = process.env.DISCORD_WEBHOOK_URL
+
   const discordDir = join(RESPONSES_DIR, 'discord')
   let files: string[] = []
   try {
     files = await readdir(discordDir)
   } catch {
     return
-  }
-  const webhook = process.env.DISCORD_WEBHOOK_URL
-  if (!webhook) {
-    throw new Error('DISCORD_WEBHOOK_URL is required to post Discord responses')
   }
 
   for (const file of files.filter((f) => f.endsWith('.md'))) {
@@ -65,6 +87,17 @@ export async function postDiscordResponses(options: PostDiscordOptions): Promise
     const { meta, body } = parseFrontMatter(content)
     const responseId = meta.response_id ?? file.replace(/\.md$/, '')
     const isOfficial = String(meta.official_response)?.toLowerCase() === 'true'
+
+    // Determine the webhook for this response
+    const responseGuild = meta.guild_name ?? ''
+    const webhook = guildWebhooks.get(responseGuild) ?? globalWebhook
+    if (!webhook) {
+      console.warn(
+        `Skipping Discord response ${responseId}: no webhook URL found for guild "${responseGuild}". ` +
+          'Set the appropriate env var or DISCORD_WEBHOOK_URL.',
+      )
+      continue
+    }
 
     if (isOfficial && !options.allowOfficial && options.forceReplyId !== responseId) {
       console.log(`Skipping Discord response ${responseId} because an official contributor already replied.`)

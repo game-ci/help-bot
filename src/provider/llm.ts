@@ -17,8 +17,11 @@ async function readClaudeInstructions(): Promise<string> {
   }
 }
 
-function combinePrompt(instructions: string, prompt: string): string {
-  return [instructions.trim(), prompt.trim()].filter(Boolean).join('\n\n')
+/**
+ * Combine instructions, an optional system prompt (from prompt layering), and the user prompt.
+ */
+function combinePrompt(instructions: string, prompt: string, systemPrompt?: string): string {
+  return [systemPrompt?.trim(), instructions.trim(), prompt.trim()].filter(Boolean).join('\n\n')
 }
 
 function normalizeUrl(url: string): string {
@@ -46,6 +49,7 @@ async function runLMStudio(
   baseUrl: string,
   model: string,
   apiKey: string,
+  systemPrompt?: string,
 ): Promise<void> {
   console.log(`Provider: LM Studio (url: ${baseUrl}, model: ${model})`)
   const endpoint = normalizeUrl(baseUrl)
@@ -57,6 +61,9 @@ ${fileContext}
 
 Note: You cannot read files directly. Describe which files you need and what responses to craft, and the workflow will write them on your behalf.`
 
+  // Build system message: optional systemPrompt + instructions
+  const systemContent = [systemPrompt?.trim(), instructions.trim()].filter(Boolean).join('\n\n')
+
   const response = await request(`${endpoint}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -66,7 +73,7 @@ Note: You cannot read files directly. Describe which files you need and what res
     body: JSON.stringify({
       model,
       messages: [
-        { role: 'system', content: instructions },
+        { role: 'system', content: systemContent },
         { role: 'user', content: userPrompt },
       ],
       max_tokens: 4096,
@@ -128,6 +135,8 @@ async function runCodex(
 
 export interface ProviderOptions {
   provider?: string
+  /** Layered system prompt from config (base + guild + channel) */
+  systemPrompt?: string
 }
 
 export async function runProvider(prompt: string, options: ProviderOptions = {}): Promise<void> {
@@ -136,34 +145,34 @@ export async function runProvider(prompt: string, options: ProviderOptions = {})
   const instructions = await readClaudeInstructions()
   switch (provider) {
     case 'claude': {
-      const model = (getValue(config, ['llm', 'claude', 'model'], 'claude-sonnet-4-20250514') as string)
-      const finalPrompt = combinePrompt(instructions, prompt)
+      const model = getValue(config, ['llm', 'claude', 'model'], 'claude-sonnet-4-20250514') as string
+      const finalPrompt = combinePrompt(instructions, prompt, options.systemPrompt)
       await runClaude(finalPrompt, model)
       break
     }
     case 'lm_studio': {
-      const baseUrl = (getValue(config, ['llm', 'lm_studio', 'base_url'], 'http://localhost:1234/v1') as string)
-      const model = (getValue(config, ['llm', 'lm_studio', 'model'], 'default') as string)
-      const apiKey = (getValue(config, ['llm', 'lm_studio', 'api_key'], 'lm-studio') as string)
-      await runLMStudio(prompt, instructions, baseUrl, model, apiKey)
+      const baseUrl = getValue(config, ['llm', 'lm_studio', 'base_url'], 'http://localhost:1234/v1') as string
+      const model = getValue(config, ['llm', 'lm_studio', 'model'], 'default') as string
+      const apiKey = getValue(config, ['llm', 'lm_studio', 'api_key'], 'lm-studio') as string
+      await runLMStudio(prompt, instructions, baseUrl, model, apiKey, options.systemPrompt)
       break
     }
     case 'continue': {
-      const model = (getValue(config, ['llm', 'continue_cli', 'model'], 'default') as string)
-      const finalPrompt = combinePrompt(instructions, prompt)
+      const model = getValue(config, ['llm', 'continue_cli', 'model'], 'default') as string
+      const finalPrompt = combinePrompt(instructions, prompt, options.systemPrompt)
       await runContinue(finalPrompt, model)
       break
     }
     case 'codex': {
-      const model = (getValue(config, ['llm', 'codex', 'model'], 'code-davinci-002') as string)
+      const model = getValue(config, ['llm', 'codex', 'model'], 'code-davinci-002') as string
       const temperature = Number(getValue(config, ['llm', 'codex', 'temperature'], 0.2))
       const maxTokens = Number(getValue(config, ['llm', 'codex', 'max_tokens'], 8192))
-      const apiBase = (getValue(config, ['llm', 'codex', 'api_base'], 'https://api.openai.com/v1') as string)
+      const apiBase = getValue(config, ['llm', 'codex', 'api_base'], 'https://api.openai.com/v1') as string
       const apiKey = process.env.OPENAI_API_KEY
       if (!apiKey) {
         throw new Error('OPENAI_API_KEY is required for Codex provider')
       }
-      const finalPrompt = combinePrompt(instructions, prompt)
+      const finalPrompt = combinePrompt(instructions, prompt, options.systemPrompt)
       await runCodex(finalPrompt, apiBase, apiKey, model, maxTokens, temperature)
       break
     }

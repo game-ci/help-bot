@@ -8,7 +8,7 @@ import { postDiscordResponses } from '../post/discord'
 import { postGitHubResponses } from '../post/github'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { getConfig, getValue } from '../config'
+import { getConfig, getValue, resolveGuilds, getSystemPrompt } from '../config'
 import { resetStats, getStats } from '../metrics'
 import { updateState } from '../state'
 
@@ -35,9 +35,17 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
   const skipSync = options.skipSync ?? process.env.SKIP_SYNC === 'true'
   const skipGithubPost = options.skipGithubPost ?? process.env.SKIP_GITHUB_POST === 'true'
 
+  const discordConfig = getValue(config, ['discord'], {} as Record<string, unknown>)
+  const guilds = resolveGuilds(discordConfig)
+  const hasGuilds = guilds.length > 0
+
   if (!skipSync) {
-    console.log('Syncing Discord...')
-    await syncDiscord()
+    if (hasGuilds) {
+      console.log('Syncing Discord...')
+      await syncDiscord()
+    } else {
+      console.log('No Discord guilds configured. Skipping Discord sync.')
+    }
     console.log('Syncing GitHub...')
     await syncGitHub()
     console.log('Syncing docs...')
@@ -45,6 +53,10 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
   } else {
     console.log('Skipping sync steps (skipSync=true)')
   }
+
+  // Build the layered system prompt from the first guild (base prompt applies to all)
+  // For a more granular per-channel approach, individual LLM calls per channel would be needed.
+  const systemPrompt = getSystemPrompt(discordConfig, guilds[0], guilds[0]?.channels?.[0])
 
   const claudeInstructions = await readFile(join(REPO_ROOT, 'CLAUDE.md'), 'utf-8').catch(() => '')
   const prompt = `${claudeInstructions}
@@ -54,18 +66,24 @@ Process the synced data under data/ and write structured responses into data/res
 `
 
   console.log('Running LLM provider...')
-  await runProvider(prompt, { provider: options.provider })
+  await runProvider(prompt, { provider: options.provider, systemPrompt })
 
-  console.log('Posting Discord responses (dry run: ' + dryRun + ')...')
-  const seenYouMessage = options.seenYouMessage ?? (getValue(config, ['discord', 'seen_you_message'], '') as string)
-  const seenYouEmoji = options.seenYouEmoji ?? (getValue(config, ['discord', 'seen_you_emoji'], '') as string)
-  await postDiscordResponses({
-    dryRun,
-    allowOfficial: options.allowOfficial,
-    forceReplyId: options.forceReplyId,
-    seenYouMessage: seenYouMessage || undefined,
-    seenYouEmoji: seenYouEmoji || undefined,
-  })
+  if (hasGuilds) {
+    console.log('Posting Discord responses (dry run: ' + dryRun + ')...')
+    const seenYouMessage =
+      options.seenYouMessage ?? (getValue(config, ['discord', 'seen_you_message'], '') as string)
+    const seenYouEmoji = options.seenYouEmoji ?? (getValue(config, ['discord', 'seen_you_emoji'], '') as string)
+    await postDiscordResponses({
+      dryRun,
+      allowOfficial: options.allowOfficial,
+      forceReplyId: options.forceReplyId,
+      seenYouMessage: seenYouMessage || undefined,
+      seenYouEmoji: seenYouEmoji || undefined,
+    })
+  } else {
+    console.log('No Discord guilds configured. Skipping Discord posting.')
+  }
+
   if (skipGithubPost) {
     console.log('Skipping GitHub posting (skipGithubPost=true)')
   } else {

@@ -1,15 +1,27 @@
 # Synced data (ephemeral, re-synced each cycle)
 # Keep directory structure via .gitkeep files
 data/discord/channels/
+data/discord/guilds/
 data/github/issues/*
 !data/github/issues/.gitkeep
 data/github/discussions/*
 !data/github/discussions/.gitkeep
+data/github/pulls/*
+data/github/releases/*
 data/docs/*.md
 data/responses/discord/*.md
 data/responses/github/*.md
+data/responses/feedback.jsonl
+data/state.json
 data/logs/
 data/vector-store/
+
+# Build output
+dist/
+
+# Yarn
+.yarn/
+.pnp.*
 
 # Self-hosted runner
 _runner/
