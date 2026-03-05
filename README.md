@@ -1,13 +1,13 @@
 # GameCI Help Bot
 
-TypeScript-first orchestrator for the GameCI Help Bot. It syncs Discord, GitHub, and docs, feeds the workspace into Claude/Continue/Codex (or your chosen provider), drafts replies, and posts them back to Discord and GitHub. The CLI follows the unity-builder style (`npm` scripts, clean command surface, secure token handling) so you can run it on Windows PowerShell, macOS, or Linux with the same experience.
+TypeScript-first orchestrator for the GameCI Help Bot. It syncs Discord, GitHub, and docs, feeds the workspace into Claude/Continue/Codex (or your chosen provider), drafts replies, and posts them back to Discord and GitHub. The CLI follows the unity-builder style (`yarn`/`npm` scripts, clean command surface, secure token handling) so you can run it on Windows PowerShell, macOS, or Linux with the same experience.
 
 ## Quick start
 
 1. **Install dependencies**
    ```powershell
    cd help-bot
-   npm install
+   yarn install
    ```
 2. **Set secrets**
    ```powershell
@@ -26,8 +26,8 @@ TypeScript-first orchestrator for the GameCI Help Bot. It syncs Discord, GitHub,
 
 | Command | Purpose |
 |---------|---------|
-| `npm run cycle` | Sync data → run the provider → post replies (incremental). |
-| `npm run continuous` | Live mode: loops with `bot.cycle_interval_minutes` between passes. |
+| `yarn cycle` / `npm run cycle` | Sync data → run the provider → post replies (incremental). |
+| `yarn continuous` / `npm run continuous` | Live mode: loops with `bot.cycle_interval_minutes` between passes. |
 | `gameci-help-bot sync-discord|sync-github|sync-docs` | Refresh each data source individually when troubleshooting. |
 | `gameci-help-bot vector-bake [-- --docs-only|--query ...|--clean]` | Manage the optional LlamaIndex store (bake/query/clean). |
 | `gameci-help-bot feedback mark-good|mark-bad` | Tag a bot response as helpful or needing improvement. |
@@ -52,5 +52,6 @@ Responses log metadata in `data/responses/feedback.jsonl`; use `gameci-help-bot 
 
 - `docs/sync-and-state.md` – GitHub/Discord sync coverage, cursor files, overrides/private roles, release/tag storage, and contributor filters.  
 - `docs/vector-knowledge.md` – LlamaIndex bake/query/clean commands, enabling/disabling opt-in vector search, and how to keep the store in sync with docs.  
-- `docs/feedback-reporting.md` – Feedback workflow, report output fields, and how the metrics/logging map back to responses.
+- `docs/feedback-reporting.md` – Feedback workflow, report output fields, and how the metrics/logging map back to responses.  
+- `.github/workflows/ci.yml` – Runs `npm run build` and `npm run lint` for every push/PR on `main`.
 - `.claude/agents/` – Agent prompts (link to `CLAUDE.md` for behavior).
