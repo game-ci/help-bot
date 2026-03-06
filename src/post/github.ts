@@ -22,7 +22,7 @@ export async function postGitHubResponses(options: PostGitHubOptions): Promise<v
   } catch {
     return
   }
-  for (const file of files.filter((f) => f.endsWith('.md'))) {
+  for (const file of files.filter((f) => f.endsWith('.md') && !f.includes('-investigation'))) {
     const fullPath = join(repoDir, file)
     const content = await readFile(fullPath, 'utf-8')
     const { meta, body } = parseFrontMatter(content)

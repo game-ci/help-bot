@@ -77,7 +77,8 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
   const localContext: string[] = []
   if (options.repoDir) {
     localContext.push(`The source code of the target repository is cloned locally at: ${options.repoDir}`)
-    localContext.push(`Read the code there to understand the project, its README, action.yml, Dockerfile, and implementation details.`)
+    localContext.push(`You MUST read action.yml and search the source code before suggesting any parameters, env vars, or features.`)
+    localContext.push(`Key files: action.yml (all input params), src/model/ (input parsing), dist/platforms/ (platform logic), Dockerfile`)
   }
   if (options.docsDir) {
     localContext.push(`The GameCI documentation site is cloned locally at: ${options.docsDir}`)
@@ -94,7 +95,15 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
 You are running a GitHub-only help cycle for the GameCI Community Help Bot.
 Process the synced GitHub issues under data/github/issues/ and write structured responses into data/responses/github/.${repoContext}
 ${localContextBlock}
-For each issue that needs help, read the issue markdown file, understand the problem, search the local repo code and docs for relevant context, then write a response file.
+For each issue worth responding to, follow this workflow:
+1. Read the issue markdown file fully — understand the exact problem, error, platform, Unity version.
+2. Search the repo source code (action.yml, src/, Dockerfile) to verify any parameters or features you plan to suggest.
+3. Search documentation for relevant pages.
+4. Search data/github/issues/ for related or duplicate issues.
+5. Write an investigation file to data/responses/github/{repo-slug}-{number}-investigation.md documenting what you found, what you verified, and your response strategy.
+6. Write the response file to data/responses/github/{repo-slug}-{number}.md with only verified, accurate information.
+
+Do NOT skip the investigation step. Do NOT suggest parameters or features without verifying them in the source code first.
 `
     : `${claudeInstructions}
 
