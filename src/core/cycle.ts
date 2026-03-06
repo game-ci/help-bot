@@ -16,7 +16,8 @@ import { getConfig, getValue, resolveGuilds, getSystemPrompt } from '../config'
 import { resetStats, getStats } from '../metrics'
 import { updateState } from '../state'
 import { scanSyncedIssues, writeSecurityReport } from '../security'
-import { runDispatch, markDispatched, closeDispatchedDetections, DispatchConfig, DispatchMode } from '../dispatch'
+import { runDispatch, markDispatched, closeDispatchedDetections, reactInvestigationStarted, reactInvestigationComplete, reactInvestigationFailed, DispatchConfig, DispatchMode } from '../dispatch'
+import { notifyCycleSummary } from '../notify'
 
 async function copyDirRecursive(src: string, dest: string): Promise<void> {
   if (!existsSync(src)) return
@@ -370,8 +371,44 @@ In the response:
 Process the synced data under data/ and write structured responses into data/responses/discord and data/responses/github.`
   }
 
+  // React 'eyes' on detection issues to indicate investigation is starting
+  if (dispatchConfig.mode !== 'auto' && approvedIssues && options.repos?.length) {
+    const investigationRepo = options.investigationRepo ?? (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
+    await reactInvestigationStarted({
+      approvedIssues,
+      fullRepo: options.repos[0],
+      targetRepo: investigationRepo,
+      dryRun,
+    })
+  }
+
   console.log('Running LLM provider...')
-  await runProvider(prompt, { provider: options.provider, systemPrompt })
+  let llmFailed = false
+  try {
+    await runProvider(prompt, { provider: options.provider, systemPrompt })
+  } catch (error: any) {
+    console.error(`LLM provider failed: ${error.message ?? error}`)
+    llmFailed = true
+    // React 'confused' on detection issues to indicate failure
+    if (dispatchConfig.mode !== 'auto' && approvedIssues && options.repos?.length) {
+      const investigationRepo = options.investigationRepo ?? (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
+      await reactInvestigationFailed({
+        approvedIssues,
+        fullRepo: options.repos[0],
+        targetRepo: investigationRepo,
+        dryRun,
+      })
+    }
+  }
+
+  if (llmFailed) {
+    await updateState((state) => {
+      state.meta ??= {}
+      state.meta.lastCycleStats = getStats()
+      state.meta.lastCycleAt = new Date().toISOString()
+    })
+    return
+  }
 
   if (hasGuilds) {
     console.log('Posting Discord responses (dry run: ' + dryRun + ')...')
@@ -431,13 +468,28 @@ Process the synced data under data/ and write structured responses into data/res
     })
   }
 
-  // Post-dispatch cleanup: mark dispatched detections and close them
+  // Post-dispatch cleanup: mark dispatched detections, react with status, and close them
   if (dispatchConfig.mode !== 'auto' && approvedIssues && options.repos?.length) {
     const investigationRepo = options.investigationRepo ?? (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
     await markDispatched(approvedIssues, options.repos[0])
+
+    // React with checkmark on detection issues to indicate successful completion
+    await reactInvestigationComplete({
+      fullRepo: options.repos[0],
+      targetRepo: investigationRepo,
+      dryRun,
+    })
+
     if (dispatchConfig.close_on_dispatch) {
       await closeDispatchedDetections({ targetRepo: investigationRepo, dryRun })
     }
+  }
+
+  // Discord DM notifications (opt-in, skips if not configured)
+  try {
+    await notifyCycleSummary({ dryRun, stats, repos: options.repos ?? [] })
+  } catch (error: any) {
+    console.warn(`Discord DM notifications failed: ${error.message ?? error}`)
   }
 
   await updateState((state) => {

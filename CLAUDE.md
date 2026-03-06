@@ -465,6 +465,61 @@ Cycle reports have built-in spam prevention:
 
 Reports are posted as GitHub issues with labels `help-bot` and `cycle-report`.
 
+### Discord DM Notifications
+
+Maintainers can opt in to receive direct messages from the bot on Discord when notable events occur. This feature is disabled by default and requires explicit configuration.
+
+#### Configuration
+
+In `config.json`:
+```json
+{
+  "notifications": {
+    "discord_dm": {
+      "enabled": false,
+      "recipients": [
+        {
+          "discord_user_id": "123456789012345678",
+          "github_username": "maintainer-name",
+          "filters": {
+            "new_detections": true,
+            "approvals": true,
+            "countdown_warnings": true,
+            "investigations_complete": true,
+            "cycle_reports": false
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+#### Notification Types
+
+| Filter | Triggers When |
+|--------|--------------|
+| `new_detections` | New detection issues are created for eligible source issues |
+| `approvals` | Issues are approved for investigation (by reaction or countdown expiry) |
+| `countdown_warnings` | Countdown warning stages are posted to detection issues |
+| `investigations_complete` | Investigation issues are posted after LLM analysis |
+| `cycle_reports` | A cycle completes with meaningful activity |
+
+Each recipient can independently enable/disable each notification type. Setting a filter to `false` suppresses that notification type for that recipient.
+
+#### Requirements
+
+- `DISCORD_BOT_TOKEN` must be set (the bot needs permissions to create DM channels)
+- The bot must share a server with the recipient (Discord requirement for DMs)
+- Recipients provide their Discord user ID (not username — the numeric snowflake ID)
+
+#### Source Files
+
+| File | Purpose |
+|------|---------|
+| `src/notify/discord-dm.ts` | DM notification logic, Discord API integration |
+| `src/notify/index.ts` | Barrel exports |
+
 ### Notes
 
 - Do not edit `data/` manually; it is regenerated per cycle.

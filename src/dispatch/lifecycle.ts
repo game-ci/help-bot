@@ -7,6 +7,115 @@ import { makeDetectionKey } from './types'
 const execFileAsync = promisify(execFile)
 
 /**
+ * Add a reaction emoji to a detection issue via GitHub API.
+ * Used to show investigation status on the detection issue itself.
+ *
+ * Reactions: 'eyes' (investigating), 'rocket' (dispatched),
+ * '+1' (approved), 'heart' (complete), 'confused' (failed)
+ */
+async function addReaction(
+  repo: string,
+  issueNumber: number,
+  reaction: string,
+): Promise<void> {
+  try {
+    await execFileAsync('gh', [
+      'api',
+      `repos/${repo}/issues/${issueNumber}/reactions`,
+      '--method', 'POST',
+      '--header', 'Accept: application/vnd.github+json',
+      '--field', `content=${reaction}`,
+    ])
+  } catch (error: any) {
+    console.warn(`  Failed to add ${reaction} reaction to #${issueNumber}: ${error.message ?? error}`)
+  }
+}
+
+/**
+ * React on detection issues to indicate investigation has started.
+ * Adds an 'eyes' emoji to show the bot is investigating.
+ */
+export async function reactInvestigationStarted(options: {
+  approvedIssues: EligibleIssue[]
+  fullRepo: string
+  targetRepo: string
+  dryRun: boolean
+}): Promise<void> {
+  const state = await loadState()
+  const detections = getDetections(state)
+
+  for (const issue of options.approvedIssues) {
+    const key = makeDetectionKey(options.fullRepo, issue.number)
+    const record = detections[key]
+    if (!record) continue
+
+    if (options.dryRun) {
+      console.log(`  DRY RUN: would react 'eyes' on detection #${record.detectionIssueNumber}`)
+      continue
+    }
+
+    await addReaction(options.targetRepo, record.detectionIssueNumber, 'eyes')
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+}
+
+/**
+ * React on detection issues to indicate investigation completed successfully.
+ * Adds a checkmark ('+1') emoji. Called after investigations post successfully.
+ */
+export async function reactInvestigationComplete(options: {
+  fullRepo: string
+  targetRepo: string
+  dryRun: boolean
+}): Promise<void> {
+  const state = await loadState()
+  const detections = getDetections(state)
+  const postedInvestigations = getPostedInvestigations(state)
+
+  for (const [key, record] of Object.entries(detections)) {
+    if (record.status !== 'dispatched') continue
+    // Only react if an investigation was actually posted for this detection
+    if (!postedInvestigations[key]) continue
+
+    if (options.dryRun) {
+      console.log(`  DRY RUN: would react 'checkmark' on detection #${record.detectionIssueNumber}`)
+      continue
+    }
+
+    await addReaction(options.targetRepo, record.detectionIssueNumber, 'heart')
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+}
+
+/**
+ * React on detection issues to indicate investigation failed.
+ * Adds a 'confused' (X-like) emoji. Called when LLM or posting fails.
+ */
+export async function reactInvestigationFailed(options: {
+  approvedIssues: EligibleIssue[]
+  fullRepo: string
+  targetRepo: string
+  dryRun: boolean
+}): Promise<void> {
+  const state = await loadState()
+  const detections = getDetections(state)
+
+  for (const issue of options.approvedIssues) {
+    const key = makeDetectionKey(options.fullRepo, issue.number)
+    const record = detections[key]
+    if (!record) continue
+
+    if (options.dryRun) {
+      console.log(`  DRY RUN: would react 'confused' on detection #${record.detectionIssueNumber}`)
+      continue
+    }
+
+    await addReaction(options.targetRepo, record.detectionIssueNumber, 'confused')
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+}
+
+/**
  * Mark detection records as 'dispatched' for all issues that were
  * included in the LLM manifest this cycle.
  */

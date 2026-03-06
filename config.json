@@ -135,6 +135,12 @@
     "target_repo": "game-ci/help-bot",
     "labels": ["help-bot", "investigation"]
   },
+  "notifications": {
+    "discord_dm": {
+      "enabled": false,
+      "recipients": []
+    }
+  },
   "docker": {
     "image_name": "gameci-help-bot",
     "container_name": "gameci-help-bot",
