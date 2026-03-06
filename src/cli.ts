@@ -97,6 +97,39 @@ yargs(hideBin(process.argv))
   .command('report summary', 'Show the most recent cycle statistics', () => {}, async () => {
     await reportSummary()
   })
+  .command('security-test', 'run prompt injection security tests', () => {}, async () => {
+    const { runSecurityTests } = await import('./security/index.js')
+    const results = runSecurityTests()
+    let passed = 0
+    let failed = 0
+    for (const r of results) {
+      const status = r.passed ? 'PASS' : 'FAIL'
+      console.log(`[${status}] ${r.name}: expected=${r.expected}, actual=${r.actual}`)
+      if (r.passed) passed++
+      else failed++
+    }
+    console.log(`\n${passed} passed, ${failed} failed out of ${results.length} tests`)
+    if (failed > 0) process.exit(1)
+  })
+  .command('security-scan <repo>', 'scan synced issues for prompt injection', (y) => y
+    .positional('repo', { type: 'string', description: 'Repo slug (e.g. game-ci-unity-builder)' })
+  , async (args) => {
+    const { scanSyncedIssues, writeSecurityReport } = await import('./security/index.js')
+    const slug = args.repo
+    if (!slug) throw new Error('repo slug required')
+    console.log(`Scanning ${slug}...`)
+    const findings = await scanSyncedIssues(slug)
+    const dateStr = new Date().toISOString().split('T')[0]
+    if (findings.length > 0) {
+      const reportPath = await writeSecurityReport(findings, dateStr)
+      console.log(`Found ${findings.length} findings. Report: ${reportPath}`)
+      for (const f of findings) {
+        console.log(`  [${f.severity.toUpperCase()}] ${f.pattern} in ${f.location}${f.lineNumber ? `:${f.lineNumber}` : ''}: ${f.matchedText.substring(0, 80)}`)
+      }
+    } else {
+      console.log('No security concerns found.')
+    }
+  })
   .demandCommand(1, 'Specify a command')
   .strict()
   .help()
