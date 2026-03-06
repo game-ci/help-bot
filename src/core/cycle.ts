@@ -1,16 +1,37 @@
 import { ensureDir } from '../utils/fs'
-import { RESPONSES_DIR, LOGS_DIR, REPO_ROOT } from '../utils/paths'
+import { RESPONSES_DIR, LOGS_DIR, REPO_ROOT, DATA_DIR } from '../utils/paths'
 import { syncDiscord } from '../sync/discord'
 import { syncGitHub } from '../sync/github'
 import { syncDocs } from '../sync/docs'
 import { runProvider, ProviderOptions } from '../provider/llm'
 import { postDiscordResponses } from '../post/discord'
 import { postGitHubResponses } from '../post/github'
-import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { readdir, copyFile, readFile, mkdir } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { getConfig, getValue, resolveGuilds, getSystemPrompt } from '../config'
 import { resetStats, getStats } from '../metrics'
 import { updateState } from '../state'
+
+async function copyDirRecursive(src: string, dest: string): Promise<void> {
+  if (!existsSync(src)) return
+  await mkdir(dest, { recursive: true })
+  const entries = await readdir(src, { withFileTypes: true })
+  for (const entry of entries) {
+    const srcPath = join(src, entry.name)
+    const destPath = join(dest, entry.name)
+    if (entry.isDirectory()) {
+      // Skip node_modules, .git, dist, and other large directories
+      if (['node_modules', '.git', 'dist', 'build', '__pycache__'].includes(entry.name)) continue
+      await copyDirRecursive(srcPath, destPath)
+    } else {
+      // Only copy text files the LLM can read
+      if (/\.(ts|js|md|yml|yaml|json|sh|dockerfile|txt|css|html)$/i.test(entry.name) || entry.name === 'Dockerfile') {
+        await copyFile(srcPath, destPath)
+      }
+    }
+  }
+}
 
 export interface CycleOptions extends ProviderOptions {
   dryRun?: boolean
@@ -44,7 +65,32 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
   const guilds = githubOnly ? [] : resolveGuilds(discordConfig)
   const hasGuilds = guilds.length > 0
 
-  const hasLocalRepos = Boolean(options.repoDir || options.docsDir)
+  // Copy reference files from local repos into data/reference/ so the LLM can access them
+  // (claude -p sandboxes file access to the project directory)
+  const refDir = join(DATA_DIR, 'reference')
+  if (options.repoDir || options.docsDir) {
+    await ensureDir(refDir)
+    if (options.repoDir) {
+      const repoRefDir = join(refDir, 'repo')
+      await ensureDir(repoRefDir)
+      // Copy key reference files
+      const filesToCopy = ['action.yml', 'README.md', 'Dockerfile', 'package.json']
+      for (const f of filesToCopy) {
+        const src = join(options.repoDir, f)
+        if (existsSync(src)) {
+          await copyFile(src, join(repoRefDir, f))
+        }
+      }
+      // Copy src/ directory tree (shallow — just .ts files for grepping)
+      await copyDirRecursive(join(options.repoDir, 'src'), join(repoRefDir, 'src'))
+      console.log(`Copied reference files from ${options.repoDir} to ${repoRefDir}`)
+    }
+    if (options.docsDir) {
+      const docsRefDir = join(refDir, 'docs')
+      await copyDirRecursive(join(options.docsDir, 'docs'), docsRefDir)
+      console.log(`Copied documentation from ${options.docsDir}/docs to ${docsRefDir}`)
+    }
+  }
 
   if (!skipSync) {
     if (hasGuilds) {
@@ -71,45 +117,113 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
     ? getSystemPrompt(discordConfig, guilds[0], guilds[0]?.channels?.[0])
     : getValue(discordConfig, ['system_prompt'], '') as string
 
-  const claudeInstructions = await readFile(join(REPO_ROOT, 'CLAUDE.md'), 'utf-8').catch(() => '')
-
-  // Build local repo context for the prompt
-  const localContext: string[] = []
-  if (options.repoDir) {
-    localContext.push(`The source code of the target repository is cloned locally at: ${options.repoDir}`)
-    localContext.push(`You MUST read action.yml and search the source code before suggesting any parameters, env vars, or features.`)
-    localContext.push(`Key files: action.yml (all input params), src/model/ (input parsing), dist/platforms/ (platform logic), Dockerfile`)
-  }
-  if (options.docsDir) {
-    localContext.push(`The GameCI documentation site is cloned locally at: ${options.docsDir}`)
-    localContext.push(`Read the docs there (look under docs/ for markdown content) to find answers and reference material.`)
-  }
-  const localContextBlock = localContext.length
-    ? `\n\nLocal repositories available:\n${localContext.join('\n')}\n`
-    : ''
+  // Note: CLAUDE.md is NOT loaded here — it's auto-loaded by Claude Code from cwd,
+  // and llm.ts includes it for non-Claude providers. Avoids triple-loading.
 
   const repoContext = options.repos?.length ? ` Focus on: ${options.repos.join(', ')}.` : ''
-  const prompt = githubOnly
-    ? `${claudeInstructions}
 
-You are running a GitHub-only help cycle for the GameCI Community Help Bot.
-Process the synced GitHub issues under data/github/issues/ and write structured responses into data/responses/github/.${repoContext}
-${localContextBlock}
-For each issue worth responding to, follow this workflow:
-1. Read the issue markdown file fully — understand the exact problem, error, platform, Unity version.
-2. Search the repo source code (action.yml, src/, Dockerfile) to verify any parameters or features you plan to suggest.
-3. Search documentation for relevant pages.
-4. Search data/github/issues/ for related or duplicate issues.
-5. Write an investigation file to data/responses/github/{repo-slug}-{number}-investigation.md documenting what you found, what you verified, and your response strategy.
-6. Write the response file to data/responses/github/{repo-slug}-{number}.md with only verified, accurate information.
+  // Build the github-only prompt with explicit tool usage instructions
+  let prompt: string
+  if (githubOnly) {
+    const sections: string[] = []
 
-Do NOT skip the investigation step. Do NOT suggest parameters or features without verifying them in the source code first.
-`
-    : `${claudeInstructions}
+    sections.push(`You are running a GitHub-only help cycle for the GameCI Community Help Bot.${repoContext}`)
 
-You are running a help cycle for the GameCI Community Help Bot.
-Process the synced data under data/ and write structured responses into data/responses/discord and data/responses/github.
-`
+    // Local repo instructions — reference files are copied into data/reference/ within the sandbox
+    if (options.repoDir) {
+      sections.push(`## Source Code Access
+
+The target repository source code has been copied to: data/reference/repo/
+Key files available:
+- data/reference/repo/action.yml — ALL valid input parameters (READ THIS FIRST)
+- data/reference/repo/README.md — Usage examples and documentation
+- data/reference/repo/Dockerfile — Container setup and environment
+- data/reference/repo/src/ — TypeScript source code (searchable with Grep)
+
+BEFORE responding to any issue, you MUST:
+
+1. Use the Read tool to read data/reference/repo/action.yml — this is the canonical list of ALL parameters.
+   Do this FIRST, before processing any issues. Memorize what parameters exist.
+2. Use Grep to search data/reference/repo/src/ for any env var or feature you plan to suggest.
+3. Use Read on specific source files when you need to understand behavior.
+
+NEVER suggest a parameter that does not appear in action.yml.
+NEVER suggest an env var without first grep-confirming it exists in the source code.
+If you cannot verify something, either omit it or explicitly say it is unverified.`)
+    }
+
+    if (options.docsDir) {
+      sections.push(`## Documentation Access
+
+The GameCI documentation has been copied to: data/reference/docs/
+Use Grep to search for relevant topics. Use Read to get full page content.`)
+    }
+
+    sections.push(`## Workflow — Process ONE issue at a time
+
+For each issue:
+
+### Step 1: Read the issue
+Use the Read tool on data/github/issues/{repo-slug}/{number}.md to read the full issue with all comments.
+
+### Step 2: Decide whether to respond
+Skip if: author is a collaborator (check config.json github.collaborators), issue is closed,
+a maintainer already responded, issue has skip labels, or issue is stale (>90 days, no recent activity).
+
+### Step 3: Investigate (use tools — do not guess)
+- Read data/reference/repo/action.yml to verify any parameters you plan to mention
+- Grep data/reference/repo/src/ for any env vars, features, or error handling you plan to reference
+- Grep data/reference/docs/ for relevant documentation pages
+- Grep data/github/issues/ for related issues (similar errors, same platform)
+
+### Step 4: Write investigation file
+Write to data/responses/github/{repo-slug}-{number}-investigation.md with this format:
+
+\`\`\`markdown
+---
+type: investigation
+issue_number: {number}
+repo: {owner/repo}
+---
+
+## Problem
+[1-2 sentence summary]
+
+## Key Details
+- Error: [exact error from issue]
+- Unity version: [from issue]
+- Platform: [from issue]
+
+## Source Verification
+Each item below was checked using Read or Grep tools:
+
+- VERIFIED: \`paramName\` exists in action.yml — [quote the description]
+- VERIFIED: \`envVar\` found in src/path/file.ts line N — [what it does]
+- NOT FOUND: \`someFeature\` — searched src/ and action.yml, does not exist. Will not suggest.
+- UNVERIFIED: [thing you couldn't check — will note as uncertain in response]
+
+## Related Issues
+- #{number}: [brief relevance]
+
+## Response Plan
+[What you will suggest and why, grounded in verified findings]
+\`\`\`
+
+### Step 5: Write response file
+Write to data/responses/github/{repo-slug}-{number}.md — only include verified information.
+
+## Critical Rules
+- Process at most ${String(getValue(config, ['bot', 'max_responses_per_cycle'], 10))} issues per cycle.
+- Every parameter you mention MUST appear in action.yml (verified by Read tool).
+- Every env var you mention MUST appear in the source code (verified by Grep tool).
+- No emoji. No "Hi @user!" greetings. No "🚀" sign-offs. Professional tone.
+- You are a community helper, not a maintainer. Never say "we will fix" or "action items".`)
+
+    prompt = sections.join('\n\n')
+  } else {
+    prompt = `You are running a help cycle for the GameCI Community Help Bot.
+Process the synced data under data/ and write structured responses into data/responses/discord and data/responses/github.`
+  }
 
   console.log('Running LLM provider...')
   await runProvider(prompt, { provider: options.provider, systemPrompt })

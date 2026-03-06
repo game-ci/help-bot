@@ -11,7 +11,7 @@
     "provider": "claude",
     "claude": {
       "model": "claude-sonnet-4-20250514",
-      "max_turns": 30,
+      "max_turns": 75,
       "command": "claude -p"
     },
     "lm_studio": {

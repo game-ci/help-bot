@@ -33,9 +33,13 @@ function listDataFiles(limit = 150): string {
   return files.slice(0, limit).join('\n')
 }
 
-async function runClaude(prompt: string, model: string): Promise<void> {
-  console.log(`Provider: Claude Code CLI (model: ${model})`)
-  const proc = spawn('claude', ['-p', '--model', model], {
+async function runClaude(prompt: string, model: string, maxTurns?: number): Promise<void> {
+  const args = ['-p', '--model', model]
+  if (maxTurns && maxTurns > 0) {
+    args.push('--max-turns', String(maxTurns))
+  }
+  console.log(`Provider: Claude Code CLI (model: ${model}, max_turns: ${maxTurns ?? 'default'})`)
+  const proc = spawn('claude', args, {
     cwd: REPO_ROOT,
     stdio: ['pipe', 'inherit', 'inherit'],
   })
@@ -146,8 +150,11 @@ export async function runProvider(prompt: string, options: ProviderOptions = {})
   switch (provider) {
     case 'claude': {
       const model = getValue(config, ['llm', 'claude', 'model'], 'claude-sonnet-4-20250514') as string
-      const finalPrompt = combinePrompt(instructions, prompt, options.systemPrompt)
-      await runClaude(finalPrompt, model)
+      const maxTurns = Number(getValue(config, ['llm', 'claude', 'max_turns'], 0)) || undefined
+      // Claude Code auto-loads CLAUDE.md from cwd, so only include the cycle-specific prompt.
+      // The instructions from readClaudeInstructions() are skipped for Claude to avoid triple-loading.
+      const finalPrompt = [options.systemPrompt?.trim(), prompt.trim()].filter(Boolean).join('\n\n')
+      await runClaude(finalPrompt, model, maxTurns)
       break
     }
     case 'lm_studio': {

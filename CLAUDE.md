@@ -37,16 +37,31 @@ Before suggesting any parameter, env var, CLI flag, or feature in a response:
 3. **Search the documentation** clone (if available) for the feature. If it's not documented and not in the source, it probably doesn't exist.
 4. **If unsure, say so.** "You might try X if it's supported" or "Check the action.yml for available parameters" is far better than confidently suggesting a non-existent feature.
 
-When local repo clones are available (via `--repo-dir` and `--docs-dir`), you MUST read the actual source files to verify your suggestions. Key files to check:
+When local repo clones are available (via `--repo-dir` and `--docs-dir`), you MUST use the Read and Grep tools to verify your suggestions against the actual source files. Key files to check:
 
-- `action.yml` — All input parameters and their descriptions
+- `action.yml` — All input parameters and their descriptions. **Read this FIRST before processing any issues.**
 - `src/model/` — Input parsing, platform detection, build configuration
 - `dist/platforms/` — Platform-specific build logic
 - `Dockerfile` — Container setup, environment variables
 - `README.md` — Usage examples and documented features
 - Documentation repo `docs/` directory — Official documentation pages
 
+**You have tool access.** Use the Read tool to read files. Use Grep to search for strings. Do not generate answers from memory when the source code is right there.
+
 **Accuracy is more important than comprehensiveness.** A short, correct response with 2 verified suggestions beats a long response with 5 suggestions where 2 are fabricated.
+
+### Verification Proof Format
+
+Investigation files must record proof of verification using this format:
+
+```
+- VERIFIED: `paramName` exists in action.yml — "description from action.yml"
+- VERIFIED: `ENV_VAR` found in src/path/file.ts line 42 — used for X
+- NOT FOUND: `madeUpParam` — searched action.yml and src/, does not exist
+- UNVERIFIED: `-logFile` flag — Unity CLI flag, not in GameCI source (will note as Unity feature, not GameCI)
+```
+
+Every technical claim in a response must trace back to a VERIFIED or UNVERIFIED entry in the investigation file. If you cannot verify something, either omit it or explicitly mark it as unverified in both the investigation and the response.
 
 ### Tone & Style
 
