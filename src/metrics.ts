@@ -7,6 +7,8 @@ export interface CycleStats {
   githubTagsSynced: number
   githubResponsesPosted: number
   githubResponsesSkipped: number
+  investigationIssuesPosted: number
+  investigationIssuesSkipped: number
   /** Per-guild Discord message sync counts */
   discordGuildStats: Record<string, { messagesSynced: number }>
 }
@@ -23,6 +25,8 @@ function makeEmptyStats(): CycleStats {
     githubTagsSynced: 0,
     githubResponsesPosted: 0,
     githubResponsesSkipped: 0,
+    investigationIssuesPosted: 0,
+    investigationIssuesSkipped: 0,
     discordGuildStats: {},
   }
 }

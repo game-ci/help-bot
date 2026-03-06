@@ -6,6 +6,7 @@ import { syncDocs } from '../sync/docs'
 import { runProvider, ProviderOptions } from '../provider/llm'
 import { postDiscordResponses } from '../post/discord'
 import { postGitHubResponses } from '../post/github'
+import { postInvestigationIssues } from '../post/investigations'
 import { join } from 'node:path'
 import { readdir, copyFile, readFile, mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -45,6 +46,8 @@ export interface CycleOptions extends ProviderOptions {
   repos?: string[]
   repoDir?: string
   docsDir?: string
+  investigationIssues?: boolean
+  investigationRepo?: string
 }
 
 export async function runCycle(options: CycleOptions = {}): Promise<void> {
@@ -170,13 +173,35 @@ Use the Read tool on data/github/issues/{repo-slug}/{number}.md to read the full
 Skip if: author is a collaborator (check config.json github.collaborators), issue is closed,
 a maintainer already responded, issue has skip labels, or issue is stale (>90 days, no recent activity).
 
-### Step 3: Investigate (use tools — do not guess)
+### Step 3: Search for related issues
+Before investigating the issue itself, search for related issues:
+- Grep data/github/issues/ for the same error messages, platform keywords, and symptoms
+- Look for issues with overlapping labels (e.g., "macOS", "self-hosted", "docker")
+- Check if multiple users report the same root cause under different titles
+- Note ALL related issue numbers — these will go in your investigation
+
+This step is CRITICAL. Many issues are symptoms of the same underlying problem. Your job is to
+connect the dots and identify patterns that individual reporters cannot see.
+
+### Step 4: Investigate (use tools — do not guess)
 - Read data/reference/repo/action.yml to verify any parameters you plan to mention
 - Grep data/reference/repo/src/ for any env vars, features, or error handling you plan to reference
 - Grep data/reference/docs/ for relevant documentation pages
-- Grep data/github/issues/ for related issues (similar errors, same platform)
+- Trace the code path that causes the reported error — find the exact file and line
 
-### Step 4: Write investigation file
+### Step 5: Assess — is this a bug or user error?
+
+After investigation, classify the issue:
+
+- **User error / misconfiguration**: The user is using the tool incorrectly. Provide guidance.
+- **Known limitation**: The tool does not support this use case. Document it clearly.
+- **Potential bug**: The source code has a defect that causes the reported behavior.
+  - If you find a bug, document it in the investigation under "## Bug Discovery"
+  - Include the exact file path, line number, and what the code does wrong
+  - Explain what the fix would look like
+  - Note if this bug affects multiple reported issues
+
+### Step 6: Write investigation file
 Write to data/responses/github/{repo-slug}-{number}-investigation.md with this format:
 
 \`\`\`markdown
@@ -184,6 +209,9 @@ Write to data/responses/github/{repo-slug}-{number}-investigation.md with this f
 type: investigation
 issue_number: {number}
 repo: {owner/repo}
+title: "{issue title}"
+classification: bug|user-error|limitation|feature-request
+related_issues: [{list of related issue numbers as integers}]
 ---
 
 ## Problem
@@ -193,31 +221,54 @@ repo: {owner/repo}
 - Error: [exact error from issue]
 - Unity version: [from issue]
 - Platform: [from issue]
+- Runner type: [GitHub-hosted or self-hosted]
 
 ## Source Verification
 Each item below was checked using Read or Grep tools:
 
-- VERIFIED: \`paramName\` exists in action.yml — [quote the description]
-- VERIFIED: \`envVar\` found in src/path/file.ts line N — [what it does]
-- NOT FOUND: \`someFeature\` — searched src/ and action.yml, does not exist. Will not suggest.
+- VERIFIED: \\\`paramName\\\` exists in action.yml — [quote the description]
+- VERIFIED: \\\`envVar\\\` found in src/path/file.ts line N — [what it does]
+- NOT FOUND: \\\`someFeature\\\` — searched src/ and action.yml, does not exist. Will not suggest.
 - UNVERIFIED: [thing you couldn't check — will note as uncertain in response]
 
 ## Related Issues
-- #{number}: [brief relevance]
+List ALL related issues found during Step 3. For each, note:
+- #{number}: [title] — [how it relates: same error, same platform, same root cause, duplicate]
+- #{number}: [title] — [relationship]
+
+If multiple issues share the same root cause, explicitly state: "Issues #X, #Y, #Z appear to share
+the same root cause: [description]."
+
+## Bug Discovery (if classification is "bug")
+**Affected file:** [exact path in source code]
+**Line(s):** [line numbers]
+**What happens:** [describe the buggy behavior]
+**What should happen:** [describe expected behavior]
+**Impact:** [how many issues are affected, which platforms]
+**Suggested fix:** [brief description of what a PR would change]
 
 ## Response Plan
 [What you will suggest and why, grounded in verified findings]
 \`\`\`
 
-### Step 5: Write response file
+### Step 7: Write response file
 Write to data/responses/github/{repo-slug}-{number}.md — only include verified information.
+
+In the response:
+- If related issues exist, mention them: "This appears related to #X and #Y which report similar symptoms."
+- If you found a bug, explain the root cause clearly and note it affects other users too.
+- If the issue is a duplicate of a better-described issue, say so and link to it.
+- Cross-link: help the user understand they are not alone and point them to related discussions.
 
 ## Critical Rules
 - Process at most ${String(getValue(config, ['bot', 'max_responses_per_cycle'], 10))} issues per cycle.
 - Every parameter you mention MUST appear in action.yml (verified by Read tool).
 - Every env var you mention MUST appear in the source code (verified by Grep tool).
 - No emoji. No "Hi @user!" greetings. No "🚀" sign-offs. Professional tone.
-- You are a community helper, not a maintainer. Never say "we will fix" or "action items".`)
+- You are a community helper, not a maintainer. Never say "we will fix" or "action items".
+- When you find a bug, describe it factually. Do not promise fixes or timelines.
+- When issues are related, ALWAYS cross-reference them in both the investigation and response.
+- Prioritize issues that appear to be actual bugs over user error questions.`)
 
     prompt = sections.join('\n\n')
   } else {
@@ -252,6 +303,19 @@ Process the synced data under data/ and write structured responses into data/res
       dryRun,
       allowOfficial: options.allowOfficial,
       forceReplyId: options.forceReplyId,
+    })
+  }
+
+  // Post investigation issues if enabled
+  const investigationIssues = options.investigationIssues ?? Boolean(getValue(config, ['investigations', 'enabled'], false))
+  if (investigationIssues) {
+    const investigationRepo = options.investigationRepo ?? (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
+    const investigationLabels = (getValue(config, ['investigations', 'labels'], ['help-bot', 'investigation']) as string[])
+    console.log(`Posting investigation issues to ${investigationRepo} (dry run: ${dryRun})...`)
+    await postInvestigationIssues({
+      dryRun,
+      targetRepo: investigationRepo,
+      labels: investigationLabels,
     })
   }
 

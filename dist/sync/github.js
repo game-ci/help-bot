@@ -89,14 +89,16 @@ response_id: "${repoShort}-${issue.number}"
 `;
     return metadata;
 }
-async function syncGitHub() {
+async function syncGitHub(options = {}) {
     const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
     if (!token) {
         console.warn('GitHub sync skipped: GITHUB_TOKEN/GH_TOKEN is missing.');
         return;
     }
     const config = await (0, config_1.getConfig)();
-    const repoList = (0, config_1.getValue)(config, ['github', 'repos'], DEFAULT_REPOS);
+    const repoList = options.repos?.length
+        ? options.repos
+        : (0, config_1.getValue)(config, ['github', 'repos'], DEFAULT_REPOS);
     const collaboratorList = ((0, config_1.getValue)(config, ['github', 'collaborators'], []).map((entry) => entry.toLowerCase()));
     const octokit = new rest_1.Octokit({ auth: token, userAgent: 'GameCI Help Bot' });
     const state = await (0, state_1.loadState)();

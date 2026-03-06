@@ -6,6 +6,7 @@ const promises_1 = require("node:fs/promises");
 const node_path_1 = require("node:path");
 const frontmatter_1 = require("../utils/frontmatter");
 const paths_1 = require("../utils/paths");
+const config_1 = require("../config");
 const metrics_1 = require("../metrics");
 const MAX_LENGTH = 2000;
 function splitContent(content) {
@@ -36,7 +37,28 @@ async function postToWebhook(webhook, payload) {
 async function sendSeenYouNotification(webhook, message) {
     await postToWebhook(webhook, { content: message });
 }
+/**
+ * Post Discord responses, iterating over configured guilds to resolve
+ * per-guild webhook URLs.
+ */
 async function postDiscordResponses(options) {
+    const config = await (0, config_1.getConfig)();
+    const discordConfig = (0, config_1.getValue)(config, ['discord'], {});
+    const guilds = (0, config_1.resolveGuilds)(discordConfig);
+    if (guilds.length === 0) {
+        console.warn('No Discord guilds configured. Skipping Discord posting.');
+        return;
+    }
+    // Build a lookup from guild name to webhook URL
+    const guildWebhooks = new Map();
+    for (const guild of guilds) {
+        const webhookUrl = process.env[guild.webhook_url_env];
+        if (webhookUrl) {
+            guildWebhooks.set(guild.name, webhookUrl);
+        }
+    }
+    // Fallback: global DISCORD_WEBHOOK_URL for any guild without a specific one
+    const globalWebhook = process.env.DISCORD_WEBHOOK_URL;
     const discordDir = (0, node_path_1.join)(paths_1.RESPONSES_DIR, 'discord');
     let files = [];
     try {
@@ -45,16 +67,20 @@ async function postDiscordResponses(options) {
     catch {
         return;
     }
-    const webhook = process.env.DISCORD_WEBHOOK_URL;
-    if (!webhook) {
-        throw new Error('DISCORD_WEBHOOK_URL is required to post Discord responses');
-    }
     for (const file of files.filter((f) => f.endsWith('.md'))) {
         const fullPath = (0, node_path_1.join)(discordDir, file);
         const content = await (0, promises_1.readFile)(fullPath, 'utf-8');
         const { meta, body } = (0, frontmatter_1.parseFrontMatter)(content);
         const responseId = meta.response_id ?? file.replace(/\.md$/, '');
         const isOfficial = String(meta.official_response)?.toLowerCase() === 'true';
+        // Determine the webhook for this response
+        const responseGuild = meta.guild_name ?? '';
+        const webhook = guildWebhooks.get(responseGuild) ?? globalWebhook;
+        if (!webhook) {
+            console.warn(`Skipping Discord response ${responseId}: no webhook URL found for guild "${responseGuild}". ` +
+                'Set the appropriate env var or DISCORD_WEBHOOK_URL.');
+            continue;
+        }
         if (isOfficial && !options.allowOfficial && options.forceReplyId !== responseId) {
             console.log(`Skipping Discord response ${responseId} because an official contributor already replied.`);
             (0, metrics_1.recordStat)('discordResponsesSkipped', 1);

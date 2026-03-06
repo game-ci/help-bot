@@ -20,8 +20,11 @@ async function readClaudeInstructions() {
         return '';
     }
 }
-function combinePrompt(instructions, prompt) {
-    return [instructions.trim(), prompt.trim()].filter(Boolean).join('\n\n');
+/**
+ * Combine instructions, an optional system prompt (from prompt layering), and the user prompt.
+ */
+function combinePrompt(instructions, prompt, systemPrompt) {
+    return [systemPrompt?.trim(), instructions.trim(), prompt.trim()].filter(Boolean).join('\n\n');
 }
 function normalizeUrl(url) {
     return url.replace(/\/+$/, '');
@@ -30,16 +33,20 @@ function listDataFiles(limit = 150) {
     const files = glob_1.default.sync('data/**/*.{jsonl,md}', { cwd: paths_1.REPO_ROOT, nodir: true });
     return files.slice(0, limit).join('\n');
 }
-async function runClaude(prompt, model) {
-    console.log(`Provider: Claude Code CLI (model: ${model})`);
-    const proc = (0, node_child_process_1.spawn)('claude', ['-p', '--model', model], {
+async function runClaude(prompt, model, maxTurns) {
+    const args = ['-p', '--model', model];
+    if (maxTurns && maxTurns > 0) {
+        args.push('--max-turns', String(maxTurns));
+    }
+    console.log(`Provider: Claude Code CLI (model: ${model}, max_turns: ${maxTurns ?? 'default'})`);
+    const proc = (0, node_child_process_1.spawn)('claude', args, {
         cwd: paths_1.REPO_ROOT,
         stdio: ['pipe', 'inherit', 'inherit'],
     });
     proc.stdin.end(prompt);
     await (0, node_events_1.once)(proc, 'exit');
 }
-async function runLMStudio(prompt, instructions, baseUrl, model, apiKey) {
+async function runLMStudio(prompt, instructions, baseUrl, model, apiKey, systemPrompt) {
     console.log(`Provider: LM Studio (url: ${baseUrl}, model: ${model})`);
     const endpoint = normalizeUrl(baseUrl);
     const fileContext = listDataFiles();
@@ -49,6 +56,8 @@ Available data files:
 ${fileContext}
 
 Note: You cannot read files directly. Describe which files you need and what responses to craft, and the workflow will write them on your behalf.`;
+    // Build system message: optional systemPrompt + instructions
+    const systemContent = [systemPrompt?.trim(), instructions.trim()].filter(Boolean).join('\n\n');
     const response = await (0, undici_1.request)(`${endpoint}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -58,7 +67,7 @@ Note: You cannot read files directly. Describe which files you need and what res
         body: JSON.stringify({
             model,
             messages: [
-                { role: 'system', content: instructions },
+                { role: 'system', content: systemContent },
                 { role: 'user', content: userPrompt },
             ],
             max_tokens: 4096,
@@ -115,20 +124,23 @@ async function runProvider(prompt, options = {}) {
     switch (provider) {
         case 'claude': {
             const model = (0, config_1.getValue)(config, ['llm', 'claude', 'model'], 'claude-sonnet-4-20250514');
-            const finalPrompt = combinePrompt(instructions, prompt);
-            await runClaude(finalPrompt, model);
+            const maxTurns = Number((0, config_1.getValue)(config, ['llm', 'claude', 'max_turns'], 0)) || undefined;
+            // Claude Code auto-loads CLAUDE.md from cwd, so only include the cycle-specific prompt.
+            // The instructions from readClaudeInstructions() are skipped for Claude to avoid triple-loading.
+            const finalPrompt = [options.systemPrompt?.trim(), prompt.trim()].filter(Boolean).join('\n\n');
+            await runClaude(finalPrompt, model, maxTurns);
             break;
         }
         case 'lm_studio': {
             const baseUrl = (0, config_1.getValue)(config, ['llm', 'lm_studio', 'base_url'], 'http://localhost:1234/v1');
             const model = (0, config_1.getValue)(config, ['llm', 'lm_studio', 'model'], 'default');
             const apiKey = (0, config_1.getValue)(config, ['llm', 'lm_studio', 'api_key'], 'lm-studio');
-            await runLMStudio(prompt, instructions, baseUrl, model, apiKey);
+            await runLMStudio(prompt, instructions, baseUrl, model, apiKey, options.systemPrompt);
             break;
         }
         case 'continue': {
             const model = (0, config_1.getValue)(config, ['llm', 'continue_cli', 'model'], 'default');
-            const finalPrompt = combinePrompt(instructions, prompt);
+            const finalPrompt = combinePrompt(instructions, prompt, options.systemPrompt);
             await runContinue(finalPrompt, model);
             break;
         }
@@ -141,7 +153,7 @@ async function runProvider(prompt, options = {}) {
             if (!apiKey) {
                 throw new Error('OPENAI_API_KEY is required for Codex provider');
             }
-            const finalPrompt = combinePrompt(instructions, prompt);
+            const finalPrompt = combinePrompt(instructions, prompt, options.systemPrompt);
             await runCodex(finalPrompt, apiBase, apiKey, model, maxTokens, temperature);
             break;
         }

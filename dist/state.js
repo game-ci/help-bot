@@ -3,6 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.loadState = loadState;
 exports.saveState = saveState;
 exports.updateState = updateState;
+exports.getGuildCursor = getGuildCursor;
+exports.setGuildCursor = setGuildCursor;
 const promises_1 = require("node:fs/promises");
 const node_path_1 = require("node:path");
 const fs_1 = require("./utils/fs");
@@ -32,4 +34,14 @@ async function updateState(mutator) {
     const state = await loadState();
     mutator(state);
     await saveState(state);
+}
+// --- Guild-namespaced cursor helpers ---
+function getGuildCursor(state, guildName, channelId) {
+    return state.cursors?.discord?.[guildName]?.[channelId];
+}
+function setGuildCursor(state, guildName, channelId, cursor) {
+    state.cursors ??= {};
+    state.cursors.discord ??= {};
+    state.cursors.discord[guildName] ??= {};
+    state.cursors.discord[guildName][channelId] = cursor;
 }

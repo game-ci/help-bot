@@ -26,6 +26,8 @@ yargs(hideBin(process.argv))
     .option('repos', { type: 'string', array: true, description: 'Override repos to sync (e.g. game-ci/unity-builder)' })
     .option('repo-dir', { type: 'string', description: 'Path to local clone of target repo (Claude reads code directly)' })
     .option('docs-dir', { type: 'string', description: 'Path to local clone of documentation repo (skips HTTP docs sync)' })
+    .option('investigation-issues', { type: 'boolean', description: 'Create GitHub issues for each investigation in the target repo' })
+    .option('investigation-repo', { type: 'string', description: 'Target repo for investigation issues (default: game-ci/help-bot)' })
   , async (args) => {
     if (!args['github-only']) {
       await ensureDiscordToken()
@@ -43,6 +45,8 @@ yargs(hideBin(process.argv))
       repos: args.repos,
       repoDir: args['repo-dir'],
       docsDir: args['docs-dir'],
+      investigationIssues: args['investigation-issues'] || false,
+      investigationRepo: args['investigation-repo'],
     })
   })
   .command('continuous', 'run continuous mode', (y) => y

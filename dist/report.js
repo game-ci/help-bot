@@ -15,6 +15,14 @@ async function reportSummary() {
         console.log(`Discord messages synced: ${stats.discordMessagesSynced}`);
         console.log(`Discord responses posted: ${stats.discordResponsesPosted}`);
         console.log(`Discord responses skipped: ${stats.discordResponsesSkipped}`);
+        // Per-guild breakdown
+        const guildStats = stats.discordGuildStats;
+        if (guildStats && Object.keys(guildStats).length > 0) {
+            console.log('  Per-guild breakdown:');
+            for (const [guildName, gStats] of Object.entries(guildStats)) {
+                console.log(`    ${guildName}: ${gStats.messagesSynced} messages synced`);
+            }
+        }
         console.log(`GitHub issues synced: ${stats.githubIssuesSynced}`);
         console.log(`GitHub releases synced: ${stats.githubReleasesSynced}`);
         console.log(`GitHub tags synced: ${stats.githubTagsSynced}`);

@@ -17,10 +17,10 @@ async function fetchPage(page, baseUrl) {
     const normalizedBase = baseUrl.replace(/\/$/, '');
     const fullUrl = `${normalizedBase}/${page}`;
     try {
-        const response = await (0, undici_1.request)(fullUrl, {
-            headers: {
-                'User-Agent': 'GameCI Help Bot/TS',
-            },
+        let url = fullUrl;
+        let response = await (0, undici_1.request)(url, {
+            headers: { 'User-Agent': 'GameCI Help Bot/TS' },
+            maxRedirections: 5,
         });
         if (response.statusCode !== 200) {
             throw new Error(`Status ${response.statusCode}`);

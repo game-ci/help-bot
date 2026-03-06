@@ -25,8 +25,16 @@ const report_1 = require("./report");
     .option('force-reply-id', { type: 'string', description: 'Force posting for this response id even if a reply already exists' })
     .option('seen-you-message', { type: 'string', description: 'Custom text for the seen-you notification' })
     .option('seen-you-emoji', { type: 'string', description: 'Emoji to prefix the seen-you notification' })
-    .option('provider', { type: 'string', description: 'Override LLM provider (claude|lm_studio|continue|codex)' }), async (args) => {
-    await (0, helper_1.ensureDiscordToken)();
+    .option('provider', { type: 'string', description: 'Override LLM provider (claude|lm_studio|continue|codex)' })
+    .option('github-only', { type: 'boolean', description: 'Skip Discord entirely (no token needed)' })
+    .option('repos', { type: 'string', array: true, description: 'Override repos to sync (e.g. game-ci/unity-builder)' })
+    .option('repo-dir', { type: 'string', description: 'Path to local clone of target repo (Claude reads code directly)' })
+    .option('docs-dir', { type: 'string', description: 'Path to local clone of documentation repo (skips HTTP docs sync)' })
+    .option('investigation-issues', { type: 'boolean', description: 'Create GitHub issues for each investigation in the target repo' })
+    .option('investigation-repo', { type: 'string', description: 'Target repo for investigation issues (default: game-ci/help-bot)' }), async (args) => {
+    if (!args['github-only']) {
+        await (0, helper_1.ensureDiscordToken)();
+    }
     await (0, cycle_1.runCycle)({
         dryRun: args['dry-run'] || false,
         skipSync: args['skip-sync'] || false,
@@ -36,6 +44,12 @@ const report_1 = require("./report");
         seenYouMessage: args['seen-you-message'],
         seenYouEmoji: args['seen-you-emoji'],
         provider: args.provider,
+        githubOnly: args['github-only'] || false,
+        repos: args.repos,
+        repoDir: args['repo-dir'],
+        docsDir: args['docs-dir'],
+        investigationIssues: args['investigation-issues'] || false,
+        investigationRepo: args['investigation-repo'],
     });
 })
     .command('continuous', 'run continuous mode', (y) => y

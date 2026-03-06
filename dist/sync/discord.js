@@ -33,62 +33,53 @@ async function fetchWithRetry(url, headers) {
     }
     return res;
 }
-async function syncDiscord() {
-    const token = process.env.DISCORD_BOT_TOKEN;
-    const guildId = process.env.DISCORD_GUILD_ID;
-    if (!token || !guildId) {
-        throw new Error('DISCORD_BOT_TOKEN and DISCORD_GUILD_ID are required');
+async function syncGuild(guild, token, config) {
+    const guildId = process.env[guild.guild_id_env];
+    if (!guildId) {
+        console.warn(`Skipping guild "${guild.name}": env var ${guild.guild_id_env} is not set`);
+        return;
     }
-    const config = await (0, config_1.getConfig)();
     const syncHours = Number((0, config_1.getValue)(config, ['discord', 'sync_hours'], 6));
     const ignoreBots = Boolean((0, config_1.getValue)(config, ['discord', 'ignore_bots'], true));
     const minMessage = Number((0, config_1.getValue)(config, ['discord', 'min_message_length'], 15));
     const ignorePrefixes = (0, config_1.getValue)(config, ['discord', 'ignore_prefixes'], ['!', '/', '$', '.']);
-    const rawChannels = (0, config_1.getValue)(config, ['discord', 'channels'], [
-        'help',
-        'support',
-        'general',
-        'bugs',
-        'unity-builder',
-        'unity-test-runner',
-        'docker',
-    ]);
+    const officialRoles = (0, config_1.getValue)(config, ['discord', 'official_roles'], []).map((role) => role.toLowerCase());
+    const officialUsers = (0, config_1.getValue)(config, ['discord', 'official_users'], []).map((id) => id.toLowerCase());
+    const channelNames = guild.channels.map((ch) => ch.name);
     const afterSnowflake = snowflakeFromHoursAgo(syncHours);
     const headers = buildHeaders(token);
     const channelResponse = await fetchWithRetry(`${DISCORD_API}/guilds/${guildId}/channels`, headers);
     if (channelResponse.statusCode >= 400) {
-        throw new Error(`Failed to list guild channels: ${channelResponse.statusCode}`);
+        throw new Error(`Failed to list guild channels for "${guild.name}": ${channelResponse.statusCode}`);
     }
     const channelList = JSON.parse(await channelResponse.body.text());
     const channels = Array.isArray(channelList) ? channelList : [];
     const state = await (0, state_1.loadState)();
-    state.discord ??= {};
-    const officialRoles = ((0, config_1.getValue)(config, ['discord', 'official_roles'], []).map((role) => role.toLowerCase()));
-    const officialUsers = ((0, config_1.getValue)(config, ['discord', 'official_users'], []).map((id) => id.toLowerCase()));
-    await (0, fs_1.ensureDir)(paths_1.DISCORD_DATA_DIR);
-    for (const channelName of rawChannels) {
+    for (const channelName of channelNames) {
         const channel = channels.find((c) => c.name === channelName && c.type === 0);
         if (!channel) {
-            console.warn(`Channel ${channelName} not found, skipping.`);
+            console.warn(`Channel ${channelName} not found in guild "${guild.name}", skipping.`);
             continue;
         }
         const channelId = channel.id;
-        console.log(`Syncing channel ${channelName} (${channelId})...`);
-        const storedCursor = state.discord[channelId];
+        console.log(`Syncing guild "${guild.name}" channel ${channelName} (${channelId})...`);
+        const storedCursor = (0, state_1.getGuildCursor)(state, guild.name, channelId);
         let currentAfter = storedCursor ? BigInt(storedCursor) : afterSnowflake;
+        const channelDir = (0, paths_1.guildChannelDir)(guild.name, channelName);
+        await (0, fs_1.ensureDir)(channelDir);
         while (true) {
             const url = `${DISCORD_API}/channels/${channelId}/messages?limit=100&after=${currentAfter}`;
             const response = await fetchWithRetry(url, headers);
             const text = await response.body.text();
             if (response.statusCode !== 200) {
-                console.warn(`Discord API returned ${response.statusCode} for ${channelName}`);
+                console.warn(`Discord API returned ${response.statusCode} for ${channelName} in guild "${guild.name}"`);
                 break;
             }
             const messages = JSON.parse(text);
             if (!Array.isArray(messages) || messages.length === 0) {
                 break;
             }
-            (0, metrics_1.recordStat)('discordMessagesSynced', messages.length);
+            (0, metrics_1.recordStat)('discordMessagesSynced', messages.length, guild.name);
             for (const msg of messages) {
                 if (ignoreBots && msg?.author?.bot) {
                     continue;
@@ -113,12 +104,13 @@ async function syncDiscord() {
                     timestamp,
                     channel_id: channelId,
                     channel_name: channelName,
+                    guild_name: guild.name,
                     is_bot: msg?.author?.bot ?? false,
                     has_reply: Boolean(msg.referenced_message),
                     message_type: msg.type ?? 0,
                     is_official: isOfficial,
                 });
-                const targetFile = (0, node_path_1.join)(paths_1.DISCORD_DATA_DIR, channelName, `${dateKey}.jsonl`);
+                const targetFile = (0, node_path_1.join)(channelDir, `${dateKey}.jsonl`);
                 await (0, fs_1.appendText)(targetFile, `${record}\n`);
             }
             const lastId = messages[messages.length - 1]?.id;
@@ -130,7 +122,23 @@ async function syncDiscord() {
                 break;
             }
         }
-        state.discord[channelId] = currentAfter.toString();
+        (0, state_1.setGuildCursor)(state, guild.name, channelId, currentAfter.toString());
     }
     await (0, state_1.saveState)(state);
+}
+async function syncDiscord() {
+    const token = process.env.DISCORD_BOT_TOKEN;
+    if (!token) {
+        throw new Error('DISCORD_BOT_TOKEN is required');
+    }
+    const config = await (0, config_1.getConfig)();
+    const discordConfig = (0, config_1.getValue)(config, ['discord'], {});
+    const guilds = (0, config_1.resolveGuilds)(discordConfig);
+    if (guilds.length === 0) {
+        console.warn('No Discord guilds configured. Skipping Discord sync.');
+        return;
+    }
+    for (const guild of guilds) {
+        await syncGuild(guild, token, config);
+    }
 }

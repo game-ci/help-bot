@@ -18,7 +18,7 @@ async function postGitHubResponses(options) {
     catch {
         return;
     }
-    for (const file of files.filter((f) => f.endsWith('.md'))) {
+    for (const file of files.filter((f) => f.endsWith('.md') && !f.includes('-investigation'))) {
         const fullPath = (0, node_path_1.join)(repoDir, file);
         const content = await (0, promises_1.readFile)(fullPath, 'utf-8');
         const { meta, body } = (0, frontmatter_1.parseFrontMatter)(content);
