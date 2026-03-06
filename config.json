@@ -36,7 +36,7 @@
     "guilds": [
       {
         "name": "game-ci",
-        "guild_id_env": "DISCORD_GUILD_ID",
+        "guild_id": "710946343828455455",
         "webhook_url_env": "DISCORD_WEBHOOK_URL",
         "system_prompt": "You are helping users in the GameCI Discord server. Be concise and helpful. Reference relevant documentation at https://game.ci/docs when applicable.",
         "channels": [
@@ -88,6 +88,28 @@
           {
             "name": "docker",
             "system_prompt": "Help with GameCI Docker images, custom Dockerfiles, and container-based Unity builds. Focus on game-ci/docker repository issues.",
+            "channel_type": "text",
+            "reply_mode": "bot_api",
+            "read_threads": true,
+            "monitor": true
+          }
+        ]
+      },
+      {
+        "name": "game-ci-develop",
+        "guild_id": "1381241944226664498",
+        "system_prompt": "You are helping users in the GameCI Develop Discord server. This is a controlled testing environment. Be concise and helpful. Always offer help proactively.",
+        "channels": [
+          {
+            "name": "help",
+            "system_prompt": "This is the #help channel in GameCI Develop. Always offer help here. Focus on troubleshooting Unity build issues, CI pipeline problems, and GameCI tooling questions. Users here may be testing the bot — respond thoroughly regardless.",
+            "channel_type": "text",
+            "reply_mode": "bot_api",
+            "read_threads": true,
+            "monitor": true
+          },
+          {
+            "name": "general",
             "channel_type": "text",
             "reply_mode": "bot_api",
             "read_threads": true,

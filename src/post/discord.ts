@@ -3,7 +3,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parseFrontMatter } from '../utils/frontmatter'
 import { RESPONSES_DIR } from '../utils/paths'
-import { getConfig, getValue, resolveGuilds, GuildConfig, ChannelConfig } from '../config'
+import { getConfig, getValue, resolveGuilds, resolveWebhookUrl, GuildConfig, ChannelConfig } from '../config'
 import { recordStat } from '../metrics'
 import { updateState, setPostedDiscordResponse } from '../state'
 
@@ -174,7 +174,7 @@ export async function postDiscordResponses(options: PostDiscordOptions): Promise
   const guildWebhooks = new Map<string, string>()
   const channelConfigs = new Map<string, ChannelConfig>()
   for (const guild of guilds) {
-    const webhookUrl = process.env[guild.webhook_url_env]
+    const webhookUrl = resolveWebhookUrl(guild)
     if (webhookUrl) {
       guildWebhooks.set(guild.name, webhookUrl)
     }

@@ -1,7 +1,7 @@
 import { request } from 'undici'
 import { ensureDir, appendText } from '../utils/fs'
 import { guildChannelDir, guildForumDir } from '../utils/paths'
-import { getConfig, getValue, resolveGuilds, GuildConfig } from '../config'
+import { getConfig, getValue, resolveGuilds, resolveGuildId, GuildConfig } from '../config'
 import { join } from 'node:path'
 import { loadState, saveState, getGuildCursor, setGuildCursor } from '../state'
 import { recordStat } from '../metrics'
@@ -439,9 +439,9 @@ async function syncGuild(
   token: string,
   config: Record<string, unknown>,
 ): Promise<void> {
-  const guildId = process.env[guild.guild_id_env]
+  const guildId = resolveGuildId(guild)
   if (!guildId) {
-    console.warn(`Skipping guild "${guild.name}": env var ${guild.guild_id_env} is not set`)
+    console.warn(`Skipping guild "${guild.name}": no guild_id or env var ${guild.guild_id_env ?? '(none)'} set`)
     return
   }
 
@@ -460,6 +460,10 @@ async function syncGuild(
   const headers = buildHeaders(token)
 
   const channelResponse = await fetchWithRetry(`${DISCORD_API}/guilds/${guildId}/channels`, headers)
+  if (channelResponse.statusCode === 403 || channelResponse.statusCode === 404) {
+    console.warn(`Skipping guild "${guild.name}": bot does not have access (HTTP ${channelResponse.statusCode}). Invite the bot to this server first.`)
+    return
+  }
   if (channelResponse.statusCode >= 400) {
     throw new Error(`Failed to list guild channels for "${guild.name}": ${channelResponse.statusCode}`)
   }

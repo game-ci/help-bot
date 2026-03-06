@@ -48,8 +48,14 @@ export interface ChannelConfig {
 
 export interface GuildConfig {
   name: string
-  guild_id_env: string
-  webhook_url_env: string
+  /** Direct guild ID (preferred over guild_id_env) */
+  guild_id?: string
+  /** Environment variable name containing the guild ID (fallback if guild_id not set) */
+  guild_id_env?: string
+  /** Direct webhook URL (preferred over webhook_url_env) */
+  webhook_url?: string
+  /** Environment variable name containing the webhook URL */
+  webhook_url_env?: string
   /** Guild-level system prompt (applied after base, before channel) */
   system_prompt?: string
   channels: ChannelConfig[]
@@ -103,6 +109,24 @@ export function resolveGuilds(discordConfig: Record<string, unknown>): GuildConf
 
   // No guilds configured
   return []
+}
+
+/**
+ * Resolve a guild's ID from either the direct guild_id field or the guild_id_env environment variable.
+ */
+export function resolveGuildId(guild: GuildConfig): string | undefined {
+  if (guild.guild_id) return guild.guild_id
+  if (guild.guild_id_env) return process.env[guild.guild_id_env]
+  return undefined
+}
+
+/**
+ * Resolve a guild's webhook URL from either the direct webhook_url field or the webhook_url_env environment variable.
+ */
+export function resolveWebhookUrl(guild: GuildConfig): string | undefined {
+  if (guild.webhook_url) return guild.webhook_url
+  if (guild.webhook_url_env) return process.env[guild.webhook_url_env]
+  return undefined
 }
 
 /**
