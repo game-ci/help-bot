@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { parseFrontMatter } from '../utils/frontmatter'
 import { GITHUB_DATA_DIR, DATA_DIR } from '../utils/paths'
 import { getConfig, getValue } from '../config'
+import { loadState, getPostedResponses, getPostedInvestigations } from '../state'
 
 export interface FilterResult {
   eligible: EligibleIssue[]
@@ -33,6 +34,14 @@ export async function filterIssues(repoSlug: string): Promise<FilterResult> {
   } catch {
     return { eligible: [], skippedCount: 0, skipReasons: {} }
   }
+
+  // Load state to check for bot's own prior responses
+  const state = await loadState()
+  const postedResponses = getPostedResponses(state)
+  const postedInvestigations = getPostedInvestigations(state)
+
+  // Resolve the full repo name from the slug (e.g., "game-ci-unity-builder" -> "game-ci/unity-builder")
+  const fullRepoFromSlug = repoSlug.replace(/-/, '/')
 
   const eligible: EligibleIssue[] = []
   const skipReasons: Record<string, number> = {}
@@ -111,6 +120,21 @@ export async function filterIssues(repoSlug: string): Promise<FilterResult> {
         skip('stale')
         continue
       }
+    }
+
+    // SKIP: bot already responded to this issue (requires redispatch for follow-ups)
+    // Check both posted responses and posted investigations
+    const issueKey = `${fullRepoFromSlug}#${number}`
+    if (postedResponses[issueKey] || postedInvestigations[issueKey]) {
+      // Allow follow-up if there's new activity since bot's last response
+      const botRespondedAt = postedResponses[issueKey] ?? postedInvestigations[issueKey]
+      const respondedTime = new Date(botRespondedAt).getTime()
+      const updatedTime = updated ? new Date(updated).getTime() : 0
+      if (updatedTime <= respondedTime) {
+        skip('bot-already-responded')
+        continue
+      }
+      // New activity since bot responded — allow through (requires redispatch in approval/countdown modes)
     }
 
     eligible.push({

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { parseFrontMatter } from '../utils/frontmatter'
 import { RESPONSES_DIR } from '../utils/paths'
 import { recordStat } from '../metrics'
+import { updateState, setPostedResponse } from '../state'
 
 const execFileAsync = promisify(execFile)
 
@@ -46,6 +47,8 @@ export async function postGitHubResponses(options: PostGitHubOptions): Promise<v
     try {
       await execFileAsync('gh', ['issue', 'comment', String(number), '--repo', repo, '--body', body])
       recordStat('githubResponsesPosted', 1)
+      // Track that the bot responded to this issue (for future cycle filtering)
+      await updateState((s) => setPostedResponse(s, repo, number))
     } catch (error: any) {
       console.warn(`Failed to post GitHub response for ${repo}#${number}: ${error.message ?? error}`)
     }

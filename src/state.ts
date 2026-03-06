@@ -71,6 +71,24 @@ export function getPostedInvestigations(state: SyncState): Record<string, string
   return (state.meta?.postedInvestigations as Record<string, string>) ?? {}
 }
 
+/**
+ * Get the set of issues the bot has already responded to.
+ * Keys are `{repo}#{issueNumber}`, values are ISO timestamps of when the response was posted.
+ */
+export function getPostedResponses(state: SyncState): Record<string, string> {
+  return (state.meta?.postedResponses as Record<string, string>) ?? {}
+}
+
+/**
+ * Record that the bot responded to an issue.
+ */
+export function setPostedResponse(state: SyncState, repo: string, issueNumber: number): void {
+  state.meta ??= {}
+  const posted = getPostedResponses(state)
+  posted[`${repo}#${issueNumber}`] = new Date().toISOString()
+  state.meta.postedResponses = posted
+}
+
 // --- Guild-namespaced cursor helpers ---
 
 export function getGuildCursor(state: SyncState, guildName: string, channelId: string): string | undefined {

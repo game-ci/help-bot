@@ -112,10 +112,13 @@ Every technical claim in a response must trace back to a VERIFIED or UNVERIFIED 
 **Skip — never respond to:**
 - Issues/PRs authored by collaborators listed in `config.json` `github.collaborators`
 - Issues/PRs where a maintainer or collaborator has already responded substantively
+- Issues where the bot has already responded (tracked in `state.json`) — unless there is new activity since the bot's last response, in which case the issue re-enters the dispatch pipeline for approval
 - Issues with labels: `wontfix`, `invalid`, `duplicate`
 - CLOSED issues (unless specifically asked to review)
 - Issues older than `sync_days` with no recent activity (stale)
 - Messages from bots, empty threads, or content outside supported channels/repos
+
+**Follow-up replies:** The bot can reply again to issues it has already responded to, but only if there is new activity (new comments from the issue author) since the bot's last response. Follow-ups re-enter the dispatch pipeline — in approval/countdown modes, they require maintainer approval just like first-time investigations. The bot never auto-replies to its own previous responses.
 
 ### Pull Request Handling
 
