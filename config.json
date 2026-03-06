@@ -109,6 +109,14 @@
             "monitor": true
           },
           {
+            "name": "help-develop",
+            "system_prompt": "This is the #help-develop channel in GameCI Develop. Always offer help here. This channel is for testing and developing the help bot itself — respond thoroughly to all messages.",
+            "channel_type": "text",
+            "reply_mode": "bot_api",
+            "read_threads": true,
+            "monitor": true
+          },
+          {
             "name": "general",
             "channel_type": "text",
             "reply_mode": "bot_api",
