@@ -3,10 +3,12 @@ import { RESPONSES_DIR, LOGS_DIR, REPO_ROOT, DATA_DIR } from '../utils/paths'
 import { syncDiscord } from '../sync/discord'
 import { syncGitHub } from '../sync/github'
 import { syncDocs } from '../sync/docs'
+import { filterIssues, writeFilteredManifest } from './filter-issues'
 import { runProvider, ProviderOptions } from '../provider/llm'
 import { postDiscordResponses } from '../post/discord'
 import { postGitHubResponses } from '../post/github'
 import { postInvestigationIssues } from '../post/investigations'
+import { writeCycleReport, postCycleReport } from '../post/cycle-report'
 import { join } from 'node:path'
 import { readdir, copyFile, readFile, mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -114,6 +116,21 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
     console.log('Skipping sync steps (skipSync=true)')
   }
 
+  // Pre-filter issues to remove collaborator-responded, closed, stale, etc.
+  // This is a hard filter — the LLM never sees filtered-out issues.
+  let filteredManifestPath: string | undefined
+  if (githubOnly && options.repos?.length) {
+    const repoSlug = options.repos[0].replace(/\//g, '-')
+    console.log(`Filtering issues for ${repoSlug}...`)
+    const filterResult = await filterIssues(repoSlug)
+    console.log(`  Eligible: ${filterResult.eligible.length}, Skipped: ${filterResult.skippedCount}`)
+    for (const [reason, count] of Object.entries(filterResult.skipReasons)) {
+      console.log(`    ${reason}: ${count}`)
+    }
+    filteredManifestPath = await writeFilteredManifest(repoSlug, filterResult)
+    console.log(`  Manifest written to ${filteredManifestPath}`)
+  }
+
   // Build the layered system prompt from the first guild (base prompt applies to all)
   // For a more granular per-channel approach, individual LLM calls per channel would be needed.
   const systemPrompt = hasGuilds
@@ -166,12 +183,15 @@ Use Grep to search for relevant topics. Use Read to get full page content.`)
 
 For each issue:
 
-### Step 1: Read the issue
-Use the Read tool on data/github/issues/{repo-slug}/{number}.md to read the full issue with all comments.
+### Step 1: Read the filtered issue manifest
+Use the Read tool on data/github/filtered-{repo-slug}.md to see which issues are eligible.
+This manifest has already filtered out closed issues, collaborator-authored issues, issues where
+maintainers already responded, issues with skip labels, and stale issues.
 
-### Step 2: Decide whether to respond
-Skip if: author is a collaborator (check config.json github.collaborators), issue is closed,
-a maintainer already responded, issue has skip labels, or issue is stale (>90 days, no recent activity).
+ONLY process issues listed in this manifest. Do NOT read or respond to any issue not in the manifest.
+
+### Step 2: Read the issue
+For each eligible issue in the manifest, use the Read tool on the file path listed to read the full issue.
 
 ### Step 3: Search for related issues
 Before investigating the issue itself, search for related issues:
@@ -270,6 +290,11 @@ In the response:
 - When issues are related, ALWAYS cross-reference them in both the investigation and response.
 - Prioritize issues that appear to be actual bugs over user error questions.`)
 
+    if (options.repos?.length) {
+      const slug = options.repos[0].replace(/\//g, '-')
+      sections.push(`The manifest file for this cycle is: data/github/filtered-${slug}.md — read this FIRST.`)
+    }
+
     prompt = sections.join('\n\n')
   } else {
     prompt = `You are running a help cycle for the GameCI Community Help Bot.
@@ -306,7 +331,10 @@ Process the synced data under data/ and write structured responses into data/res
     })
   }
 
-  // Post investigation issues if enabled
+  // Capture stats before posting investigations and reports
+  const stats = getStats()
+
+  // Post investigation issues and cycle report if enabled
   const investigationIssues = options.investigationIssues ?? Boolean(getValue(config, ['investigations', 'enabled'], false))
   if (investigationIssues) {
     const investigationRepo = options.investigationRepo ?? (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
@@ -317,9 +345,23 @@ Process the synced data under data/ and write structured responses into data/res
       targetRepo: investigationRepo,
       labels: investigationLabels,
     })
+
+    // Write cycle report to file and optionally post as issue
+    console.log('Writing cycle report...')
+    await writeCycleReport({
+      dryRun,
+      targetRepo: investigationRepo,
+      repos: options.repos ?? [],
+      stats,
+    })
+    await postCycleReport({
+      dryRun,
+      targetRepo: investigationRepo,
+      repos: options.repos ?? [],
+      stats,
+    })
   }
 
-  const stats = getStats()
   await updateState((state) => {
     state.meta ??= {}
     state.meta.lastCycleStats = stats
