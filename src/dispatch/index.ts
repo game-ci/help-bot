@@ -1,0 +1,6 @@
+export { runDispatch } from './orchestrator'
+export { createDetections } from './detection'
+export { checkApprovals } from './approval'
+export { markDispatched, closeDispatchedDetections, cleanupStaleDetections } from './lifecycle'
+export type { DispatchMode, DispatchConfig, DetectionRecord, DetectionKey } from './types'
+export { makeDetectionKey } from './types'

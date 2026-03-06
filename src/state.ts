@@ -54,6 +54,23 @@ export async function updateState(mutator: (state: SyncState) => void): Promise<
   await saveState(state)
 }
 
+// --- Detection helpers ---
+
+import type { DetectionRecord, DetectionKey } from './dispatch/types'
+
+export function getDetections(state: SyncState): Record<DetectionKey, DetectionRecord> {
+  return (state.meta?.detections as Record<DetectionKey, DetectionRecord>) ?? {}
+}
+
+export function setDetections(state: SyncState, detections: Record<DetectionKey, DetectionRecord>): void {
+  state.meta ??= {}
+  state.meta.detections = detections
+}
+
+export function getPostedInvestigations(state: SyncState): Record<string, string> {
+  return (state.meta?.postedInvestigations as Record<string, string>) ?? {}
+}
+
 // --- Guild-namespaced cursor helpers ---
 
 export function getGuildCursor(state: SyncState, guildName: string, channelId: string): string | undefined {

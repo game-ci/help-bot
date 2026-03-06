@@ -16,6 +16,7 @@ import { getConfig, getValue, resolveGuilds, getSystemPrompt } from '../config'
 import { resetStats, getStats } from '../metrics'
 import { updateState } from '../state'
 import { scanSyncedIssues, writeSecurityReport } from '../security'
+import { runDispatch, markDispatched, closeDispatchedDetections, DispatchConfig, DispatchMode } from '../dispatch'
 
 async function copyDirRecursive(src: string, dest: string): Promise<void> {
   if (!existsSync(src)) return
@@ -51,6 +52,8 @@ export interface CycleOptions extends ProviderOptions {
   docsDir?: string
   investigationIssues?: boolean
   investigationRepo?: string
+  dispatchMode?: 'auto' | 'approval' | 'countdown'
+  countdownHours?: number
 }
 
 export async function runCycle(options: CycleOptions = {}): Promise<void> {
@@ -142,6 +145,53 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
       const reportPath = await writeSecurityReport(securityFindings, dateStr)
       console.log(`  Security report written to ${reportPath}`)
     }
+  }
+
+  // Dispatch gate: for approval/countdown modes, create detection issues and check approvals
+  const dispatchConfig = getDispatchConfig(config, options)
+  let approvedIssues: import('../core/filter-issues').EligibleIssue[] | undefined
+  if (githubOnly && options.repos?.length && dispatchConfig.mode !== 'auto') {
+    const repoSlug = options.repos[0].replace(/\//g, '-')
+    const filterResult = await filterIssues(repoSlug)
+    const collaborators = (getValue(config, ['github', 'collaborators'], []) as string[])
+    const investigationRepo = options.investigationRepo ?? (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
+
+    console.log(`Running dispatch (mode: ${dispatchConfig.mode})...`)
+    const dispatchResult = await runDispatch({
+      filterResult,
+      repoSlug,
+      fullRepo: options.repos[0],
+      config: dispatchConfig,
+      targetRepo: investigationRepo,
+      collaborators,
+      dryRun,
+    })
+
+    console.log(`  Dispatch: ${dispatchResult.detectionsCreated} created, ${dispatchResult.approved.length} approved, ${dispatchResult.pending} pending, ${dispatchResult.cancelled} cancelled, ${dispatchResult.expired} auto-dispatched, ${dispatchResult.warningsPosted} warnings posted`)
+
+    if (dispatchResult.skipLlm) {
+      console.log('  No approved issues. Skipping LLM.')
+      const stats = getStats()
+      await updateState((state) => {
+        state.meta ??= {}
+        state.meta.lastCycleStats = stats
+        state.meta.lastCycleAt = new Date().toISOString()
+      })
+      return
+    }
+
+    // Rewrite the filtered manifest with ONLY approved issues
+    approvedIssues = dispatchResult.approved
+    const approvedFilterResult = {
+      eligible: dispatchResult.approved,
+      skippedCount: filterResult.skippedCount + (filterResult.eligible.length - dispatchResult.approved.length),
+      skipReasons: {
+        ...filterResult.skipReasons,
+        'dispatch-pending': filterResult.eligible.length - dispatchResult.approved.length,
+      },
+    }
+    filteredManifestPath = await writeFilteredManifest(repoSlug, approvedFilterResult)
+    console.log(`  Manifest rewritten with ${dispatchResult.approved.length} approved issues`)
   }
 
   // Build the layered system prompt from the first guild (base prompt applies to all)
@@ -381,9 +431,30 @@ Process the synced data under data/ and write structured responses into data/res
     })
   }
 
+  // Post-dispatch cleanup: mark dispatched detections and close them
+  if (dispatchConfig.mode !== 'auto' && approvedIssues && options.repos?.length) {
+    const investigationRepo = options.investigationRepo ?? (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
+    await markDispatched(approvedIssues, options.repos[0])
+    if (dispatchConfig.close_on_dispatch) {
+      await closeDispatchedDetections({ targetRepo: investigationRepo, dryRun })
+    }
+  }
+
   await updateState((state) => {
     state.meta ??= {}
     state.meta.lastCycleStats = stats
     state.meta.lastCycleAt = new Date().toISOString()
   })
+}
+
+function getDispatchConfig(config: Record<string, unknown>, options: CycleOptions): DispatchConfig {
+  return {
+    mode: (options.dispatchMode ?? getValue(config, ['dispatch', 'mode'], 'auto')) as DispatchMode,
+    warnings_required: Number(getValue(config, ['dispatch', 'warnings_required'], 3)),
+    warning_interval_hours: options.countdownHours ?? Number(getValue(config, ['dispatch', 'warning_interval_hours'], 24)),
+    approve_reactions: getValue(config, ['dispatch', 'approve_reactions'], ['+1', 'rocket']) as string[],
+    cancel_reactions: getValue(config, ['dispatch', 'cancel_reactions'], ['-1']) as string[],
+    max_detections_per_cycle: Number(getValue(config, ['dispatch', 'max_detections_per_cycle'], 10)),
+    close_on_dispatch: Boolean(getValue(config, ['dispatch', 'close_on_dispatch'], true)),
+  }
 }

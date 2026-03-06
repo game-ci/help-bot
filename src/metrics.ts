@@ -10,6 +10,12 @@ export interface CycleStats {
   investigationIssuesPosted: number
   investigationIssuesSkipped: number
   cycleReportsPosted: number
+  detectionsCreated: number
+  detectionsApproved: number
+  detectionsCancelled: number
+  detectionsExpired: number
+  detectionsPending: number
+  detectionsWarningsPosted: number
   /** Per-guild Discord message sync counts */
   discordGuildStats: Record<string, { messagesSynced: number }>
 }
@@ -29,6 +35,12 @@ function makeEmptyStats(): CycleStats {
     investigationIssuesPosted: 0,
     investigationIssuesSkipped: 0,
     cycleReportsPosted: 0,
+    detectionsCreated: 0,
+    detectionsApproved: 0,
+    detectionsCancelled: 0,
+    detectionsExpired: 0,
+    detectionsPending: 0,
+    detectionsWarningsPosted: 0,
     discordGuildStats: {},
   }
 }

@@ -356,6 +356,115 @@ The automation scripts and TypeScript CLI respect `LLM_PROVIDER`, the `llm.provi
 - GitHub replies are posted as issue or PR comments via `gh issue comment`/`gh pr comment`.
 - Dry runs (`--dry-run`) skip posting while still writing drafts to `data/responses/`.
 
+### Dispatch System
+
+The dispatch system gates which issues the bot investigates. Instead of processing all eligible issues immediately, maintainers can review and approve issues before the AI investigates them.
+
+#### Dispatch Modes
+
+| Mode | Behavior |
+|------|----------|
+| **auto** (default) | All eligible issues are processed immediately. No dispatch gate. This is the default for local development. |
+| **approval** | Detection issues are created in the target repo. A maintainer must react with an approval emoji (or comment) on the detection issue before the bot will investigate. |
+| **countdown** | Like approval mode, but with a staged countdown. If no maintainer acts, warnings are posted at intervals, and the issue auto-dispatches after all warning stages elapse. Default: 3 warnings, 24h apart = 72-hour minimum. |
+
+#### Staged Countdown Safety
+
+The countdown mode is designed to prevent bulk auto-dispatch if the bot hasn't run for a while. **Only one stage can advance per cycle**, regardless of how much time has elapsed:
+
+```
+Cycle 1:  Create detection issue -> stage 0 (pending), stageAdvancedAt = now
+Cycle N:  24h elapsed since stage 0 -> post Warning 1 -> stage 1, stageAdvancedAt = now
+Cycle N+: 24h elapsed since stage 1 -> post Warning 2 -> stage 2, stageAdvancedAt = now
+Cycle N+: 24h elapsed since stage 2 -> post Warning 3 -> stage 3, stageAdvancedAt = now
+Cycle N+: 24h elapsed since stage 3 -> auto-dispatch
+```
+
+A maintainer can react to approve or cancel immediately at any point during the countdown.
+
+#### Detection Issues
+
+Detection issues are created in the target repo (default: `game-ci/help-bot`) with:
+- **Labels**: `help-bot`, `detection`, repo short name (e.g., `unity-builder`)
+- **Title**: `[Detection] {repo}#{number}: {sanitized title}`
+- **Body**: Source link, issue metadata, maintainer instructions, countdown status
+
+Detection issues are deduplicated — if a detection already exists for a source issue (tracked in `state.json`), it won't be created again. Issues that have already been investigated are also skipped.
+
+#### Maintainer Actions
+
+On a detection issue, collaborators (from `config.json` `github.collaborators`) can:
+- React with approval emoji (default: thumbs up, rocket) to approve immediately
+- React with cancel emoji (default: thumbs down) to cancel
+- Post any comment to approve (bot-generated warning comments are excluded)
+
+Only reactions/comments from listed collaborators are valid. Random users cannot approve or cancel detections.
+
+#### Cross-Linking
+
+All issue types form a cross-referenced graph:
+- Detection issue body links to source issue
+- Detection close comment links to investigation issue
+- Investigation issue links to source issue
+- Cycle reports list all detection and investigation numbers
+- Warning comments link to source issue with approval instructions
+
+#### Configuration
+
+In `config.json`:
+```json
+{
+  "dispatch": {
+    "mode": "auto",
+    "warnings_required": 3,
+    "warning_interval_hours": 24,
+    "approve_reactions": ["+1", "rocket"],
+    "cancel_reactions": ["-1"],
+    "max_detections_per_cycle": 10,
+    "close_on_dispatch": true
+  }
+}
+```
+
+CLI overrides (both `cycle` and `continuous` commands):
+- `--dispatch-mode <auto|approval|countdown>` — override dispatch mode
+- `--countdown-hours <N>` — override hours between warning stages
+
+#### Dispatch Pipeline in Cycle
+
+The dispatch gate runs after issue filtering and security scanning, before LLM invocation:
+
+1. `createDetections()` — creates detection issues for new eligible issues
+2. `cleanupStaleDetections()` — cancels detections for issues no longer eligible
+3. `checkApprovals()` — checks reactions/comments, advances countdown stages
+4. If no approved issues, skip LLM entirely
+5. After investigations complete, `markDispatched()` updates state and `closeDispatchedDetections()` closes detection issues with cross-links
+
+#### Source Files
+
+| File | Purpose |
+|------|---------|
+| `src/dispatch/types.ts` | Type definitions: `DispatchMode`, `DetectionRecord`, `DispatchConfig` |
+| `src/dispatch/sanitize.ts` | Security helpers for untrusted content, detection body/warning builders |
+| `src/dispatch/detection.ts` | Creates detection issues via `gh issue create` |
+| `src/dispatch/approval.ts` | Checks reactions/comments, advances countdown stages |
+| `src/dispatch/lifecycle.ts` | Post-dispatch cleanup: mark dispatched, close detections, cleanup stale |
+| `src/dispatch/orchestrator.ts` | Main entry point called from `cycle.ts` |
+| `src/dispatch/index.ts` | Barrel exports |
+
+### Cycle Reports
+
+After each cycle, the bot generates a cycle report summarizing investigations, filter results, dispatch pipeline status, and cross-issue patterns.
+
+#### Spam Prevention
+
+Cycle reports have built-in spam prevention:
+- **Skip if idle**: If no investigations, no responses, no dispatch activity — the report is not posted
+- **Date dedup**: Only one report per calendar date. Subsequent cycles on the same date are skipped
+- **Dispatch stats**: Reports include detection pipeline status (N pending, N approved, N at stage 2/3, etc.)
+
+Reports are posted as GitHub issues with labels `help-bot` and `cycle-report`.
+
 ### Notes
 
 - Do not edit `data/` manually; it is regenerated per cycle.

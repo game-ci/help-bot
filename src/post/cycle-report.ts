@@ -202,6 +202,25 @@ export async function writeCycleReport(options: CycleReportOptions): Promise<str
     sections.push('')
   }
 
+  // Dispatch pipeline status
+  const hasDispatchStats = options.stats.detectionsCreated > 0 ||
+    options.stats.detectionsApproved > 0 ||
+    options.stats.detectionsPending > 0 ||
+    options.stats.detectionsCancelled > 0 ||
+    options.stats.detectionsExpired > 0 ||
+    options.stats.detectionsWarningsPosted > 0
+  if (hasDispatchStats) {
+    sections.push('## Dispatch Pipeline')
+    sections.push('')
+    sections.push(`- Detections created: ${options.stats.detectionsCreated}`)
+    sections.push(`- Approved: ${options.stats.detectionsApproved}`)
+    sections.push(`- Pending: ${options.stats.detectionsPending}`)
+    sections.push(`- Cancelled: ${options.stats.detectionsCancelled}`)
+    sections.push(`- Auto-dispatched (expired): ${options.stats.detectionsExpired}`)
+    sections.push(`- Warnings posted: ${options.stats.detectionsWarningsPosted}`)
+    sections.push('')
+  }
+
   // Stats
   sections.push('## Cycle Stats')
   sections.push('')
@@ -223,7 +242,27 @@ export async function writeCycleReport(options: CycleReportOptions): Promise<str
 }
 
 /**
+ * Check if this cycle has any meaningful activity worth reporting.
+ * Prevents spam from cycles that produced no new work.
+ */
+function hasMeaningfulActivity(options: CycleReportOptions, investigationCount: number): boolean {
+  const s = options.stats
+  return investigationCount > 0 ||
+    s.githubResponsesPosted > 0 ||
+    s.discordResponsesPosted > 0 ||
+    s.investigationIssuesPosted > 0 ||
+    s.detectionsCreated > 0 ||
+    s.detectionsApproved > 0 ||
+    s.detectionsExpired > 0 ||
+    s.detectionsWarningsPosted > 0
+}
+
+/**
  * Post the cycle report as a GitHub issue in the target repo.
+ *
+ * Spam prevention:
+ * - Skips posting if no meaningful activity (no investigations, no responses, no dispatch activity)
+ * - Deduplicates by date: only one report per calendar date
  */
 export async function postCycleReport(options: CycleReportOptions): Promise<void> {
   const reportPath = join(RESPONSES_DIR, 'github', 'cycle-report.md')
@@ -235,7 +274,21 @@ export async function postCycleReport(options: CycleReportOptions): Promise<void
   const content = await readFile(reportPath, 'utf-8')
   const { meta, body } = parseFrontMatter(content)
   const date = meta.date ?? new Date().toISOString().split('T')[0]
-  const investigationsCount = meta.investigations_count ?? '0'
+  const investigationsCount = Number(meta.investigations_count ?? '0')
+
+  // Spam prevention: skip if no meaningful activity
+  if (!hasMeaningfulActivity(options, investigationsCount)) {
+    console.log('No meaningful activity this cycle. Skipping cycle report posting.')
+    return
+  }
+
+  // Spam prevention: dedup by date — only one report per calendar date
+  const state = await loadState()
+  const lastReportDate = state.meta?.lastCycleReportDate as string | undefined
+  if (lastReportDate === date) {
+    console.log(`Cycle report already posted for ${date}. Skipping duplicate.`)
+    return
+  }
 
   const title = `[Cycle Report] ${date} — ${investigationsCount} investigations across ${options.repos.join(', ')}`
   const labels = ['help-bot', 'cycle-report']
@@ -261,6 +314,7 @@ export async function postCycleReport(options: CycleReportOptions): Promise<void
     await updateState((s) => {
       s.meta ??= {}
       s.meta.lastCycleReportUrl = stdout.trim()
+      s.meta.lastCycleReportDate = date
     })
   } catch (error: any) {
     console.warn(`Failed to create cycle report issue: ${error.message ?? error}`)

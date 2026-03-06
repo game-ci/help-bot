@@ -121,6 +121,15 @@
     "embedding_model": "local:BAAI/bge-small-en-v1.5",
     "persist_directory": "data/vector-store"
   },
+  "dispatch": {
+    "mode": "auto",
+    "warnings_required": 3,
+    "warning_interval_hours": 24,
+    "approve_reactions": ["+1", "rocket"],
+    "cancel_reactions": ["-1"],
+    "max_detections_per_cycle": 10,
+    "close_on_dispatch": true
+  },
   "investigations": {
     "enabled": false,
     "target_repo": "game-ci/help-bot",
