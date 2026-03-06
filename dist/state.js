@@ -3,6 +3,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.loadState = loadState;
 exports.saveState = saveState;
 exports.updateState = updateState;
+exports.getDetections = getDetections;
+exports.setDetections = setDetections;
+exports.getPostedInvestigations = getPostedInvestigations;
+exports.getPostedResponses = getPostedResponses;
+exports.setPostedResponse = setPostedResponse;
+exports.getPostedDiscordResponses = getPostedDiscordResponses;
+exports.setPostedDiscordResponse = setPostedDiscordResponse;
 exports.getGuildCursor = getGuildCursor;
 exports.setGuildCursor = setGuildCursor;
 const promises_1 = require("node:fs/promises");
@@ -34,6 +41,48 @@ async function updateState(mutator) {
     const state = await loadState();
     mutator(state);
     await saveState(state);
+}
+function getDetections(state) {
+    return state.meta?.detections ?? {};
+}
+function setDetections(state, detections) {
+    state.meta ??= {};
+    state.meta.detections = detections;
+}
+function getPostedInvestigations(state) {
+    return state.meta?.postedInvestigations ?? {};
+}
+/**
+ * Get the set of issues the bot has already responded to.
+ * Keys are `{repo}#{issueNumber}`, values are ISO timestamps of when the response was posted.
+ */
+function getPostedResponses(state) {
+    return state.meta?.postedResponses ?? {};
+}
+/**
+ * Record that the bot responded to an issue.
+ */
+function setPostedResponse(state, repo, issueNumber) {
+    state.meta ??= {};
+    const posted = getPostedResponses(state);
+    posted[`${repo}#${issueNumber}`] = new Date().toISOString();
+    state.meta.postedResponses = posted;
+}
+/**
+ * Get the set of Discord messages the bot has already responded to.
+ * Keys are `discord:{guildName}/{channelName}#{messageId}`, values are ISO timestamps.
+ */
+function getPostedDiscordResponses(state) {
+    return state.meta?.postedDiscordResponses ?? {};
+}
+/**
+ * Record that the bot responded to a Discord message.
+ */
+function setPostedDiscordResponse(state, guildName, channelName, messageId) {
+    state.meta ??= {};
+    const posted = getPostedDiscordResponses(state);
+    posted[`discord:${guildName}/${channelName}#${messageId}`] = new Date().toISOString();
+    state.meta.postedDiscordResponses = posted;
 }
 // --- Guild-namespaced cursor helpers ---
 function getGuildCursor(state, guildName, channelId) {

@@ -22,7 +22,7 @@ export interface EligibleIssue {
   type: string
 }
 
-export async function filterIssues(repoSlug: string): Promise<FilterResult> {
+export async function filterIssues(repoSlug: string, fullRepo?: string): Promise<FilterResult> {
   const config = await getConfig()
   const collaborators = (getValue(config, ['github', 'collaborators'], []) as string[]).map(c => c.toLowerCase())
   const skipLabels = (getValue(config, ['github', 'skip_labels'], ['wontfix', 'invalid', 'duplicate']) as string[]).map(l => l.toLowerCase())
@@ -40,8 +40,8 @@ export async function filterIssues(repoSlug: string): Promise<FilterResult> {
   const postedResponses = getPostedResponses(state)
   const postedInvestigations = getPostedInvestigations(state)
 
-  // Resolve the full repo name from the slug (e.g., "game-ci-unity-builder" -> "game-ci/unity-builder")
-  const fullRepoFromSlug = repoSlug.replace(/-/, '/')
+  // Use provided full repo name, or extract from issue frontmatter during processing
+  const fullRepoFromSlug = fullRepo ?? ''
 
   const eligible: EligibleIssue[] = []
   const skipReasons: Record<string, number> = {}
@@ -124,7 +124,9 @@ export async function filterIssues(repoSlug: string): Promise<FilterResult> {
 
     // SKIP: bot already responded to this issue (requires redispatch for follow-ups)
     // Check both posted responses and posted investigations
-    const issueKey = `${fullRepoFromSlug}#${number}`
+    // Use the repo field from frontmatter (accurate) or the passed-in full repo name
+    const issueRepo = (meta.repo ?? fullRepoFromSlug).replace(/"/g, '')
+    const issueKey = `${issueRepo}#${number}`
     if (postedResponses[issueKey] || postedInvestigations[issueKey]) {
       // Allow follow-up if there's new activity since bot's last response
       const botRespondedAt = postedResponses[issueKey] ?? postedInvestigations[issueKey]
@@ -135,6 +137,14 @@ export async function filterIssues(repoSlug: string): Promise<FilterResult> {
         continue
       }
       // New activity since bot responded — allow through (requires redispatch in approval/countdown modes)
+    }
+
+    // SKIP: relevance pre-filter — is this even a question for help bot?
+    // Check if the issue is a help request, bug report, or support question.
+    // Feature requests, meta discussions, and non-actionable items are skipped.
+    if (!isRelevantForHelpBot(title, body, labels, type)) {
+      skip('not-relevant')
+      continue
     }
 
     eligible.push({
@@ -199,3 +209,104 @@ export async function writeFilteredManifest(repoSlug: string, result: FilterResu
   await writeFile(manifestPath, lines.join('\n'), 'utf-8')
   return manifestPath
 }
+
+/**
+ * Relevance pre-filter: determine if an issue/PR is something the help bot should process.
+ *
+ * Returns true for:
+ * - Bug reports (has error keywords, stack traces, or bug label)
+ * - Support/help questions (has question marks, "how to", help keywords)
+ * - Configuration issues (mentions config, YAML, workflow, action.yml)
+ * - Issues with priority labels (bug, help wanted, good first issue)
+ *
+ * Returns false for:
+ * - Pure feature requests with no question/error component
+ * - Meta/governance discussions (RFC, proposal, roadmap)
+ * - Release notes, changelogs
+ * - Empty issues with no body content
+ * - Issues that are purely administrative
+ */
+function isRelevantForHelpBot(title: string, body: string, labels: string[], type: string): boolean {
+  const combined = `${title}\n${body}`.toLowerCase()
+
+  // Always relevant if has priority labels
+  const relevantLabels = ['bug', 'help wanted', 'good first issue', 'question', 'support']
+  if (labels.some(l => relevantLabels.includes(l))) {
+    return true
+  }
+
+  // Skip pure feature requests unless they also contain a question or error
+  const featureLabels = ['enhancement', 'feature request', 'feature', 'rfc', 'proposal']
+  const isPureFeatureRequest = labels.some(l => featureLabels.includes(l))
+
+  // Has a question?
+  const hasQuestion = combined.includes('?')
+    || combined.includes('how to')
+    || combined.includes('how do')
+    || combined.includes('is there a way')
+    || combined.includes('is it possible')
+    || combined.includes('does anyone')
+    || combined.includes('anyone know')
+    || combined.includes('any idea')
+
+  // Has error/bug indicators?
+  const hasError = combined.includes('error')
+    || combined.includes('fail')
+    || combined.includes('exception')
+    || combined.includes('crash')
+    || combined.includes('broken')
+    || combined.includes('not working')
+    || combined.includes('doesn\'t work')
+    || combined.includes('does not work')
+    || combined.includes('can\'t')
+    || combined.includes('cannot')
+    || combined.includes('unable to')
+    || combined.includes('unexpected')
+    || combined.includes('stack trace')
+    || combined.includes('exit code')
+    || combined.includes('build failed')
+
+  // Has configuration/setup keywords?
+  const hasConfig = combined.includes('action.yml')
+    || combined.includes('workflow')
+    || combined.includes('yaml')
+    || combined.includes('.yml')
+    || combined.includes('configuration')
+    || combined.includes('unity version')
+    || combined.includes('docker')
+    || combined.includes('self-hosted')
+    || combined.includes('github actions')
+    || combined.includes('ci/cd')
+    || combined.includes('pipeline')
+
+  // Has help-seeking language?
+  const needsHelp = combined.includes('help')
+    || combined.includes('stuck')
+    || combined.includes('struggling')
+    || combined.includes('confused')
+    || combined.includes('need assistance')
+    || combined.includes('please')
+
+  // If it's a pure feature request with no question or error, skip
+  if (isPureFeatureRequest && !hasQuestion && !hasError) {
+    return false
+  }
+
+  // Meta/governance discussions - skip
+  if (combined.includes('rfc') && combined.includes('proposal')) return false
+  if (combined.includes('roadmap') && !hasError) return false
+  if (combined.includes('changelog') || combined.includes('release notes')) return false
+
+  // If it has any help-related signals, it's relevant
+  if (hasQuestion || hasError || hasConfig || needsHelp) return true
+
+  // If the body is very short and has no help signals, skip
+  if (body.trim().length < 50 && !hasQuestion && !hasError) return false
+
+  // PRs without error/question signals are less likely to need help bot
+  if (type === 'pull_request' && !hasQuestion && !hasError) return false
+
+  // Default: include (better to over-include than miss something)
+  return true
+}
+

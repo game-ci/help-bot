@@ -7,6 +7,7 @@ const discord_1 = require("../sync/discord");
 const github_1 = require("../sync/github");
 const docs_1 = require("../sync/docs");
 const filter_issues_1 = require("./filter-issues");
+const filter_discord_1 = require("./filter-discord");
 const llm_1 = require("../provider/llm");
 const discord_2 = require("../post/discord");
 const github_2 = require("../post/github");
@@ -19,6 +20,9 @@ const config_1 = require("../config");
 const metrics_1 = require("../metrics");
 const state_1 = require("../state");
 const security_1 = require("../security");
+const dispatch_1 = require("../dispatch");
+const notify_1 = require("../notify");
+const feedback_1 = require("../feedback");
 async function copyDirRecursive(src, dest) {
     if (!(0, node_fs_1.existsSync)(src))
         return;
@@ -36,7 +40,7 @@ async function copyDirRecursive(src, dest) {
         else {
             // Only copy text files the LLM can read
             if (/\.(ts|js|md|yml|yaml|json|sh|dockerfile|txt|css|html)$/i.test(entry.name) || entry.name === 'Dockerfile') {
-                await (0, promises_1.copyFile)(srcPath, destPath);
+                await (0, promises_1.copyFile)(srcPath, (0, node_path_1.join)(destPath));
             }
         }
     }
@@ -98,6 +102,22 @@ async function runCycle(options = {}) {
             console.log('Syncing docs...');
             await (0, docs_1.syncDocs)();
         }
+        // Sync feedback reactions on previous bot responses
+        console.log('Syncing feedback reactions...');
+        try {
+            const feedbackRecords = await (0, feedback_1.syncFeedback)();
+            if (feedbackRecords.length > 0) {
+                console.log(`  Synced feedback for ${feedbackRecords.length} responses`);
+                const positive = feedbackRecords.filter(r => r.netSentiment === 'positive').length;
+                const negative = feedbackRecords.filter(r => r.netSentiment === 'negative').length;
+                if (positive > 0 || negative > 0) {
+                    console.log(`  Sentiment: ${positive} positive, ${negative} negative`);
+                }
+            }
+        }
+        catch (error) {
+            console.warn(`  Feedback sync failed: ${error.message ?? error}`);
+        }
     }
     else {
         console.log('Skipping sync steps (skipSync=true)');
@@ -108,7 +128,7 @@ async function runCycle(options = {}) {
     if (githubOnly && options.repos?.length) {
         const repoSlug = options.repos[0].replace(/\//g, '-');
         console.log(`Filtering issues for ${repoSlug}...`);
-        const filterResult = await (0, filter_issues_1.filterIssues)(repoSlug);
+        const filterResult = await (0, filter_issues_1.filterIssues)(repoSlug, options.repos[0]);
         console.log(`  Eligible: ${filterResult.eligible.length}, Skipped: ${filterResult.skippedCount}`);
         for (const [reason, count] of Object.entries(filterResult.skipReasons)) {
             console.log(`    ${reason}: ${count}`);
@@ -127,6 +147,90 @@ async function runCycle(options = {}) {
             console.log(`  Security report written to ${reportPath}`);
         }
     }
+    // Discord filtering and dispatch (if not github-only)
+    let discordManifestPaths = [];
+    let approvedDiscordMessages = [];
+    if (hasGuilds) {
+        const discordDispatchMode = (options.dispatchMode
+            ?? (0, config_1.getValue)(config, ['dispatch', 'discord_mode'], 'approval'));
+        const investigationRepo = options.investigationRepo ?? (0, config_1.getValue)(config, ['investigations', 'target_repo'], 'game-ci/help-bot');
+        const collaborators = (0, config_1.getValue)(config, ['github', 'collaborators'], []);
+        for (const guild of guilds) {
+            console.log(`Filtering Discord messages for guild "${guild.name}"...`);
+            const discordFilter = await (0, filter_discord_1.filterDiscordMessages)(guild);
+            console.log(`  Eligible: ${discordFilter.eligible.length}, Skipped: ${discordFilter.skippedCount}`);
+            for (const [reason, count] of Object.entries(discordFilter.skipReasons)) {
+                console.log(`    ${reason}: ${count}`);
+            }
+            if (discordFilter.eligible.length > 0) {
+                // Discord dispatch is NEVER auto — always requires approval
+                const dispatchConfig = getDispatchConfig(config, options);
+                dispatchConfig.mode = discordDispatchMode === 'auto' ? 'approval' : discordDispatchMode;
+                console.log(`Running Discord dispatch (mode: ${dispatchConfig.mode})...`);
+                const dispatchResult = await (0, dispatch_1.runDiscordDispatch)({
+                    filterResult: discordFilter,
+                    config: dispatchConfig,
+                    targetRepo: investigationRepo,
+                    collaborators,
+                    dryRun,
+                });
+                console.log(`  Discord dispatch: ${dispatchResult.detectionsCreated} created, ${dispatchResult.approvedMessages.length} approved, ${dispatchResult.pending} pending`);
+                if (dispatchResult.approvedMessages.length > 0) {
+                    approvedDiscordMessages.push(...dispatchResult.approvedMessages);
+                    // Write manifest for approved messages only
+                    const manifestDir = (0, node_path_1.join)(paths_1.DATA_DIR, 'discord');
+                    const path = await (0, filter_discord_1.writeDiscordManifest)(guild.name, {
+                        eligible: dispatchResult.approvedMessages,
+                        skippedCount: discordFilter.skippedCount + (discordFilter.eligible.length - dispatchResult.approvedMessages.length),
+                        skipReasons: { ...discordFilter.skipReasons, 'dispatch-pending': discordFilter.eligible.length - dispatchResult.approvedMessages.length },
+                    }, manifestDir);
+                    discordManifestPaths.push(path);
+                }
+            }
+        }
+    }
+    // Dispatch gate: for approval/countdown modes, create detection issues and check approvals
+    const dispatchConfig = getDispatchConfig(config, options);
+    let approvedIssues;
+    if (githubOnly && options.repos?.length && dispatchConfig.mode !== 'auto') {
+        const repoSlug = options.repos[0].replace(/\//g, '-');
+        const filterResult = await (0, filter_issues_1.filterIssues)(repoSlug);
+        const collaborators = (0, config_1.getValue)(config, ['github', 'collaborators'], []);
+        const investigationRepo = options.investigationRepo ?? (0, config_1.getValue)(config, ['investigations', 'target_repo'], 'game-ci/help-bot');
+        console.log(`Running dispatch (mode: ${dispatchConfig.mode})...`);
+        const dispatchResult = await (0, dispatch_1.runDispatch)({
+            filterResult,
+            repoSlug,
+            fullRepo: options.repos[0],
+            config: dispatchConfig,
+            targetRepo: investigationRepo,
+            collaborators,
+            dryRun,
+        });
+        console.log(`  Dispatch: ${dispatchResult.detectionsCreated} created, ${dispatchResult.approved.length} approved, ${dispatchResult.pending} pending, ${dispatchResult.cancelled} cancelled, ${dispatchResult.expired} auto-dispatched, ${dispatchResult.warningsPosted} warnings posted`);
+        if (dispatchResult.skipLlm) {
+            console.log('  No approved issues. Skipping LLM.');
+            const stats = (0, metrics_1.getStats)();
+            await (0, state_1.updateState)((state) => {
+                state.meta ??= {};
+                state.meta.lastCycleStats = stats;
+                state.meta.lastCycleAt = new Date().toISOString();
+            });
+            return;
+        }
+        // Rewrite the filtered manifest with ONLY approved issues
+        approvedIssues = dispatchResult.approved;
+        const approvedFilterResult = {
+            eligible: dispatchResult.approved,
+            skippedCount: filterResult.skippedCount + (filterResult.eligible.length - dispatchResult.approved.length),
+            skipReasons: {
+                ...filterResult.skipReasons,
+                'dispatch-pending': filterResult.eligible.length - dispatchResult.approved.length,
+            },
+        };
+        filteredManifestPath = await (0, filter_issues_1.writeFilteredManifest)(repoSlug, approvedFilterResult);
+        console.log(`  Manifest rewritten with ${dispatchResult.approved.length} approved issues`);
+    }
     // Build the layered system prompt from the first guild (base prompt applies to all)
     // For a more granular per-channel approach, individual LLM calls per channel would be needed.
     const systemPrompt = hasGuilds
@@ -135,6 +239,23 @@ async function runCycle(options = {}) {
     // Note: CLAUDE.md is NOT loaded here — it's auto-loaded by Claude Code from cwd,
     // and llm.ts includes it for non-Claude providers. Avoids triple-loading.
     const repoContext = options.repos?.length ? ` Focus on: ${options.repos.join(', ')}.` : '';
+    // Build per-label system prompt additions
+    let labelPromptSection = '';
+    if (githubOnly && options.repos?.length) {
+        // Collect all unique labels from eligible issues
+        const repoSlug = options.repos[0].replace(/\//g, '-');
+        const filterResult = await (0, filter_issues_1.filterIssues)(repoSlug);
+        const allLabels = new Set();
+        for (const issue of filterResult.eligible) {
+            for (const label of issue.labels) {
+                allLabels.add(label);
+            }
+        }
+        const labelPrompt = (0, config_1.buildLabelSystemPrompt)(config, Array.from(allLabels));
+        if (labelPrompt) {
+            labelPromptSection = `\n\n## Label-Specific Guidance\n\nThe following guidance applies to issues with specific labels. Use these instructions when processing issues that have the corresponding labels:\n\n${labelPrompt}`;
+        }
+    }
     // Build the github-only prompt with explicit tool usage instructions
     let prompt;
     if (githubOnly) {
@@ -167,6 +288,17 @@ If you cannot verify something, either omit it or explicitly say it is unverifie
 
 The GameCI documentation has been copied to: data/reference/docs/
 Use Grep to search for relevant topics. Use Read to get full page content.`);
+        }
+        // Feedback data for LLM
+        sections.push(`## Previous Response Feedback
+
+If the file data/feedback/feedback-summary.md exists, read it FIRST. It contains user feedback
+(thumbs up / thumbs down reactions) on previous bot responses. Use this to:
+- Avoid repeating mistakes from negatively-received responses
+- Replicate patterns from positively-received responses
+- Improve your response quality over time`);
+        if (labelPromptSection) {
+            sections.push(labelPromptSection);
         }
         sections.push(`## Workflow — Process ONE issue at a time
 
@@ -273,7 +405,7 @@ In the response:
 - Process at most ${String((0, config_1.getValue)(config, ['bot', 'max_responses_per_cycle'], 10))} issues per cycle.
 - Every parameter you mention MUST appear in action.yml (verified by Read tool).
 - Every env var you mention MUST appear in the source code (verified by Grep tool).
-- No emoji. No "Hi @user!" greetings. No "🚀" sign-offs. Professional tone.
+- No emoji. No "Hi @user!" greetings. No sign-offs. Professional tone.
 - You are a community helper, not a maintainer. Never say "we will fix" or "action items".
 - When you find a bug, describe it factually. Do not promise fixes or timelines.
 - When issues are related, ALWAYS cross-reference them in both the investigation and response.
@@ -291,11 +423,96 @@ In the response:
         prompt = sections.join('\n\n');
     }
     else {
-        prompt = `You are running a help cycle for the GameCI Community Help Bot.
-Process the synced data under data/ and write structured responses into data/responses/discord and data/responses/github.`;
+        // Combined GitHub + Discord prompt
+        const sections = [];
+        sections.push(`You are running a help cycle for the GameCI Community Help Bot.${repoContext}
+
+Process the synced data and write structured responses.`);
+        // Feedback data
+        sections.push(`## Previous Response Feedback
+
+If the file data/feedback/feedback-summary.md exists, read it. It contains user feedback
+on previous bot responses. Learn from positive and negative feedback patterns.`);
+        // Discord-specific instructions
+        if (approvedDiscordMessages.length > 0) {
+            const manifestList = discordManifestPaths.map(p => `- ${p}`).join('\n');
+            sections.push(`## Discord Messages
+
+The following Discord message manifests have been approved for response:
+${manifestList}
+
+For each approved Discord message:
+1. Read the manifest to understand the context (channel, thread, reply chain)
+2. Write a response file to data/responses/discord/ with this frontmatter:
+
+\`\`\`markdown
+---
+response_id: discord-{guild}-{channel}-{messageId}
+guild_name: {guild name}
+channel_name: {channel name}
+channel_id: {channel ID from manifest}
+reply_to_message_id: {message ID to reply to}
+thread_id: {thread ID, if applicable}
+title: "{short description}"
+---
+
+[Response body — concise, helpful, professional]
+\`\`\`
+
+Rules for Discord responses:
+- Keep responses under 1500 characters when possible (Discord has a 2000 char limit)
+- Reference the user's specific error or question
+- If the message is in a thread, read the thread context and reply appropriately
+- Do not ping users or use @mentions
+- Professional tone, no emoji`);
+        }
+        // GitHub instructions (simplified for combined mode)
+        sections.push(`## GitHub Issues
+
+Process synced GitHub issues under data/github/issues/ and write responses to data/responses/github/.
+Follow the standard investigation and response workflow.`);
+        if (labelPromptSection) {
+            sections.push(labelPromptSection);
+        }
+        prompt = sections.join('\n\n');
+    }
+    // React 'eyes' on detection issues to indicate investigation is starting
+    if (dispatchConfig.mode !== 'auto' && approvedIssues && options.repos?.length) {
+        const investigationRepo = options.investigationRepo ?? (0, config_1.getValue)(config, ['investigations', 'target_repo'], 'game-ci/help-bot');
+        await (0, dispatch_1.reactInvestigationStarted)({
+            approvedIssues,
+            fullRepo: options.repos[0],
+            targetRepo: investigationRepo,
+            dryRun,
+        });
     }
     console.log('Running LLM provider...');
-    await (0, llm_1.runProvider)(prompt, { provider: options.provider, systemPrompt });
+    let llmFailed = false;
+    try {
+        await (0, llm_1.runProvider)(prompt, { provider: options.provider, systemPrompt });
+    }
+    catch (error) {
+        console.error(`LLM provider failed: ${error.message ?? error}`);
+        llmFailed = true;
+        // React 'confused' on detection issues to indicate failure
+        if (dispatchConfig.mode !== 'auto' && approvedIssues && options.repos?.length) {
+            const investigationRepo = options.investigationRepo ?? (0, config_1.getValue)(config, ['investigations', 'target_repo'], 'game-ci/help-bot');
+            await (0, dispatch_1.reactInvestigationFailed)({
+                approvedIssues,
+                fullRepo: options.repos[0],
+                targetRepo: investigationRepo,
+                dryRun,
+            });
+        }
+    }
+    if (llmFailed) {
+        await (0, state_1.updateState)((state) => {
+            state.meta ??= {};
+            state.meta.lastCycleStats = (0, metrics_1.getStats)();
+            state.meta.lastCycleAt = new Date().toISOString();
+        });
+        return;
+    }
     if (hasGuilds) {
         console.log('Posting Discord responses (dry run: ' + dryRun + ')...');
         const seenYouMessage = options.seenYouMessage ?? (0, config_1.getValue)(config, ['discord', 'seen_you_message'], '');
@@ -350,9 +567,41 @@ Process the synced data under data/ and write structured responses into data/res
             stats,
         });
     }
+    // Post-dispatch cleanup: mark dispatched detections, react with status, and close them
+    if (dispatchConfig.mode !== 'auto' && approvedIssues && options.repos?.length) {
+        const investigationRepo = options.investigationRepo ?? (0, config_1.getValue)(config, ['investigations', 'target_repo'], 'game-ci/help-bot');
+        await (0, dispatch_1.markDispatched)(approvedIssues, options.repos[0]);
+        // React with checkmark on detection issues to indicate successful completion
+        await (0, dispatch_1.reactInvestigationComplete)({
+            fullRepo: options.repos[0],
+            targetRepo: investigationRepo,
+            dryRun,
+        });
+        if (dispatchConfig.close_on_dispatch) {
+            await (0, dispatch_1.closeDispatchedDetections)({ targetRepo: investigationRepo, dryRun });
+        }
+    }
+    // Discord DM notifications (opt-in, skips if not configured)
+    try {
+        await (0, notify_1.notifyCycleSummary)({ dryRun, stats, repos: options.repos ?? [] });
+    }
+    catch (error) {
+        console.warn(`Discord DM notifications failed: ${error.message ?? error}`);
+    }
     await (0, state_1.updateState)((state) => {
         state.meta ??= {};
         state.meta.lastCycleStats = stats;
         state.meta.lastCycleAt = new Date().toISOString();
     });
+}
+function getDispatchConfig(config, options) {
+    return {
+        mode: (options.dispatchMode ?? (0, config_1.getValue)(config, ['dispatch', 'mode'], 'auto')),
+        warnings_required: Number((0, config_1.getValue)(config, ['dispatch', 'warnings_required'], 3)),
+        warning_interval_hours: options.countdownHours ?? Number((0, config_1.getValue)(config, ['dispatch', 'warning_interval_hours'], 24)),
+        approve_reactions: (0, config_1.getValue)(config, ['dispatch', 'approve_reactions'], ['+1', 'rocket']),
+        cancel_reactions: (0, config_1.getValue)(config, ['dispatch', 'cancel_reactions'], ['-1']),
+        max_detections_per_cycle: Number((0, config_1.getValue)(config, ['dispatch', 'max_detections_per_cycle'], 10)),
+        close_on_dispatch: Boolean((0, config_1.getValue)(config, ['dispatch', 'close_on_dispatch'], true)),
+    };
 }

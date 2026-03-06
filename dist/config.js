@@ -4,6 +4,8 @@ exports.getConfig = getConfig;
 exports.getValue = getValue;
 exports.resolveGuilds = resolveGuilds;
 exports.getSystemPrompt = getSystemPrompt;
+exports.getLabelPrompts = getLabelPrompts;
+exports.buildLabelSystemPrompt = buildLabelSystemPrompt;
 const promises_1 = require("node:fs/promises");
 const node_path_1 = require("node:path");
 let cachedConfig = {};
@@ -73,7 +75,7 @@ function resolveGuilds(discordConfig) {
 /**
  * Build a layered system prompt by combining:
  *   1. Base prompt (discord.system_prompt) -- applies to all guilds/channels
- *   2. Guild-level prompt (guild.system_prompt) -- if present (reserved for future use)
+ *   2. Guild-level prompt (guild.system_prompt) -- if present
  *   3. Channel-level prompt (channel.system_prompt) -- if present
  *
  * Each layer is concatenated with double newlines.
@@ -85,17 +87,34 @@ function getSystemPrompt(discordConfig, guild, channel) {
     if (base) {
         layers.push(base.trim());
     }
-    // Guild-level prompt (future-proofing -- the GuildConfig type doesn't mandate it yet,
-    // but if someone adds system_prompt to a guild object it will be picked up)
-    if (guild) {
-        const guildPrompt = guild['system_prompt'];
-        if (guildPrompt) {
-            layers.push(guildPrompt.trim());
-        }
+    // Guild-level prompt
+    if (guild?.system_prompt) {
+        layers.push(guild.system_prompt.trim());
     }
     // Channel-level prompt
     if (channel?.system_prompt) {
         layers.push(channel.system_prompt.trim());
     }
     return layers.filter(Boolean).join('\n\n');
+}
+/**
+ * Get per-label system prompts from config.
+ * These are appended to the LLM prompt when processing issues with matching labels.
+ */
+function getLabelPrompts(config) {
+    return getValue(config, ['github', 'label_prompts'], []);
+}
+/**
+ * Build a combined system prompt for a set of issue labels.
+ * Returns concatenated label-specific prompts, or empty string if none match.
+ */
+function buildLabelSystemPrompt(config, labels) {
+    const labelPrompts = getLabelPrompts(config);
+    if (labelPrompts.length === 0 || labels.length === 0)
+        return '';
+    const lowerLabels = labels.map(l => l.toLowerCase());
+    const matched = labelPrompts.filter(lp => lowerLabels.includes(lp.label.toLowerCase()));
+    if (matched.length === 0)
+        return '';
+    return matched.map(lp => lp.system_prompt.trim()).join('\n\n');
 }

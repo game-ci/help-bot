@@ -145,7 +145,7 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
   if (githubOnly && options.repos?.length) {
     const repoSlug = options.repos[0].replace(/\//g, '-')
     console.log(`Filtering issues for ${repoSlug}...`)
-    const filterResult = await filterIssues(repoSlug)
+    const filterResult = await filterIssues(repoSlug, options.repos![0])
     console.log(`  Eligible: ${filterResult.eligible.length}, Skipped: ${filterResult.skippedCount}`)
     for (const [reason, count] of Object.entries(filterResult.skipReasons)) {
       console.log(`    ${reason}: ${count}`)

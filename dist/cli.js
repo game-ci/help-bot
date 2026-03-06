@@ -31,7 +31,9 @@ const report_1 = require("./report");
     .option('repo-dir', { type: 'string', description: 'Path to local clone of target repo (Claude reads code directly)' })
     .option('docs-dir', { type: 'string', description: 'Path to local clone of documentation repo (skips HTTP docs sync)' })
     .option('investigation-issues', { type: 'boolean', description: 'Create GitHub issues for each investigation in the target repo' })
-    .option('investigation-repo', { type: 'string', description: 'Target repo for investigation issues (default: game-ci/help-bot)' }), async (args) => {
+    .option('investigation-repo', { type: 'string', description: 'Target repo for investigation issues (default: game-ci/help-bot)' })
+    .option('dispatch-mode', { type: 'string', choices: ['auto', 'approval', 'countdown'], description: 'Dispatch mode: auto (immediate), approval (require reaction), countdown (staged warnings)' })
+    .option('countdown-hours', { type: 'number', description: 'Hours between countdown warning stages (default: 24)' }), async (args) => {
     if (!args['github-only']) {
         await (0, helper_1.ensureDiscordToken)();
     }
@@ -50,13 +52,34 @@ const report_1 = require("./report");
         docsDir: args['docs-dir'],
         investigationIssues: args['investigation-issues'] || false,
         investigationRepo: args['investigation-repo'],
+        dispatchMode: args['dispatch-mode'],
+        countdownHours: args['countdown-hours'],
     });
 })
     .command('continuous', 'run continuous mode', (y) => y
     .option('interval', { type: 'number', description: 'Cycle interval in minutes' })
-    .option('provider', { type: 'string', description: 'Override LLM provider' }), async (args) => {
-    await (0, helper_1.ensureDiscordToken)();
-    await (0, continuous_1.runContinuous)({ intervalMinutes: args.interval, provider: args.provider });
+    .option('provider', { type: 'string', description: 'Override LLM provider' })
+    .option('github-only', { type: 'boolean', description: 'Skip Discord entirely (no token needed)' })
+    .option('repos', { type: 'string', array: true, description: 'Override repos to sync' })
+    .option('dispatch-mode', { type: 'string', choices: ['auto', 'approval', 'countdown'], description: 'Dispatch mode: auto (immediate), approval (require reaction), countdown (staged warnings)' })
+    .option('countdown-hours', { type: 'number', description: 'Hours between countdown warning stages (default: 24)' })
+    .option('investigation-issues', { type: 'boolean', description: 'Create GitHub issues for each investigation' })
+    .option('investigation-repo', { type: 'string', description: 'Target repo for investigation issues' })
+    .option('dry-run', { type: 'boolean', description: 'Draft responses without posting' }), async (args) => {
+    if (!args['github-only']) {
+        await (0, helper_1.ensureDiscordToken)();
+    }
+    await (0, continuous_1.runContinuous)({
+        intervalMinutes: args.interval,
+        provider: args.provider,
+        githubOnly: args['github-only'] || false,
+        repos: args.repos,
+        dispatchMode: args['dispatch-mode'],
+        countdownHours: args['countdown-hours'],
+        investigationIssues: args['investigation-issues'] || false,
+        investigationRepo: args['investigation-repo'],
+        dryRun: args['dry-run'] || false,
+    });
 })
     .command('sync-discord', 'sync Discord messages', () => { }, async () => { await (0, helper_1.ensureDiscordToken)(); await (0, discord_1.syncDiscord)(); })
     .command('sync-github', 'sync GitHub issues', () => { }, async () => { await (0, github_1.syncGitHub)(); })

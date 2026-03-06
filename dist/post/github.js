@@ -8,7 +8,9 @@ const node_path_1 = require("node:path");
 const frontmatter_1 = require("../utils/frontmatter");
 const paths_1 = require("../utils/paths");
 const metrics_1 = require("../metrics");
+const state_1 = require("../state");
 const execFileAsync = (0, node_util_1.promisify)(node_child_process_1.execFile);
+const FEEDBACK_PROMPT = '\n\n---\n<sub>Was this helpful? React with :+1: or :-1: to help improve future responses.</sub>';
 async function postGitHubResponses(options) {
     const repoDir = (0, node_path_1.join)(paths_1.RESPONSES_DIR, 'github');
     let files = [];
@@ -39,9 +41,36 @@ async function postGitHubResponses(options) {
             console.log(`DRY RUN: would post GitHub response for ${repo}#${number}`);
             continue;
         }
+        // Append feedback prompt to response body
+        const bodyWithFeedback = body.trim() + FEEDBACK_PROMPT;
         try {
-            await execFileAsync('gh', ['issue', 'comment', String(number), '--repo', repo, '--body', body]);
+            // Post comment and capture the comment URL (contains comment ID)
+            const { stdout } = await execFileAsync('gh', [
+                'issue', 'comment', String(number),
+                '--repo', repo,
+                '--body', bodyWithFeedback,
+            ]);
+            const commentUrl = stdout.trim();
+            // Extract comment ID from URL like https://github.com/.../issues/N#issuecomment-XXXXX
+            const commentIdMatch = commentUrl.match(/issuecomment-(\d+)/);
+            const commentId = commentIdMatch ? commentIdMatch[1] : undefined;
             (0, metrics_1.recordStat)('githubResponsesPosted', 1);
+            // Track the posted response with comment ID for feedback polling
+            await (0, state_1.updateState)((s) => {
+                (0, state_1.setPostedResponse)(s, repo, number);
+                if (commentId) {
+                    s.meta ??= {};
+                    const botComments = s.meta.botComments ?? {};
+                    botComments[`${repo}#${number}`] = {
+                        commentId,
+                        repo,
+                        issueNumber: number,
+                        postedAt: new Date().toISOString(),
+                    };
+                    s.meta.botComments = botComments;
+                }
+            });
+            console.log(`Posted GitHub response for ${repo}#${number}${commentId ? ` (comment ${commentId})` : ''}`);
         }
         catch (error) {
             console.warn(`Failed to post GitHub response for ${repo}#${number}: ${error.message ?? error}`);
