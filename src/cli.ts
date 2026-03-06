@@ -81,6 +81,25 @@ yargs(hideBin(process.argv))
       dryRun: args['dry-run'] || false,
     })
   })
+  .command('live', 'run as a live Discord bot (persistent Gateway connection)', (y) => y
+    .option('dispatch-mode', { type: 'string', choices: ['auto', 'approval', 'countdown'] as const, description: 'Dispatch mode for incoming messages (default: discord_mode from config)' })
+    .option('repos', { type: 'string', array: true, description: 'GitHub repos for cross-referencing' })
+    .option('repo-dir', { type: 'string', description: 'Path to local clone of target repo (Claude reads code directly)' })
+    .option('docs-dir', { type: 'string', description: 'Path to local docs clone' })
+    .option('model', { type: 'string', description: 'Override LLM model (e.g. claude-opus-4-20250514)' })
+    .option('dry-run', { type: 'boolean', description: 'Investigate but do not post responses' })
+  , async (args) => {
+    await ensureDiscordToken()
+    const { runLive } = await import('./core/live.js')
+    await runLive({
+      dispatchMode: args['dispatch-mode'],
+      repos: args.repos,
+      repoDir: args['repo-dir'],
+      docsDir: args['docs-dir'],
+      modelOverride: args.model,
+      dryRun: args['dry-run'] || false,
+    })
+  })
   .command('sync-discord', 'sync Discord messages', () => {}, async () => { await ensureDiscordToken(); await syncDiscord() })
   .command('sync-github', 'sync GitHub issues', () => {}, async () => { await syncGitHub() })
   .command('sync-docs', 'sync docs pages', () => {}, async () => { await syncDocs() })

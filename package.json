@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@octokit/rest": "^22.0.1",
+    "discord.js": "^14.25.1",
     "dotenv": "^16.5.0",
     "glob": "^13.0.6",
     "keytar": "^7.9.0",

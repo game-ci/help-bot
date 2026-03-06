@@ -33,7 +33,8 @@ const report_1 = require("./report");
     .option('investigation-issues', { type: 'boolean', description: 'Create GitHub issues for each investigation in the target repo' })
     .option('investigation-repo', { type: 'string', description: 'Target repo for investigation issues (default: game-ci/help-bot)' })
     .option('dispatch-mode', { type: 'string', choices: ['auto', 'approval', 'countdown'], description: 'Dispatch mode: auto (immediate), approval (require reaction), countdown (staged warnings)' })
-    .option('countdown-hours', { type: 'number', description: 'Hours between countdown warning stages (default: 24)' }), async (args) => {
+    .option('countdown-hours', { type: 'number', description: 'Hours between countdown warning stages (default: 24)' })
+    .option('model', { type: 'string', description: 'Override LLM model (e.g. claude-opus-4-20250514 for deep investigation)' }), async (args) => {
     if (!args['github-only']) {
         await (0, helper_1.ensureDiscordToken)();
     }
@@ -54,6 +55,7 @@ const report_1 = require("./report");
         investigationRepo: args['investigation-repo'],
         dispatchMode: args['dispatch-mode'],
         countdownHours: args['countdown-hours'],
+        modelOverride: args.model,
     });
 })
     .command('continuous', 'run continuous mode', (y) => y
@@ -78,6 +80,24 @@ const report_1 = require("./report");
         countdownHours: args['countdown-hours'],
         investigationIssues: args['investigation-issues'] || false,
         investigationRepo: args['investigation-repo'],
+        dryRun: args['dry-run'] || false,
+    });
+})
+    .command('live', 'run as a live Discord bot (persistent Gateway connection)', (y) => y
+    .option('dispatch-mode', { type: 'string', choices: ['auto', 'approval', 'countdown'], description: 'Dispatch mode for incoming messages (default: discord_mode from config)' })
+    .option('repos', { type: 'string', array: true, description: 'GitHub repos for cross-referencing' })
+    .option('repo-dir', { type: 'string', description: 'Path to local clone of target repo (Claude reads code directly)' })
+    .option('docs-dir', { type: 'string', description: 'Path to local docs clone' })
+    .option('model', { type: 'string', description: 'Override LLM model (e.g. claude-opus-4-20250514)' })
+    .option('dry-run', { type: 'boolean', description: 'Investigate but do not post responses' }), async (args) => {
+    await (0, helper_1.ensureDiscordToken)();
+    const { runLive } = await import('./core/live.js');
+    await runLive({
+        dispatchMode: args['dispatch-mode'],
+        repos: args.repos,
+        repoDir: args['repo-dir'],
+        docsDir: args['docs-dir'],
+        modelOverride: args.model,
         dryRun: args['dry-run'] || false,
     });
 })
@@ -155,6 +175,16 @@ const report_1 = require("./report");
     else {
         console.log('No security concerns found.');
     }
+})
+    .command('review-quality', 'interactive quality review of recent responses', (y) => y
+    .option('model', { type: 'string', description: 'Override model for review (e.g. claude-opus-4-20250514)' }), async (args) => {
+    const { runQualityReview } = await import('./review/quality.js');
+    await runQualityReview({ modelOverride: args.model });
+})
+    .command('review-security', 'interactive security audit of recent responses and system output', (y) => y
+    .option('model', { type: 'string', description: 'Override model for review (e.g. claude-opus-4-20250514)' }), async (args) => {
+    const { runSecurityReview } = await import('./review/security.js');
+    await runSecurityReview({ modelOverride: args.model });
 })
     .demandCommand(1, 'Specify a command')
     .strict()
