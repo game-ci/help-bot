@@ -24,6 +24,8 @@ yargs(hideBin(process.argv))
     .option('provider', { type: 'string', description: 'Override LLM provider (claude|lm_studio|continue|codex)' })
     .option('github-only', { type: 'boolean', description: 'Skip Discord entirely (no token needed)' })
     .option('repos', { type: 'string', array: true, description: 'Override repos to sync (e.g. game-ci/unity-builder)' })
+    .option('repo-dir', { type: 'string', description: 'Path to local clone of target repo (Claude reads code directly)' })
+    .option('docs-dir', { type: 'string', description: 'Path to local clone of documentation repo (skips HTTP docs sync)' })
   , async (args) => {
     if (!args['github-only']) {
       await ensureDiscordToken()
@@ -39,6 +41,8 @@ yargs(hideBin(process.argv))
       provider: args.provider,
       githubOnly: args['github-only'] || false,
       repos: args.repos,
+      repoDir: args['repo-dir'],
+      docsDir: args['docs-dir'],
     })
   })
   .command('continuous', 'run continuous mode', (y) => y

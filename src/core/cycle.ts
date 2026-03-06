@@ -22,6 +22,8 @@ export interface CycleOptions extends ProviderOptions {
   seenYouEmoji?: string
   githubOnly?: boolean
   repos?: string[]
+  repoDir?: string
+  docsDir?: string
 }
 
 export async function runCycle(options: CycleOptions = {}): Promise<void> {
@@ -42,6 +44,8 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
   const guilds = githubOnly ? [] : resolveGuilds(discordConfig)
   const hasGuilds = guilds.length > 0
 
+  const hasLocalRepos = Boolean(options.repoDir || options.docsDir)
+
   if (!skipSync) {
     if (hasGuilds) {
       console.log('Syncing Discord...')
@@ -49,10 +53,14 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
     } else {
       console.log(githubOnly ? 'GitHub-only mode. Skipping Discord sync.' : 'No Discord guilds configured. Skipping Discord sync.')
     }
-    console.log('Syncing GitHub...')
+    console.log('Syncing GitHub issues...')
     await syncGitHub({ repos: options.repos })
-    console.log('Syncing docs...')
-    await syncDocs()
+    if (options.docsDir) {
+      console.log(`Using local docs clone: ${options.docsDir}. Skipping HTTP docs sync.`)
+    } else {
+      console.log('Syncing docs...')
+      await syncDocs()
+    }
   } else {
     console.log('Skipping sync steps (skipSync=true)')
   }
@@ -64,12 +72,29 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
     : getValue(discordConfig, ['system_prompt'], '') as string
 
   const claudeInstructions = await readFile(join(REPO_ROOT, 'CLAUDE.md'), 'utf-8').catch(() => '')
+
+  // Build local repo context for the prompt
+  const localContext: string[] = []
+  if (options.repoDir) {
+    localContext.push(`The source code of the target repository is cloned locally at: ${options.repoDir}`)
+    localContext.push(`Read the code there to understand the project, its README, action.yml, Dockerfile, and implementation details.`)
+  }
+  if (options.docsDir) {
+    localContext.push(`The GameCI documentation site is cloned locally at: ${options.docsDir}`)
+    localContext.push(`Read the docs there (look under docs/ for markdown content) to find answers and reference material.`)
+  }
+  const localContextBlock = localContext.length
+    ? `\n\nLocal repositories available:\n${localContext.join('\n')}\n`
+    : ''
+
   const repoContext = options.repos?.length ? ` Focus on: ${options.repos.join(', ')}.` : ''
   const prompt = githubOnly
     ? `${claudeInstructions}
 
 You are running a GitHub-only help cycle for the GameCI Community Help Bot.
-Process the synced GitHub issues and docs under data/ and write structured responses into data/responses/github.${repoContext}
+Process the synced GitHub issues under data/github/issues/ and write structured responses into data/responses/github/.${repoContext}
+${localContextBlock}
+For each issue that needs help, read the issue markdown file, understand the problem, search the local repo code and docs for relevant context, then write a response file.
 `
     : `${claudeInstructions}
 
