@@ -14,10 +14,10 @@ async function fetchPage(page: string, baseUrl: string): Promise<void> {
   const fullUrl = `${normalizedBase}/${page}`
 
   try {
-    const response = await request(fullUrl, {
-      headers: {
-        'User-Agent': 'GameCI Help Bot/TS',
-      },
+    let url = fullUrl
+    let response = await request(url, {
+      headers: { 'User-Agent': 'GameCI Help Bot/TS' },
+      maxRedirections: 5,
     })
     if (response.statusCode !== 200) {
       throw new Error(`Status ${response.statusCode}`)
