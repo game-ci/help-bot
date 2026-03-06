@@ -159,6 +159,8 @@ export interface ProviderOptions {
   provider?: string
   /** Layered system prompt from config (base + guild + channel) */
   systemPrompt?: string
+  /** Override model from config (e.g. use Opus for deep investigation) */
+  modelOverride?: string
 }
 
 export async function runProvider(prompt: string, options: ProviderOptions = {}): Promise<void> {
@@ -167,7 +169,8 @@ export async function runProvider(prompt: string, options: ProviderOptions = {})
   const instructions = await readClaudeInstructions()
   switch (provider) {
     case 'claude': {
-      const model = getValue(config, ['llm', 'claude', 'model'], 'claude-sonnet-4-20250514') as string
+      const model = options.modelOverride
+        ?? (getValue(config, ['llm', 'claude', 'model'], 'claude-sonnet-4-20250514') as string)
       const maxTurns = Number(getValue(config, ['llm', 'claude', 'max_turns'], 0)) || undefined
       // Claude Code auto-loads CLAUDE.md from cwd, so only include the cycle-specific prompt.
       // The instructions from readClaudeInstructions() are skipped for Claude to avoid triple-loading.

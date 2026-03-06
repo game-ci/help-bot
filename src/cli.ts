@@ -30,6 +30,7 @@ yargs(hideBin(process.argv))
     .option('investigation-repo', { type: 'string', description: 'Target repo for investigation issues (default: game-ci/help-bot)' })
     .option('dispatch-mode', { type: 'string', choices: ['auto', 'approval', 'countdown'] as const, description: 'Dispatch mode: auto (immediate), approval (require reaction), countdown (staged warnings)' })
     .option('countdown-hours', { type: 'number', description: 'Hours between countdown warning stages (default: 24)' })
+    .option('model', { type: 'string', description: 'Override LLM model (e.g. claude-opus-4-20250514 for deep investigation)' })
   , async (args) => {
     if (!args['github-only']) {
       await ensureDiscordToken()
@@ -51,6 +52,7 @@ yargs(hideBin(process.argv))
       investigationRepo: args['investigation-repo'],
       dispatchMode: args['dispatch-mode'] as 'auto' | 'approval' | 'countdown' | undefined,
       countdownHours: args['countdown-hours'],
+      modelOverride: args.model,
     })
   })
   .command('continuous', 'run continuous mode', (y) => y
@@ -152,6 +154,18 @@ yargs(hideBin(process.argv))
     } else {
       console.log('No security concerns found.')
     }
+  })
+  .command('review-quality', 'interactive quality review of recent responses', (y) => y
+    .option('model', { type: 'string', description: 'Override model for review (e.g. claude-opus-4-20250514)' })
+  , async (args) => {
+    const { runQualityReview } = await import('./review/quality.js')
+    await runQualityReview({ modelOverride: args.model })
+  })
+  .command('review-security', 'interactive security audit of recent responses and system output', (y) => y
+    .option('model', { type: 'string', description: 'Override model for review (e.g. claude-opus-4-20250514)' })
+  , async (args) => {
+    const { runSecurityReview } = await import('./review/security.js')
+    await runSecurityReview({ modelOverride: args.model })
   })
   .demandCommand(1, 'Specify a command')
   .strict()

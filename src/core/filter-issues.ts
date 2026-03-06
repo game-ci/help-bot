@@ -194,20 +194,80 @@ export async function writeFilteredManifest(repoSlug: string, result: FilterResu
   lines.push('Process ONLY the issues listed below. Do NOT read or respond to any other issues.')
   lines.push('')
 
-  // Sort by comment count (0 first -- unanswered), then by number (newest first)
+  // Sort by priority score (highest first)
   const sorted = [...result.eligible].sort((a, b) => {
-    if (a.commentCount !== b.commentCount) return a.commentCount - b.commentCount
-    return b.number - a.number
+    return priorityScore(b) - priorityScore(a)
   })
 
   for (const issue of sorted) {
     const labelStr = issue.labels.length ? ` [${issue.labels.join(', ')}]` : ''
-    lines.push(`- **#${issue.number}** (${issue.type}, ${issue.commentCount} comments${labelStr}): ${issue.title}`)
+    const pScore = priorityScore(issue)
+    lines.push(`- **#${issue.number}** (${issue.type}, ${issue.commentCount} comments${labelStr}, priority: ${pScore}): ${issue.title}`)
     lines.push(`  File: data/github/issues/${repoSlug}/${issue.file}`)
   }
 
   await writeFile(manifestPath, lines.join('\n'), 'utf-8')
   return manifestPath
+}
+
+/**
+ * Priority score for issue triage.
+ * Higher score = higher priority for the LLM to investigate.
+ */
+export function priorityScore(issue: EligibleIssue): number {
+  let score = 0
+  // Security-related keywords in title
+  if (/security|vulnerability|cve|injection/i.test(issue.title)) score += 50
+  // Bug label
+  if (issue.labels.includes('bug')) score += 30
+  // Unanswered (0 comments)
+  if (issue.commentCount === 0) score += 20
+  // Help wanted
+  if (issue.labels.includes('help wanted')) score += 15
+  // Engagement (log scale for comments)
+  score += Math.min(10, Math.floor(Math.log2(issue.commentCount + 1) * 3))
+  // Issues over PRs
+  if (issue.type === 'issue') score += 5
+  return score
+}
+
+/**
+ * Deduplicate automated dependency-bump PRs (Snyk, Dependabot).
+ * Groups by normalized title (stripping version numbers) and keeps only the newest PR per group.
+ */
+export function deduplicateAutomatedPRs(issues: EligibleIssue[]): EligibleIssue[] {
+  const groups = new Map<string, EligibleIssue[]>()
+  const nonAutomated: EligibleIssue[] = []
+
+  for (const issue of issues) {
+    if (issue.type !== 'pull_request') {
+      nonAutomated.push(issue)
+      continue
+    }
+    const title = issue.title.toLowerCase()
+    if (!title.includes('[snyk]') && !title.includes('bump ') && !title.includes('security upgrade')) {
+      nonAutomated.push(issue)
+      continue
+    }
+    // Normalize: strip version numbers, prefixes, whitespace
+    const normalized = title
+      .replace(/\[snyk\]\s*/gi, '')
+      .replace(/\bfrom\s+[\d.]+\s+to\s+[\d.]+/g, '')
+      .replace(/\bbump\s+/gi, '')
+      .replace(/\bsecurity upgrade\s+/gi, '')
+      .trim()
+    const existing = groups.get(normalized) ?? []
+    existing.push(issue)
+    groups.set(normalized, existing)
+  }
+
+  // Keep only the newest PR from each group
+  const deduped: EligibleIssue[] = [...nonAutomated]
+  for (const [, group] of groups) {
+    group.sort((a, b) => b.number - a.number) // newest first
+    deduped.push(group[0])
+  }
+  return deduped
 }
 
 /**

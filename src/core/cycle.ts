@@ -3,7 +3,7 @@ import { RESPONSES_DIR, LOGS_DIR, REPO_ROOT, DATA_DIR } from '../utils/paths'
 import { syncDiscord } from '../sync/discord'
 import { syncGitHub } from '../sync/github'
 import { syncDocs } from '../sync/docs'
-import { filterIssues, writeFilteredManifest } from './filter-issues'
+import { filterIssues, writeFilteredManifest, deduplicateAutomatedPRs, FilterResult } from './filter-issues'
 import { filterDiscordMessages, writeDiscordManifest } from './filter-discord'
 import { runProvider, ProviderOptions } from '../provider/llm'
 import { postDiscordResponses } from '../post/discord'
@@ -141,16 +141,30 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
 
   // Pre-filter issues to remove collaborator-responded, closed, stale, etc.
   // This is a hard filter — the LLM never sees filtered-out issues.
+  // filterResult is cached here and reused for dispatch + label prompts (avoids re-reading 800+ files)
   let filteredManifestPath: string | undefined
+  let cachedFilterResult: FilterResult | undefined
   if (githubOnly && options.repos?.length) {
     const repoSlug = options.repos[0].replace(/\//g, '-')
     console.log(`Filtering issues for ${repoSlug}...`)
-    const filterResult = await filterIssues(repoSlug, options.repos![0])
-    console.log(`  Eligible: ${filterResult.eligible.length}, Skipped: ${filterResult.skippedCount}`)
-    for (const [reason, count] of Object.entries(filterResult.skipReasons)) {
+    cachedFilterResult = await filterIssues(repoSlug, options.repos![0])
+    console.log(`  Eligible: ${cachedFilterResult.eligible.length}, Skipped: ${cachedFilterResult.skippedCount}`)
+    for (const [reason, count] of Object.entries(cachedFilterResult.skipReasons)) {
       console.log(`    ${reason}: ${count}`)
     }
-    filteredManifestPath = await writeFilteredManifest(repoSlug, filterResult)
+
+    // Deduplicate automated dependency-bump PRs (Snyk, Dependabot)
+    const beforeDedup = cachedFilterResult.eligible.length
+    cachedFilterResult = {
+      ...cachedFilterResult,
+      eligible: deduplicateAutomatedPRs(cachedFilterResult.eligible),
+    }
+    const dedupCount = beforeDedup - cachedFilterResult.eligible.length
+    if (dedupCount > 0) {
+      console.log(`  Deduped ${dedupCount} automated PRs (${beforeDedup} → ${cachedFilterResult.eligible.length})`)
+    }
+
+    filteredManifestPath = await writeFilteredManifest(repoSlug, cachedFilterResult)
     console.log(`  Manifest written to ${filteredManifestPath}`)
 
     // Security scan: check synced issues for prompt injection
@@ -219,7 +233,7 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
   let approvedIssues: import('../core/filter-issues').EligibleIssue[] | undefined
   if (githubOnly && options.repos?.length && dispatchConfig.mode !== 'auto') {
     const repoSlug = options.repos[0].replace(/\//g, '-')
-    const filterResult = await filterIssues(repoSlug)
+    const filterResult = cachedFilterResult ?? await filterIssues(repoSlug)
     const collaborators = (getValue(config, ['github', 'collaborators'], []) as string[])
     const investigationRepo = options.investigationRepo ?? (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
 
@@ -274,12 +288,10 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
 
   // Build per-label system prompt additions
   let labelPromptSection = ''
-  if (githubOnly && options.repos?.length) {
-    // Collect all unique labels from eligible issues
-    const repoSlug = options.repos[0].replace(/\//g, '-')
-    const filterResult = await filterIssues(repoSlug)
+  if (githubOnly && options.repos?.length && cachedFilterResult) {
+    // Collect all unique labels from eligible issues (using cached filter result)
     const allLabels = new Set<string>()
-    for (const issue of filterResult.eligible) {
+    for (const issue of cachedFilterResult.eligible) {
       for (const label of issue.labels) {
         allLabels.add(label)
       }
@@ -351,18 +363,28 @@ maintainers already responded, issues with skip labels, and stale issues.
 
 ONLY process issues listed in this manifest. Do NOT read or respond to any issue not in the manifest.
 
-### Step 2: Read the issue
+### Step 2: Read the issue and its comment thread
 For each eligible issue in the manifest, use the Read tool on the file path listed to read the full issue.
 
-### Step 3: Search for related issues
-Before investigating the issue itself, search for related issues:
-- Grep data/github/issues/ for the same error messages, platform keywords, and symptoms
-- Look for issues with overlapping labels (e.g., "macOS", "self-hosted", "docker")
+Pay special attention to the COMMENT THREAD below the issue body. Comments often contain:
+- Additional error logs or screenshots from the reporter
+- Workarounds discovered by other users
+- Clarifications about the environment or steps to reproduce
+- Follow-up questions that narrow down the root cause
+Incorporate ALL relevant information from comments into your investigation.
+
+### Step 3: Search for related issues (MANDATORY — at least 3 searches)
+Before investigating the issue itself, search for related issues. You MUST run at least 3 Grep searches:
+1. Grep data/github/issues/ for the exact error message or exit code from the issue
+2. Grep data/github/issues/ for the platform/runner type (e.g., "macOS", "self-hosted", "windows")
+3. Grep data/github/issues/ for the primary symptom keyword (e.g., "IL2CPP", "docker", "activation")
+- Also look for issues with overlapping labels
 - Check if multiple users report the same root cause under different titles
 - Note ALL related issue numbers — these will go in your investigation
 
-This step is CRITICAL. Many issues are symptoms of the same underlying problem. Your job is to
+This step is CRITICAL and MANDATORY. Many issues are symptoms of the same underlying problem. Your job is to
 connect the dots and identify patterns that individual reporters cannot see.
+If your related_issues array ends up empty, explain in the investigation why no matches were found.
 
 ### Step 4: Investigate (use tools — do not guess)
 - Read data/reference/repo/action.yml to verify any parameters you plan to mention
@@ -392,8 +414,15 @@ issue_number: {number}
 repo: {owner/repo}
 title: "{issue title}"
 classification: bug|user-error|limitation|feature-request
-related_issues: [{list of related issue numbers as integers}]
+severity: critical|high|medium|low
+related_issues: [{MUST contain at least one entry if Grep found any matches. Empty only if zero matches found.}]
 ---
+
+Severity guidelines:
+- critical: Security issue, data loss, or build completely broken with no workaround
+- high: Build fails for a common configuration, affects many users
+- medium: Build fails for a specific/unusual configuration, workaround exists
+- low: Cosmetic issue, documentation gap, or edge case with easy workaround
 
 ## Problem
 [1-2 sentence summary]
@@ -435,14 +464,47 @@ the same root cause: [description]."
 ### Step 7: Write response file
 Write to data/responses/github/{repo-slug}-{number}.md — only include verified information.
 
-In the response:
-- If related issues exist, mention them: "This appears related to #X and #Y which report similar symptoms."
-- If you found a bug, explain the root cause clearly and note it affects other users too.
-- If the issue is a duplicate of a better-described issue, say so and link to it.
-- Cross-link: help the user understand they are not alone and point them to related discussions.
+### Response Structure Requirements
+
+Every response MUST follow this structure:
+1. **TL;DR:** — One sentence summarizing the diagnosis and recommended action (MANDATORY first line)
+2. **Root Cause** — What is causing the issue, verified against source code with file:line references
+3. **Workaround / Solution** — Copy-paste ready code block, workflow YAML snippet, or step-by-step commands the user can try immediately. If no workaround exists, explicitly state "No known workaround" and explain what would need to change.
+4. **Why This Works** — Brief explanation connecting the fix to the root cause
+5. **Related Issues** — Cross-reference related issues: "This appears related to #X and #Y which report similar symptoms."
+
+### Response Templates by Classification
+
+Use the template matching your classification from Step 5:
+
+**Bug response:**
+- TL;DR: This appears to be a bug in [file:line] where [behavior].
+- Describe the defective code path with file/line references
+- Provide workaround if possible (copy-paste ready)
+- Note which other issues share this root cause
+
+**User error / misconfiguration response:**
+- TL;DR: This is a configuration issue — [what to change].
+- Show the corrected workflow YAML or configuration as a code block
+- Explain what the incorrect setting was doing
+- Link to relevant documentation
+
+**Known limitation response:**
+- TL;DR: This is a known limitation — [feature] does not support [use case].
+- Explain what the tool does and does not support
+- Suggest alternatives or manual workarounds with code examples
+- Note if there's an open feature request
+
+**Feature request response:**
+- TL;DR: This feature is not currently supported.
+- Acknowledge the use case
+- Explain what would need to change architecturally
+- Point to any existing discussions or PRs
 
 ## Critical Rules
 - Process at most ${String(getValue(config, ['bot', 'max_responses_per_cycle'], 10))} issues per cycle.
+- Every response MUST begin with a "**TL;DR:**" line — one sentence summarizing the diagnosis and recommended action.
+- Every response MUST include at least one actionable code block, YAML snippet, or step-by-step command unless no workaround exists (in which case, state that explicitly).
 - Every parameter you mention MUST appear in action.yml (verified by Read tool).
 - Every env var you mention MUST appear in the source code (verified by Grep tool).
 - No emoji. No "Hi @user!" greetings. No sign-offs. Professional tone.
@@ -535,10 +597,15 @@ Follow the standard investigation and response workflow.`)
     })
   }
 
+  // Determine model override (investigation_model from config or --model CLI flag)
+  const rawInvestigationModel = options.modelOverride
+    ?? (getValue(config, ['llm', 'claude', 'investigation_model'], '') as string)
+  const investigationModel = rawInvestigationModel || undefined
+
   console.log('Running LLM provider...')
   let llmFailed = false
   try {
-    await runProvider(prompt, { provider: options.provider, systemPrompt })
+    await runProvider(prompt, { provider: options.provider, systemPrompt, modelOverride: investigationModel })
   } catch (error: any) {
     console.error(`LLM provider failed: ${error.message ?? error}`)
     llmFailed = true

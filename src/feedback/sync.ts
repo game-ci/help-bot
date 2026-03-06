@@ -140,10 +140,13 @@ async function writeFeedbackSummary(records: FeedbackRecord[], feedbackDir: stri
     if (negative.length > 0) {
       lines.push('## Responses Needing Improvement')
       lines.push('')
-      lines.push('These responses received negative feedback. Learn from these to avoid similar issues:')
+      lines.push('These responses received negative feedback. Read the response files to understand what went wrong:')
       lines.push('')
       for (const r of negative) {
+        const responseFile = `data/responses/github/${r.repo.replace(/\//g, '-')}-${r.issueNumber}.md`
         lines.push(`- **${r.repo}#${r.issueNumber}**: ${r.thumbsDown} thumbs down, ${r.thumbsUp} thumbs up`)
+        lines.push(`  Response file: ${responseFile}`)
+        lines.push(`  → Read this file to understand what went wrong and avoid similar patterns.`)
       }
       lines.push('')
     }
@@ -153,8 +156,13 @@ async function writeFeedbackSummary(records: FeedbackRecord[], feedbackDir: stri
     if (positive.length > 0) {
       lines.push('## Well-Received Responses')
       lines.push('')
+      lines.push('These responses were well-received. Read them to replicate successful patterns:')
+      lines.push('')
       for (const r of positive) {
+        const responseFile = `data/responses/github/${r.repo.replace(/\//g, '-')}-${r.issueNumber}.md`
         lines.push(`- **${r.repo}#${r.issueNumber}**: ${r.thumbsUp} thumbs up, ${r.thumbsDown} thumbs down`)
+        lines.push(`  Response file: ${responseFile}`)
+        lines.push(`  → Read this file to replicate successful patterns.`)
       }
       lines.push('')
     }
