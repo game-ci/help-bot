@@ -94,14 +94,20 @@ response_id: "${repoShort}-${issue.number}"
   return metadata
 }
 
-export async function syncGitHub(): Promise<void> {
+export interface GitHubSyncOptions {
+  repos?: string[]
+}
+
+export async function syncGitHub(options: GitHubSyncOptions = {}): Promise<void> {
   const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN
   if (!token) {
     console.warn('GitHub sync skipped: GITHUB_TOKEN/GH_TOKEN is missing.')
     return
   }
   const config = await getConfig()
-  const repoList = (getValue(config, ['github', 'repos'], DEFAULT_REPOS) as string[])
+  const repoList = options.repos?.length
+    ? options.repos
+    : (getValue(config, ['github', 'repos'], DEFAULT_REPOS) as string[])
   const collaboratorList = ((getValue(config, ['github', 'collaborators'], []) as string[]).map((entry) => entry.toLowerCase()))
   const octokit = new Octokit({ auth: token, userAgent: 'GameCI Help Bot' })
   const state = await loadState()

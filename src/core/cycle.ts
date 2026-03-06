@@ -20,6 +20,8 @@ export interface CycleOptions extends ProviderOptions {
   forceReplyId?: string
   seenYouMessage?: string
   seenYouEmoji?: string
+  githubOnly?: boolean
+  repos?: string[]
 }
 
 export async function runCycle(options: CycleOptions = {}): Promise<void> {
@@ -35,8 +37,9 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
   const skipSync = options.skipSync ?? process.env.SKIP_SYNC === 'true'
   const skipGithubPost = options.skipGithubPost ?? process.env.SKIP_GITHUB_POST === 'true'
 
+  const githubOnly = options.githubOnly ?? false
   const discordConfig = getValue(config, ['discord'], {} as Record<string, unknown>)
-  const guilds = resolveGuilds(discordConfig)
+  const guilds = githubOnly ? [] : resolveGuilds(discordConfig)
   const hasGuilds = guilds.length > 0
 
   if (!skipSync) {
@@ -44,10 +47,10 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
       console.log('Syncing Discord...')
       await syncDiscord()
     } else {
-      console.log('No Discord guilds configured. Skipping Discord sync.')
+      console.log(githubOnly ? 'GitHub-only mode. Skipping Discord sync.' : 'No Discord guilds configured. Skipping Discord sync.')
     }
     console.log('Syncing GitHub...')
-    await syncGitHub()
+    await syncGitHub({ repos: options.repos })
     console.log('Syncing docs...')
     await syncDocs()
   } else {
@@ -56,10 +59,19 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
 
   // Build the layered system prompt from the first guild (base prompt applies to all)
   // For a more granular per-channel approach, individual LLM calls per channel would be needed.
-  const systemPrompt = getSystemPrompt(discordConfig, guilds[0], guilds[0]?.channels?.[0])
+  const systemPrompt = hasGuilds
+    ? getSystemPrompt(discordConfig, guilds[0], guilds[0]?.channels?.[0])
+    : getValue(discordConfig, ['system_prompt'], '') as string
 
   const claudeInstructions = await readFile(join(REPO_ROOT, 'CLAUDE.md'), 'utf-8').catch(() => '')
-  const prompt = `${claudeInstructions}
+  const repoContext = options.repos?.length ? ` Focus on: ${options.repos.join(', ')}.` : ''
+  const prompt = githubOnly
+    ? `${claudeInstructions}
+
+You are running a GitHub-only help cycle for the GameCI Community Help Bot.
+Process the synced GitHub issues and docs under data/ and write structured responses into data/responses/github.${repoContext}
+`
+    : `${claudeInstructions}
 
 You are running a help cycle for the GameCI Community Help Bot.
 Process the synced data under data/ and write structured responses into data/responses/discord and data/responses/github.
@@ -81,7 +93,7 @@ Process the synced data under data/ and write structured responses into data/res
       seenYouEmoji: seenYouEmoji || undefined,
     })
   } else {
-    console.log('No Discord guilds configured. Skipping Discord posting.')
+    console.log(githubOnly ? 'GitHub-only mode. Skipping Discord posting.' : 'No Discord guilds configured. Skipping Discord posting.')
   }
 
   if (skipGithubPost) {

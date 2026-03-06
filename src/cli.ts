@@ -22,8 +22,12 @@ yargs(hideBin(process.argv))
     .option('seen-you-message', { type: 'string', description: 'Custom text for the seen-you notification' })
     .option('seen-you-emoji', { type: 'string', description: 'Emoji to prefix the seen-you notification' })
     .option('provider', { type: 'string', description: 'Override LLM provider (claude|lm_studio|continue|codex)' })
+    .option('github-only', { type: 'boolean', description: 'Skip Discord entirely (no token needed)' })
+    .option('repos', { type: 'string', array: true, description: 'Override repos to sync (e.g. game-ci/unity-builder)' })
   , async (args) => {
-    await ensureDiscordToken()
+    if (!args['github-only']) {
+      await ensureDiscordToken()
+    }
     await runCycle({
       dryRun: args['dry-run'] || false,
       skipSync: args['skip-sync'] || false,
@@ -33,6 +37,8 @@ yargs(hideBin(process.argv))
       seenYouMessage: args['seen-you-message'],
       seenYouEmoji: args['seen-you-emoji'],
       provider: args.provider,
+      githubOnly: args['github-only'] || false,
+      repos: args.repos,
     })
   })
   .command('continuous', 'run continuous mode', (y) => y
