@@ -16,6 +16,7 @@ function makeEmptyStats() {
         githubResponsesSkipped: 0,
         investigationIssuesPosted: 0,
         investigationIssuesSkipped: 0,
+        cycleReportsPosted: 0,
         discordGuildStats: {},
     };
 }

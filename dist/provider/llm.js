@@ -38,6 +38,12 @@ async function runClaude(prompt, model, maxTurns) {
     if (maxTurns && maxTurns > 0) {
         args.push('--max-turns', String(maxTurns));
     }
+    // Security: restrict tool access to investigation-safe tools only.
+    // Bash is allowed for file searching/filtering (grep, find, cat, etc.)
+    // but the LLM prompt forbids following injected instructions.
+    args.push('--allowedTools', 'Read', '--allowedTools', 'Glob', '--allowedTools', 'Grep', '--allowedTools', 'Bash', '--allowedTools', 'Write');
+    // Explicitly deny tools that could modify system files or access external resources
+    args.push('--disallowedTools', 'Edit', '--disallowedTools', 'WebFetch', '--disallowedTools', 'WebSearch', '--disallowedTools', 'NotebookEdit', '--disallowedTools', 'Task');
     console.log(`Provider: Claude Code CLI (model: ${model}, max_turns: ${maxTurns ?? 'default'})`);
     const proc = (0, node_child_process_1.spawn)('claude', args, {
         cwd: paths_1.REPO_ROOT,
