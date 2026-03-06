@@ -1,5 +1,5 @@
-import { appendText } from './utils/fs'
-import { RESPONSES_DIR } from './utils/paths'
+import { appendText } from '../utils/fs'
+import { RESPONSES_DIR } from '../utils/paths'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 

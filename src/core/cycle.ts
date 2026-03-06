@@ -4,6 +4,7 @@ import { syncDiscord } from '../sync/discord'
 import { syncGitHub } from '../sync/github'
 import { syncDocs } from '../sync/docs'
 import { filterIssues, writeFilteredManifest } from './filter-issues'
+import { filterDiscordMessages, writeDiscordManifest } from './filter-discord'
 import { runProvider, ProviderOptions } from '../provider/llm'
 import { postDiscordResponses } from '../post/discord'
 import { postGitHubResponses } from '../post/github'
@@ -12,12 +13,13 @@ import { writeCycleReport, postCycleReport } from '../post/cycle-report'
 import { join } from 'node:path'
 import { readdir, copyFile, readFile, mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { getConfig, getValue, resolveGuilds, getSystemPrompt } from '../config'
+import { getConfig, getValue, resolveGuilds, getSystemPrompt, buildLabelSystemPrompt } from '../config'
 import { resetStats, getStats } from '../metrics'
 import { updateState } from '../state'
 import { scanSyncedIssues, writeSecurityReport } from '../security'
-import { runDispatch, markDispatched, closeDispatchedDetections, reactInvestigationStarted, reactInvestigationComplete, reactInvestigationFailed, DispatchConfig, DispatchMode } from '../dispatch'
+import { runDispatch, runDiscordDispatch, markDispatched, closeDispatchedDetections, reactInvestigationStarted, reactInvestigationComplete, reactInvestigationFailed, DispatchConfig, DispatchMode } from '../dispatch'
 import { notifyCycleSummary } from '../notify'
+import { syncFeedback } from '../feedback'
 
 async function copyDirRecursive(src: string, dest: string): Promise<void> {
   if (!existsSync(src)) return
@@ -33,7 +35,7 @@ async function copyDirRecursive(src: string, dest: string): Promise<void> {
     } else {
       // Only copy text files the LLM can read
       if (/\.(ts|js|md|yml|yaml|json|sh|dockerfile|txt|css|html)$/i.test(entry.name) || entry.name === 'Dockerfile') {
-        await copyFile(srcPath, destPath)
+        await copyFile(srcPath, join(destPath))
       }
     }
   }
@@ -117,6 +119,22 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
       console.log('Syncing docs...')
       await syncDocs()
     }
+
+    // Sync feedback reactions on previous bot responses
+    console.log('Syncing feedback reactions...')
+    try {
+      const feedbackRecords = await syncFeedback()
+      if (feedbackRecords.length > 0) {
+        console.log(`  Synced feedback for ${feedbackRecords.length} responses`)
+        const positive = feedbackRecords.filter(r => r.netSentiment === 'positive').length
+        const negative = feedbackRecords.filter(r => r.netSentiment === 'negative').length
+        if (positive > 0 || negative > 0) {
+          console.log(`  Sentiment: ${positive} positive, ${negative} negative`)
+        }
+      }
+    } catch (error: any) {
+      console.warn(`  Feedback sync failed: ${error.message ?? error}`)
+    }
   } else {
     console.log('Skipping sync steps (skipSync=true)')
   }
@@ -145,6 +163,54 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
       const dateStr = new Date().toISOString().split('T')[0]
       const reportPath = await writeSecurityReport(securityFindings, dateStr)
       console.log(`  Security report written to ${reportPath}`)
+    }
+  }
+
+  // Discord filtering and dispatch (if not github-only)
+  let discordManifestPaths: string[] = []
+  let approvedDiscordMessages: import('./filter-discord').EligibleDiscordMessage[] = []
+  if (hasGuilds) {
+    const discordDispatchMode = (options.dispatchMode
+      ?? getValue(config, ['dispatch', 'discord_mode'], 'approval')) as DispatchMode
+    const investigationRepo = options.investigationRepo ?? (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
+    const collaborators = (getValue(config, ['github', 'collaborators'], []) as string[])
+
+    for (const guild of guilds) {
+      console.log(`Filtering Discord messages for guild "${guild.name}"...`)
+      const discordFilter = await filterDiscordMessages(guild)
+      console.log(`  Eligible: ${discordFilter.eligible.length}, Skipped: ${discordFilter.skippedCount}`)
+      for (const [reason, count] of Object.entries(discordFilter.skipReasons)) {
+        console.log(`    ${reason}: ${count}`)
+      }
+
+      if (discordFilter.eligible.length > 0) {
+        // Discord dispatch is NEVER auto — always requires approval
+        const dispatchConfig = getDispatchConfig(config, options)
+        dispatchConfig.mode = discordDispatchMode === 'auto' ? 'approval' : discordDispatchMode
+
+        console.log(`Running Discord dispatch (mode: ${dispatchConfig.mode})...`)
+        const dispatchResult = await runDiscordDispatch({
+          filterResult: discordFilter,
+          config: dispatchConfig,
+          targetRepo: investigationRepo,
+          collaborators,
+          dryRun,
+        })
+
+        console.log(`  Discord dispatch: ${dispatchResult.detectionsCreated} created, ${dispatchResult.approvedMessages.length} approved, ${dispatchResult.pending} pending`)
+
+        if (dispatchResult.approvedMessages.length > 0) {
+          approvedDiscordMessages.push(...dispatchResult.approvedMessages)
+          // Write manifest for approved messages only
+          const manifestDir = join(DATA_DIR, 'discord')
+          const path = await writeDiscordManifest(guild.name, {
+            eligible: dispatchResult.approvedMessages,
+            skippedCount: discordFilter.skippedCount + (discordFilter.eligible.length - dispatchResult.approvedMessages.length),
+            skipReasons: { ...discordFilter.skipReasons, 'dispatch-pending': discordFilter.eligible.length - dispatchResult.approvedMessages.length },
+          }, manifestDir)
+          discordManifestPaths.push(path)
+        }
+      }
     }
   }
 
@@ -206,6 +272,24 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
 
   const repoContext = options.repos?.length ? ` Focus on: ${options.repos.join(', ')}.` : ''
 
+  // Build per-label system prompt additions
+  let labelPromptSection = ''
+  if (githubOnly && options.repos?.length) {
+    // Collect all unique labels from eligible issues
+    const repoSlug = options.repos[0].replace(/\//g, '-')
+    const filterResult = await filterIssues(repoSlug)
+    const allLabels = new Set<string>()
+    for (const issue of filterResult.eligible) {
+      for (const label of issue.labels) {
+        allLabels.add(label)
+      }
+    }
+    const labelPrompt = buildLabelSystemPrompt(config, Array.from(allLabels))
+    if (labelPrompt) {
+      labelPromptSection = `\n\n## Label-Specific Guidance\n\nThe following guidance applies to issues with specific labels. Use these instructions when processing issues that have the corresponding labels:\n\n${labelPrompt}`
+    }
+  }
+
   // Build the github-only prompt with explicit tool usage instructions
   let prompt: string
   if (githubOnly) {
@@ -241,6 +325,19 @@ If you cannot verify something, either omit it or explicitly say it is unverifie
 
 The GameCI documentation has been copied to: data/reference/docs/
 Use Grep to search for relevant topics. Use Read to get full page content.`)
+    }
+
+    // Feedback data for LLM
+    sections.push(`## Previous Response Feedback
+
+If the file data/feedback/feedback-summary.md exists, read it FIRST. It contains user feedback
+(thumbs up / thumbs down reactions) on previous bot responses. Use this to:
+- Avoid repeating mistakes from negatively-received responses
+- Replicate patterns from positively-received responses
+- Improve your response quality over time`)
+
+    if (labelPromptSection) {
+      sections.push(labelPromptSection)
     }
 
     sections.push(`## Workflow — Process ONE issue at a time
@@ -348,7 +445,7 @@ In the response:
 - Process at most ${String(getValue(config, ['bot', 'max_responses_per_cycle'], 10))} issues per cycle.
 - Every parameter you mention MUST appear in action.yml (verified by Read tool).
 - Every env var you mention MUST appear in the source code (verified by Grep tool).
-- No emoji. No "Hi @user!" greetings. No "🚀" sign-offs. Professional tone.
+- No emoji. No "Hi @user!" greetings. No sign-offs. Professional tone.
 - You are a community helper, not a maintainer. Never say "we will fix" or "action items".
 - When you find a bug, describe it factually. Do not promise fixes or timelines.
 - When issues are related, ALWAYS cross-reference them in both the investigation and response.
@@ -367,8 +464,64 @@ In the response:
 
     prompt = sections.join('\n\n')
   } else {
-    prompt = `You are running a help cycle for the GameCI Community Help Bot.
-Process the synced data under data/ and write structured responses into data/responses/discord and data/responses/github.`
+    // Combined GitHub + Discord prompt
+    const sections: string[] = []
+
+    sections.push(`You are running a help cycle for the GameCI Community Help Bot.${repoContext}
+
+Process the synced data and write structured responses.`)
+
+    // Feedback data
+    sections.push(`## Previous Response Feedback
+
+If the file data/feedback/feedback-summary.md exists, read it. It contains user feedback
+on previous bot responses. Learn from positive and negative feedback patterns.`)
+
+    // Discord-specific instructions
+    if (approvedDiscordMessages.length > 0) {
+      const manifestList = discordManifestPaths.map(p => `- ${p}`).join('\n')
+      sections.push(`## Discord Messages
+
+The following Discord message manifests have been approved for response:
+${manifestList}
+
+For each approved Discord message:
+1. Read the manifest to understand the context (channel, thread, reply chain)
+2. Write a response file to data/responses/discord/ with this frontmatter:
+
+\`\`\`markdown
+---
+response_id: discord-{guild}-{channel}-{messageId}
+guild_name: {guild name}
+channel_name: {channel name}
+channel_id: {channel ID from manifest}
+reply_to_message_id: {message ID to reply to}
+thread_id: {thread ID, if applicable}
+title: "{short description}"
+---
+
+[Response body — concise, helpful, professional]
+\`\`\`
+
+Rules for Discord responses:
+- Keep responses under 1500 characters when possible (Discord has a 2000 char limit)
+- Reference the user's specific error or question
+- If the message is in a thread, read the thread context and reply appropriately
+- Do not ping users or use @mentions
+- Professional tone, no emoji`)
+    }
+
+    // GitHub instructions (simplified for combined mode)
+    sections.push(`## GitHub Issues
+
+Process synced GitHub issues under data/github/issues/ and write responses to data/responses/github/.
+Follow the standard investigation and response workflow.`)
+
+    if (labelPromptSection) {
+      sections.push(labelPromptSection)
+    }
+
+    prompt = sections.join('\n\n')
   }
 
   // React 'eyes' on detection issues to indicate investigation is starting

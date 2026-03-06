@@ -355,8 +355,13 @@ The automation scripts and TypeScript CLI respect `LLM_PROVIDER`, the `llm.provi
 
 ### Response posting
 
-- Discord responses are split into 2000-character chunks, tagged with `(part x/y)`, and sent to `DISCORD_WEBHOOK_URL`.
-- GitHub replies are posted as issue or PR comments via `gh issue comment`/`gh pr comment`.
+- **Discord** responses support three posting modes per channel:
+  - **Bot API** (default): Posts directly via Discord Bot API with `message_reference` for chain-replying. Supports thread posting.
+  - **Thread**: Creates a new thread for the response.
+  - **Webhook** (legacy): Split into 2000-character chunks, tagged with `(part x/y)`, sent to webhook URL.
+- **GitHub** replies are posted as issue or PR comments via `gh issue comment`/`gh pr comment`.
+- All responses include a feedback prompt asking users to react with thumbs up/down.
+- Posted responses are tracked in `state.json` to prevent duplicates.
 - Dry runs (`--dry-run`) skip posting while still writing drafts to `data/responses/`.
 
 ### Dispatch System
@@ -443,16 +448,26 @@ The dispatch gate runs after issue filtering and security scanning, before LLM i
 4. If no approved issues, skip LLM entirely
 5. After investigations complete, `markDispatched()` updates state and `closeDispatchedDetections()` closes detection issues with cross-links
 
+#### Discord Dispatch
+
+Discord messages go through the same dispatch pipeline but with enforced safety:
+- **Never auto-dispatches** — even if `dispatch.mode` is `"auto"`, Discord is forced to `"approval"` or `"countdown"`
+- **Separate config key**: `dispatch.discord_mode` controls Discord-specific dispatch mode (default: `"approval"`)
+- **Detection issues**: Created with labels `help-bot`, `detection`, `discord`, `{channel-name}`
+- **Detection body**: Shows message content, author, channel, timestamp (content is sanitized)
+
+This ensures public Discord input is always reviewed by a maintainer before the bot responds.
+
 #### Source Files
 
 | File | Purpose |
 |------|---------|
-| `src/dispatch/types.ts` | Type definitions: `DispatchMode`, `DetectionRecord`, `DispatchConfig` |
-| `src/dispatch/sanitize.ts` | Security helpers for untrusted content, detection body/warning builders |
-| `src/dispatch/detection.ts` | Creates detection issues via `gh issue create` |
-| `src/dispatch/approval.ts` | Checks reactions/comments, advances countdown stages |
-| `src/dispatch/lifecycle.ts` | Post-dispatch cleanup: mark dispatched, close detections, cleanup stale |
-| `src/dispatch/orchestrator.ts` | Main entry point called from `cycle.ts` |
+| `src/dispatch/types.ts` | Type definitions: `DispatchMode`, `DetectionRecord`, `DispatchConfig`, Discord detection keys |
+| `src/dispatch/sanitize.ts` | Security helpers for untrusted content, GitHub + Discord detection body builders |
+| `src/dispatch/detection.ts` | Creates detection issues (GitHub + Discord) via `gh issue create` |
+| `src/dispatch/approval.ts` | Checks reactions/comments, advances countdown stages (GitHub + Discord) |
+| `src/dispatch/lifecycle.ts` | Post-dispatch cleanup: mark dispatched, close detections, cleanup stale, emoji reactions |
+| `src/dispatch/orchestrator.ts` | Main entry point called from `cycle.ts` — `runDispatch()` for GitHub, `runDiscordDispatch()` for Discord |
 | `src/dispatch/index.ts` | Barrel exports |
 
 ### Cycle Reports
@@ -522,6 +537,211 @@ Each recipient can independently enable/disable each notification type. Setting 
 |------|---------|
 | `src/notify/discord-dm.ts` | DM notification logic, Discord API integration |
 | `src/notify/index.ts` | Barrel exports |
+
+### Feedback Reaction System
+
+The bot appends a feedback prompt to every response asking users to react with thumbs up or thumbs down. These reactions are tracked and fed back to the LLM as quality signals.
+
+#### How It Works
+
+1. **Response posting** (`src/post/github.ts`, `src/post/discord.ts`): Every posted response includes a footer:
+   > Was this helpful? React with :+1: or :-1: to help improve future responses.
+
+2. **Comment ID tracking**: When a GitHub comment is posted, the comment ID is captured from the `gh issue comment` output and stored in `state.json` under `meta.botComments`.
+
+3. **Feedback sync** (`src/feedback/sync.ts`): Each cycle, `syncFeedback()` polls reactions on all tracked bot comments via the GitHub API. It records:
+   - Thumbs up/down counts and user lists
+   - Net sentiment classification (positive/negative/neutral/unknown)
+
+4. **Feedback summary** (`data/feedback/feedback-summary.md`): A human-readable summary is written for the LLM to read during investigations. It includes:
+   - Overall stats (total up/down, positive/negative counts)
+   - "Responses Needing Improvement" section for negatively-received responses
+   - "Well-Received Responses" section for positively-received responses
+
+5. **LLM prompt integration**: The LLM is instructed to read `data/feedback/feedback-summary.md` before processing issues, learning from past positive and negative feedback patterns.
+
+#### Source Files
+
+| File | Purpose |
+|------|---------|
+| `src/feedback/manual.ts` | CLI-based manual feedback marking (mark-good/mark-bad) |
+| `src/feedback/sync.ts` | Reaction-based feedback polling and summary generation |
+| `src/feedback/index.ts` | Barrel exports |
+
+### Discord Integration
+
+The bot monitors configured Discord channels (text, forum, announcement) and can reply directly via the Discord Bot API with chain-reply support.
+
+#### Supported Channel Types
+
+| Type | Config Value | Behavior |
+|------|-------------|----------|
+| Text channel | `"channel_type": "text"` (default) | Syncs messages, optionally reads threads |
+| Forum channel | `"channel_type": "forum"` | Syncs all forum post threads and their messages |
+| Announcement channel | `"channel_type": "announcement"` | Syncs messages like text channels |
+
+#### Reply Modes
+
+Each channel can configure how the bot replies:
+
+| Mode | Config Value | Behavior |
+|------|-------------|----------|
+| Bot API (default) | `"reply_mode": "bot_api"` | Posts directly via Discord Bot API with `message_reference` for chain-replying |
+| Thread | `"reply_mode": "thread"` | Creates a new thread for the response |
+| Webhook (legacy) | `"reply_mode": "webhook"` | Posts via webhook URL (no reply chains) |
+
+#### Discord Sync Enhancements
+
+The sync module (`src/sync/discord.ts`) supports:
+
+- **Forum channels**: Fetches active and recently archived threads from forum channels. Each forum post is a thread — all messages within are synced.
+- **Thread reading**: For text channels with `"read_threads": true` (default), fetches active and archived threads and syncs their messages.
+- **Reactions**: Message reactions are included in synced data as a `reactions` map (emoji name → count).
+- **Reply context**: When a message is a reply, the referenced message's author, content, and ID are captured in the `referenced_message` field.
+- **Thread context**: Forum post messages include the last 10 thread messages for context.
+
+#### Discord Filtering
+
+`src/core/filter-discord.ts` filters synced Discord messages for eligible help requests:
+
+- **Heuristic detection**: Uses keyword matching (question marks, error terms, help phrases) to identify likely help requests
+- **Skip rules**: Filters out bot messages, too-short messages, messages from official users/roles, already-responded messages
+- **Channel monitoring**: Only processes channels with `"monitor": true` in config
+
+#### Discord Dispatch
+
+Discord messages go through the same dispatch approval pipeline as GitHub issues, with one critical difference: **Discord dispatch is NEVER automatic**. Even if the global dispatch mode is `"auto"`, Discord sources are forced to `"approval"` mode.
+
+This ensures the bot never auto-replies to public Discord input without maintainer approval.
+
+The `dispatch.discord_mode` config key controls the Discord-specific dispatch mode (default: `"approval"`). Detection issues for Discord messages are created in the help-bot repo with labels `help-bot`, `detection`, `discord`, and the channel name.
+
+#### Channel Configuration
+
+```json
+{
+  "discord": {
+    "guilds": [
+      {
+        "name": "game-ci",
+        "guild_id_env": "DISCORD_GUILD_ID",
+        "webhook_url_env": "DISCORD_WEBHOOK_URL",
+        "system_prompt": "Guild-level prompt applied to all channels.",
+        "channels": [
+          {
+            "name": "help",
+            "system_prompt": "Channel-specific prompt.",
+            "channel_type": "text",
+            "reply_mode": "bot_api",
+            "read_threads": true,
+            "monitor": true
+          },
+          {
+            "name": "unity-builder",
+            "system_prompt": "Expert on unity-builder action.",
+            "channel_type": "forum",
+            "reply_mode": "bot_api",
+            "monitor": true
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Channel config fields:
+- `name` (required): Discord channel name
+- `system_prompt` (optional): Per-channel system prompt, appended to base + guild prompts
+- `channel_type` (optional): `"text"` (default), `"forum"`, or `"announcement"`
+- `reply_mode` (optional): `"bot_api"` (default), `"thread"`, or `"webhook"`
+- `read_threads` (optional): Whether to read threads in text channels (default: `true`)
+- `monitor` (optional): Whether to monitor this channel for help requests (default: `true`)
+
+#### Discord Response File Format
+
+Discord response files go in `data/responses/discord/` with this frontmatter:
+
+```markdown
+---
+response_id: discord-{guild}-{channel}-{messageId}
+guild_name: game-ci
+channel_name: help
+channel_id: 123456789
+reply_to_message_id: 987654321
+thread_id: 111222333
+title: "Short description"
+---
+
+[Response body]
+```
+
+The `reply_to_message_id` field enables chain-replying — the bot's response will be a direct reply to the original message in Discord.
+
+#### Source Files
+
+| File | Purpose |
+|------|---------|
+| `src/sync/discord.ts` | Discord sync — channels, forums, threads, reactions, reply context |
+| `src/post/discord.ts` | Discord posting — Bot API, webhooks, thread creation, chain-replies |
+| `src/core/filter-discord.ts` | Discord message filtering and manifest writing |
+
+### Per-Channel & Per-Label System Prompts
+
+The bot supports layered system prompts that provide context-specific guidance to the LLM.
+
+#### System Prompt Layers (Discord)
+
+System prompts are layered from general to specific:
+
+1. **Base prompt** (`discord.system_prompt`): Applied to all guilds and channels
+2. **Guild prompt** (`guild.system_prompt`): Applied to all channels in a guild
+3. **Channel prompt** (`channel.system_prompt`): Applied to a specific channel
+
+All layers are concatenated with double newlines. A channel with a specific prompt gets the base + guild + channel prompts combined.
+
+#### Per-Label System Prompts (GitHub)
+
+GitHub issues can have label-specific prompts that guide the LLM's investigation approach. These are defined in `config.json` under `github.label_prompts`:
+
+```json
+{
+  "github": {
+    "label_prompts": [
+      {
+        "label": "bug",
+        "system_prompt": "Investigate the root cause thoroughly — trace the code path..."
+      },
+      {
+        "label": "macOS",
+        "system_prompt": "Common macOS-specific issues include: code signing, IL2CPP..."
+      },
+      {
+        "label": "self-hosted",
+        "system_prompt": "Common issues include: Docker socket permissions..."
+      }
+    ]
+  }
+}
+```
+
+Label matching is case-insensitive. When an issue has multiple matching labels, all corresponding prompts are concatenated.
+
+The label prompts are injected into the LLM prompt under a "Label-Specific Guidance" section. They help the LLM focus on platform-specific or category-specific patterns.
+
+#### Pre-configured Label Prompts
+
+| Label | Focus |
+|-------|-------|
+| `bug` | Root cause analysis, code tracing, fix suggestions |
+| `macOS` | Code signing, IL2CPP on Apple Silicon, Xcode requirements |
+| `self-hosted` | Docker permissions, dependencies, environment differences |
+| `docker` | Dockerfile config, volumes, base images, layer caching |
+| `IL2CPP` | Build support modules, platform-specific compile errors |
+| `WebGL` | Memory limits, compression, templates, browser compat |
+| `Android` | SDK/NDK versions, keystore config, gradle settings |
+| `Windows` | Windows SDK, IL2CPP build tools, path length limits |
+| `help wanted` | Community contribution guidance, clear fix descriptions |
 
 ### Notes
 

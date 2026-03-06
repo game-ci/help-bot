@@ -89,6 +89,29 @@ export function setPostedResponse(state: SyncState, repo: string, issueNumber: n
   state.meta.postedResponses = posted
 }
 
+/**
+ * Get the set of Discord messages the bot has already responded to.
+ * Keys are `discord:{guildName}/{channelName}#{messageId}`, values are ISO timestamps.
+ */
+export function getPostedDiscordResponses(state: SyncState): Record<string, string> {
+  return (state.meta?.postedDiscordResponses as Record<string, string>) ?? {}
+}
+
+/**
+ * Record that the bot responded to a Discord message.
+ */
+export function setPostedDiscordResponse(
+  state: SyncState,
+  guildName: string,
+  channelName: string,
+  messageId: string,
+): void {
+  state.meta ??= {}
+  const posted = getPostedDiscordResponses(state)
+  posted[`discord:${guildName}/${channelName}#${messageId}`] = new Date().toISOString()
+  state.meta.postedDiscordResponses = posted
+}
+
 // --- Guild-namespaced cursor helpers ---
 
 export function getGuildCursor(state: SyncState, guildName: string, channelId: string): string | undefined {

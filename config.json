@@ -1,7 +1,7 @@
 {
   "bot": {
     "name": "GameCI Help Bot",
-    "version": "2.1.0",
+    "version": "3.0.0",
     "max_responses_per_cycle": 10,
     "response_cooldown_minutes": 60,
     "dry_run": false,
@@ -37,29 +37,60 @@
         "name": "game-ci",
         "guild_id_env": "DISCORD_GUILD_ID",
         "webhook_url_env": "DISCORD_WEBHOOK_URL",
+        "system_prompt": "You are helping users in the GameCI Discord server. Be concise and helpful. Reference relevant documentation at https://game.ci/docs when applicable.",
         "channels": [
           {
             "name": "help",
-            "system_prompt": "Focus on troubleshooting Unity build issues and CI pipeline problems."
+            "system_prompt": "Focus on troubleshooting Unity build issues and CI pipeline problems. Users here are often stuck and need step-by-step guidance.",
+            "channel_type": "text",
+            "reply_mode": "bot_api",
+            "read_threads": true,
+            "monitor": true
           },
           {
             "name": "unity-builder",
-            "system_prompt": "You are an expert on game-ci/unity-builder GitHub Action. Help with configuration, custom builds, and Docker-based Unity builds."
+            "system_prompt": "You are an expert on game-ci/unity-builder GitHub Action. Help with configuration, custom builds, and Docker-based Unity builds. Always verify parameters against the action.yml before suggesting them.",
+            "channel_type": "forum",
+            "reply_mode": "bot_api",
+            "monitor": true
           },
           {
-            "name": "support"
+            "name": "support",
+            "channel_type": "text",
+            "reply_mode": "bot_api",
+            "read_threads": true,
+            "monitor": true
           },
           {
-            "name": "general"
+            "name": "general",
+            "channel_type": "text",
+            "reply_mode": "bot_api",
+            "read_threads": false,
+            "monitor": false
           },
           {
-            "name": "bugs"
+            "name": "bugs",
+            "system_prompt": "Users reporting bugs. Investigate thoroughly — check if this is a known issue, try to reproduce the conditions, and cross-reference with GitHub issues.",
+            "channel_type": "text",
+            "reply_mode": "bot_api",
+            "read_threads": true,
+            "monitor": true
           },
           {
-            "name": "unity-test-runner"
+            "name": "unity-test-runner",
+            "system_prompt": "You are an expert on game-ci/unity-test-runner GitHub Action. Help with test configuration, EditMode/PlayMode tests, and test result interpretation.",
+            "channel_type": "text",
+            "reply_mode": "bot_api",
+            "read_threads": true,
+            "monitor": true
           },
           {
-            "name": "docker"
+            "name": "docker",
+            "system_prompt": "Help with GameCI Docker images, custom Dockerfiles, and container-based Unity builds. Focus on game-ci/docker repository issues.",
+            "channel_type": "text",
+            "reply_mode": "bot_api",
+            "read_threads": true,
+            "monitor": true
           }
         ]
       }
@@ -99,7 +130,45 @@
       "help wanted",
       "good first issue"
     ],
-    "collaborators": ["frostebite", "webbertakken", "davidmfinol", "GabLeRoux"]
+    "collaborators": ["frostebite", "webbertakken", "davidmfinol", "GabLeRoux"],
+    "label_prompts": [
+      {
+        "label": "bug",
+        "system_prompt": "This issue is labeled as a bug. Investigate the root cause thoroughly — trace the code path, identify the exact file and line where the defect occurs, and explain what the fix would look like. If this matches other bug reports, cross-reference them."
+      },
+      {
+        "label": "macOS",
+        "system_prompt": "This issue involves macOS builds. Common macOS-specific issues include: code signing, IL2CPP compilation on Apple Silicon, Xcode version requirements, and macOS SDK path resolution. Check for platform-specific conditionals in the source code."
+      },
+      {
+        "label": "self-hosted",
+        "system_prompt": "This issue involves self-hosted runners. Common issues include: Docker socket permissions, missing dependencies, disk space, and environment variable propagation. Self-hosted runners may have different environments from GitHub-hosted runners."
+      },
+      {
+        "label": "docker",
+        "system_prompt": "This issue involves Docker and container-based builds. Focus on Dockerfile configuration, volume mounts, base image selection, and layer caching. Check game-ci/docker repository for image-specific issues."
+      },
+      {
+        "label": "IL2CPP",
+        "system_prompt": "This issue involves IL2CPP builds. Common issues include: missing build support modules, platform-specific compile errors, increased build times, and linker configuration. IL2CPP builds require specific Unity modules to be installed."
+      },
+      {
+        "label": "WebGL",
+        "system_prompt": "This issue involves WebGL builds. Common issues include: memory limits, compression settings, template configuration, and browser compatibility. WebGL builds have unique constraints compared to other platforms."
+      },
+      {
+        "label": "Android",
+        "system_prompt": "This issue involves Android builds. Common issues include: Android SDK/NDK version requirements, keystore configuration, gradle settings, and minimum API level compatibility."
+      },
+      {
+        "label": "Windows",
+        "system_prompt": "This issue involves Windows builds. Common issues include: Windows SDK version, IL2CPP visual studio build tools requirements, and path length limitations on Windows."
+      },
+      {
+        "label": "help wanted",
+        "system_prompt": "This issue is marked as 'help wanted' by maintainers. It may be a good candidate for community contribution. If you can identify the fix, describe it clearly enough that a contributor could implement it."
+      }
+    ]
   },
   "docs": {
     "base_url": "https://game.ci/docs",
@@ -123,6 +192,7 @@
   },
   "dispatch": {
     "mode": "auto",
+    "discord_mode": "approval",
     "warnings_required": 3,
     "warning_interval_hours": 24,
     "approve_reactions": ["+1", "rocket"],

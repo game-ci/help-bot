@@ -2,6 +2,8 @@ export type DispatchMode = 'auto' | 'approval' | 'countdown'
 
 export type DetectionStatus = 'pending' | 'approved' | 'cancelled' | 'dispatched'
 
+export type DetectionSourceType = 'github' | 'discord'
+
 export interface DispatchConfig {
   mode: DispatchMode
   warnings_required: number
@@ -16,6 +18,12 @@ export interface DetectionRecord {
   detectionIssueNumber: number
   sourceRepo: string
   sourceIssueNumber: number
+  /** Source type: 'github' (default) or 'discord' */
+  sourceType?: DetectionSourceType
+  /** Discord-specific: message ID */
+  sourceMessageId?: string
+  /** Discord-specific: guild/channel path */
+  sourceDiscordPath?: string
   status: DetectionStatus
   createdAt: string
   /** 0 = just created, 1+ = warnings posted */
@@ -35,4 +43,9 @@ export type DetectionKey = string
 
 export function makeDetectionKey(repo: string, issueNumber: number): DetectionKey {
   return `${repo}#${issueNumber}`
+}
+
+/** Create a detection key for a Discord message */
+export function makeDiscordDetectionKey(guildName: string, channelName: string, messageId: string): DetectionKey {
+  return `discord:${guildName}/${channelName}#${messageId}`
 }

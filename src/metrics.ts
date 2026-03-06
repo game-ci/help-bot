@@ -2,6 +2,9 @@ export interface CycleStats {
   discordMessagesSynced: number
   discordResponsesPosted: number
   discordResponsesSkipped: number
+  discordThreadsSynced: number
+  discordForumPostsSynced: number
+  discordBotRepliesPosted: number
   githubIssuesSynced: number
   githubReleasesSynced: number
   githubTagsSynced: number
@@ -16,6 +19,9 @@ export interface CycleStats {
   detectionsExpired: number
   detectionsPending: number
   detectionsWarningsPosted: number
+  feedbackSynced: number
+  feedbackPositive: number
+  feedbackNegative: number
   /** Per-guild Discord message sync counts */
   discordGuildStats: Record<string, { messagesSynced: number }>
 }
@@ -27,6 +33,9 @@ function makeEmptyStats(): CycleStats {
     discordMessagesSynced: 0,
     discordResponsesPosted: 0,
     discordResponsesSkipped: 0,
+    discordThreadsSynced: 0,
+    discordForumPostsSynced: 0,
+    discordBotRepliesPosted: 0,
     githubIssuesSynced: 0,
     githubReleasesSynced: 0,
     githubTagsSynced: 0,
@@ -41,6 +50,9 @@ function makeEmptyStats(): CycleStats {
     detectionsExpired: 0,
     detectionsPending: 0,
     detectionsWarningsPosted: 0,
+    feedbackSynced: 0,
+    feedbackPositive: 0,
+    feedbackNegative: 0,
     discordGuildStats: {},
   }
 }

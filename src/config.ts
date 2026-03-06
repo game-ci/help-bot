@@ -34,14 +34,33 @@ export function getValue<T>(config: Record<string, unknown>, path: string[], fal
 
 export interface ChannelConfig {
   name: string
+  /** Per-channel system prompt appended to the base prompt */
   system_prompt?: string
+  /** Channel type: 'text' (default), 'forum', 'announcement' */
+  channel_type?: 'text' | 'forum' | 'announcement'
+  /** How the bot replies: 'bot_api' (default — direct reply in channel), 'thread' (create/reply in thread), 'webhook' (legacy webhook posting) */
+  reply_mode?: 'bot_api' | 'thread' | 'webhook'
+  /** Whether to read threads within this channel */
+  read_threads?: boolean
+  /** Whether the bot should monitor this channel for help requests (default: true) */
+  monitor?: boolean
 }
 
 export interface GuildConfig {
   name: string
   guild_id_env: string
   webhook_url_env: string
+  /** Guild-level system prompt (applied after base, before channel) */
+  system_prompt?: string
   channels: ChannelConfig[]
+}
+
+/** System prompt for a specific GitHub label */
+export interface LabelPromptConfig {
+  /** Label name (case-insensitive match) */
+  label: string
+  /** System prompt to append when processing issues with this label */
+  system_prompt: string
 }
 
 /**
@@ -89,7 +108,7 @@ export function resolveGuilds(discordConfig: Record<string, unknown>): GuildConf
 /**
  * Build a layered system prompt by combining:
  *   1. Base prompt (discord.system_prompt) -- applies to all guilds/channels
- *   2. Guild-level prompt (guild.system_prompt) -- if present (reserved for future use)
+ *   2. Guild-level prompt (guild.system_prompt) -- if present
  *   3. Channel-level prompt (channel.system_prompt) -- if present
  *
  * Each layer is concatenated with double newlines.
@@ -107,13 +126,9 @@ export function getSystemPrompt(
     layers.push(base.trim())
   }
 
-  // Guild-level prompt (future-proofing -- the GuildConfig type doesn't mandate it yet,
-  // but if someone adds system_prompt to a guild object it will be picked up)
-  if (guild) {
-    const guildPrompt = (guild as unknown as Record<string, unknown>)['system_prompt'] as string | undefined
-    if (guildPrompt) {
-      layers.push(guildPrompt.trim())
-    }
+  // Guild-level prompt
+  if (guild?.system_prompt) {
+    layers.push(guild.system_prompt.trim())
   }
 
   // Channel-level prompt
@@ -122,4 +137,27 @@ export function getSystemPrompt(
   }
 
   return layers.filter(Boolean).join('\n\n')
+}
+
+/**
+ * Get per-label system prompts from config.
+ * These are appended to the LLM prompt when processing issues with matching labels.
+ */
+export function getLabelPrompts(config: Record<string, unknown>): LabelPromptConfig[] {
+  return (getValue(config, ['github', 'label_prompts'], []) as LabelPromptConfig[])
+}
+
+/**
+ * Build a combined system prompt for a set of issue labels.
+ * Returns concatenated label-specific prompts, or empty string if none match.
+ */
+export function buildLabelSystemPrompt(config: Record<string, unknown>, labels: string[]): string {
+  const labelPrompts = getLabelPrompts(config)
+  if (labelPrompts.length === 0 || labels.length === 0) return ''
+
+  const lowerLabels = labels.map(l => l.toLowerCase())
+  const matched = labelPrompts.filter(lp => lowerLabels.includes(lp.label.toLowerCase()))
+  if (matched.length === 0) return ''
+
+  return matched.map(lp => lp.system_prompt.trim()).join('\n\n')
 }

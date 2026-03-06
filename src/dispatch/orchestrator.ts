@@ -1,8 +1,9 @@
 import { EligibleIssue, FilterResult } from '../core/filter-issues'
 import { DispatchConfig, DispatchMode } from './types'
-import { createDetections } from './detection'
+import { createDetections, createDiscordDetections } from './detection'
 import { checkApprovals } from './approval'
 import { cleanupStaleDetections } from './lifecycle'
+import type { EligibleDiscordMessage, DiscordFilterResult } from '../core/filter-discord'
 
 export interface DispatchOptions {
   filterResult: FilterResult
@@ -91,6 +92,79 @@ export async function runDispatch(options: DispatchOptions): Promise<DispatchRes
 
   return {
     approved: approvalResult.approved,
+    detectionsCreated: createResult.created,
+    pending: approvalResult.pending,
+    cancelled: approvalResult.cancelled,
+    expired: approvalResult.expired,
+    warningsPosted: approvalResult.warningsPosted,
+    skipLlm: approvalResult.approved.length === 0,
+  }
+}
+
+// --- Discord dispatch ---
+
+export interface DiscordDispatchOptions {
+  filterResult: DiscordFilterResult
+  config: DispatchConfig
+  targetRepo: string
+  collaborators: string[]
+  dryRun: boolean
+}
+
+export interface DiscordDispatchResult {
+  /** Messages approved for LLM processing */
+  approvedMessages: EligibleDiscordMessage[]
+  /** Number of new detections created */
+  detectionsCreated: number
+  /** Number still pending */
+  pending: number
+  /** Number cancelled */
+  cancelled: number
+  /** Number auto-dispatched */
+  expired: number
+  /** Number of warnings posted */
+  warningsPosted: number
+  /** Whether to skip LLM */
+  skipLlm: boolean
+}
+
+/**
+ * Discord dispatch orchestrator.
+ * Creates detection issues for Discord messages and checks approvals.
+ * Discord dispatch NEVER uses 'auto' mode — always requires approval.
+ */
+export async function runDiscordDispatch(options: DiscordDispatchOptions): Promise<DiscordDispatchResult> {
+  const config = { ...options.config }
+  // Discord dispatch is NEVER auto — force to approval or countdown
+  if (config.mode === 'auto') {
+    config.mode = 'approval'
+  }
+
+  console.log(`  Discord dispatch mode: ${config.mode}`)
+
+  // Step 1: Create detections for new eligible Discord messages
+  const createResult = await createDiscordDetections({
+    eligibleMessages: options.filterResult.eligible,
+    targetRepo: options.targetRepo,
+    config,
+    dryRun: options.dryRun,
+  })
+  console.log(`  Discord detections created: ${createResult.created} (${createResult.skippedExisting} existing)`)
+
+  // Step 2: Check approvals on existing Discord detections
+  // We reuse the GitHub approval checking since detection issues
+  // are always GitHub issues in the help-bot repo
+  const { checkDiscordApprovals } = await import('./approval.js')
+  const approvalResult = await checkDiscordApprovals({
+    eligibleMessages: options.filterResult.eligible,
+    targetRepo: options.targetRepo,
+    config,
+    collaborators: options.collaborators,
+    dryRun: options.dryRun,
+  })
+
+  return {
+    approvedMessages: approvalResult.approved,
     detectionsCreated: createResult.created,
     pending: approvalResult.pending,
     cancelled: approvalResult.cancelled,

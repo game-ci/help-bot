@@ -19,3 +19,13 @@ export function guildDataDir(guildName: string): string {
 export function guildChannelDir(guildName: string, channelName: string): string {
   return join(DATA_DIR, 'discord', 'guilds', guildName, 'channels', channelName)
 }
+
+/** Thread data directory within a channel: data/discord/guilds/{guildName}/channels/{channelName}/threads/{threadId} */
+export function guildThreadDir(guildName: string, channelName: string, threadId: string): string {
+  return join(DATA_DIR, 'discord', 'guilds', guildName, 'channels', channelName, 'threads', threadId)
+}
+
+/** Forum data directory within a guild: data/discord/guilds/{guildName}/forums/{channelName} */
+export function guildForumDir(guildName: string, channelName: string): string {
+  return join(DATA_DIR, 'discord', 'guilds', guildName, 'forums', channelName)
+}
