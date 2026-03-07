@@ -12,7 +12,7 @@ import { isMonitoredChannel, formatMessagePreview, buildSingleMessagePrompt, bui
 
 const DISCORD_API = 'https://discord.com/api/v10'
 const MAX_DISCORD_LENGTH = 2000
-const FEEDBACK_PROMPT = '\n\n-# Was this helpful? React with :thumbsup: or :thumbsdown: to help improve future responses.'
+const FEEDBACK_PROMPT = '\n\n-# Was this helpful? React :thumbsup: or :thumbsdown: | React :repeat: to request a re-investigation'
 
 // --- Status management ---
 let idleStatusText = 'help requests'
@@ -420,6 +420,60 @@ export async function runLive(options: LiveOptions): Promise<void> {
         clearInvestigatingStatus(client)
       }
     }
+
+    // --- Post investigation to GitHub (📋 reaction in game-ci-develop) ---
+    if (emoji === '📋') {
+      // Only trigger if a non-bot user reacts (the bot pre-seeds 📋 on its own replies)
+      if (!msg.reference?.messageId) return
+      if (!msg.guild) return
+
+      const mapping = guildMappings.get(msg.guild.id)
+      if (!mapping) return
+
+      // Only in game-ci-develop
+      if (mapping.guildConfig.name !== 'game-ci-develop') return
+
+      console.log(`[${timestamp}] 📋 Post investigation requested in #${channelName} by @${user.tag ?? (user as any).username ?? user.id}`)
+
+      // Find the response files for this investigation
+      const guildName = mapping.guildConfig.name
+      // The response ID pattern: live-{guild}-{channel}-{messageId}
+      // The bot reply references the original user message
+      const originalMsgId = msg.reference.messageId
+      const responseId = `live-${guildName}-${channelName}-${originalMsgId}`
+      const responseDir = join(RESPONSES_DIR, 'discord')
+
+      try {
+        // Check if investigation artifacts exist
+        const findingsPath = join(responseDir, `${responseId}-findings.md`)
+        const analysisPath = join(responseDir, `${responseId}-analysis.md`)
+        const responsePath = join(responseDir, `${responseId}.md`)
+
+        let hasArtifacts = false
+        try { await readFile(findingsPath, 'utf-8'); hasArtifacts = true } catch {}
+        try { await readFile(analysisPath, 'utf-8'); hasArtifacts = true } catch {}
+
+        if (!hasArtifacts) {
+          console.log(`  → No investigation artifacts found for ${responseId}`)
+          return
+        }
+
+        // Use postInvestigationIssues to create the GitHub issue
+        const { postInvestigationIssues } = await import('../post/investigations.js')
+        await postInvestigationIssues({
+          dryRun: options.dryRun,
+          targetRepo: 'game-ci/help-bot',
+          labels: ['investigation', 'discord'],
+        })
+
+        // Remove the bot's 📋 reaction to show it's been handled
+        await msg.reactions.cache.get('📋')?.users.remove(client.user!.id).catch(() => {})
+        await msg.react('✅').catch(() => {})
+        console.log(`  ✓ Investigation posted to GitHub`)
+      } catch (err: any) {
+        console.warn(`  → Failed to post investigation: ${err.message ?? err}`)
+      }
+    }
   })
 
   // --- Graceful shutdown ---
@@ -741,6 +795,14 @@ async function investigateAndRespond(
     await updateState((s) => {
       setPostedDiscordResponse(s, guildName, channelName, message.id)
     })
+
+    // In development guild, offer to post investigation to GitHub
+    if (guildName === 'game-ci-develop' && lastMessageId) {
+      try {
+        const botReply = await message.channel.messages.fetch(lastMessageId)
+        await botReply.react('📋').catch(() => {})
+      } catch { /* non-critical */ }
+    }
 
     console.log(`  ✓ Response posted to #${channelName} (reply to @${authorTag})`)
   } catch (error: any) {
