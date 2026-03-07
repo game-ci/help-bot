@@ -6,9 +6,9 @@ import { join } from 'node:path'
 import { getConfig, getValue, resolveGuilds, resolveGuildId, getSystemPrompt, GuildConfig, ChannelConfig } from '../config'
 import { updateState, setPostedDiscordResponse, loadState, getPostedDiscordResponses, getLastOnlineAt, getFirstOnlineAt, setLastOnlineAt } from '../state'
 import { ensureDir } from '../utils/fs'
-import { REPO_ROOT, RESPONSES_DIR } from '../utils/paths'
+import { REPO_ROOT, RESPONSES_DIR, DATA_DIR } from '../utils/paths'
 import { parseFrontMatter } from '../utils/frontmatter'
-import { isMonitoredChannel, formatMessagePreview, buildSingleMessagePrompt, formatTime, writeContextFile, ReplyChainMessage } from './live-utils'
+import { isMonitoredChannel, formatMessagePreview, buildSingleMessagePrompt, buildInvestigationPrompt, formatTime, writeContextFile, ReplyChainMessage } from './live-utils'
 
 const DISCORD_API = 'https://discord.com/api/v10'
 const MAX_DISCORD_LENGTH = 2000
@@ -136,6 +136,7 @@ export async function runLive(options: LiveOptions): Promise<void> {
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.MessageContent,
+      GatewayIntentBits.GuildMessageReactions,
     ],
   })
 
@@ -304,6 +305,120 @@ export async function runLive(options: LiveOptions): Promise<void> {
       // Approval / countdown mode: log and defer
       console.log(`  → Dispatch mode is "${dispatchMode}" — message queued for next cycle.`)
       console.log(`    Run "gameci-help-bot cycle" to create detection issues and check approvals.`)
+    }
+  })
+
+  // --- Reaction handler (feedback + re-investigate) ---
+  const REINVESTIGATE_EMOJI = '🔁'
+  const FEEDBACK_DIR = join(DATA_DIR, 'feedback', 'negative')
+
+  client.on(Events.MessageReactionAdd, async (reaction, user) => {
+    // Ignore bot's own reactions
+    if (user.id === client.user?.id) return
+
+    // Ensure full message is fetched (partials)
+    try {
+      if (reaction.partial) await reaction.fetch()
+      if (reaction.message.partial) await reaction.message.fetch()
+    } catch {
+      return
+    }
+
+    const msg = reaction.message
+    // Only care about reactions on messages the bot authored
+    if (msg.author?.id !== client.user?.id) return
+
+    const emoji = reaction.emoji.name
+    const channelName = ('name' in msg.channel ? msg.channel.name : '') ?? ''
+    const timestamp = formatTime()
+
+    // --- Downvote feedback logging ---
+    if (emoji === '👎') {
+      console.log(`[${timestamp}] 👎 Downvote on bot response in #${channelName}`)
+
+      try {
+        await ensureDir(FEEDBACK_DIR)
+
+        // Find the original question (the message the bot replied to)
+        let originalContent = '(unknown — could not fetch original message)'
+        let originalAuthor = 'unknown'
+        if (msg.reference?.messageId) {
+          try {
+            const original = await msg.channel.messages.fetch(msg.reference.messageId)
+            originalContent = original.content
+            originalAuthor = original.author.tag ?? original.author.username
+          } catch { /* original deleted or inaccessible */ }
+        }
+
+        const feedbackId = `${Date.now()}-${msg.id}`
+        const feedbackContent = [
+          `# Negative Feedback`,
+          ``,
+          `- **Date:** ${new Date().toISOString()}`,
+          `- **Channel:** #${channelName}`,
+          `- **Downvoted by:** ${user.tag ?? (user as any).username ?? user.id}`,
+          `- **Bot message ID:** ${msg.id}`,
+          ``,
+          `## Original Question`,
+          `**@${originalAuthor}:**`,
+          originalContent,
+          ``,
+          `## Bot Response (downvoted)`,
+          msg.content ?? '(empty)',
+          ``,
+          `## Analysis`,
+          `(To be reviewed — what went wrong with this response?)`,
+          ``,
+        ].join('\n')
+
+        await writeFile(join(FEEDBACK_DIR, `${feedbackId}.md`), feedbackContent, 'utf-8')
+        console.log(`  → Feedback logged: data/feedback/negative/${feedbackId}.md`)
+      } catch (err: any) {
+        console.warn(`  → Failed to log feedback: ${err.message ?? err}`)
+      }
+    }
+
+    // --- Re-investigate trigger ---
+    if (emoji === REINVESTIGATE_EMOJI) {
+      // Only allow re-investigation from non-bot users
+      if (!msg.reference?.messageId) return
+      if (processingMessages.has(msg.reference.messageId)) return
+
+      // Find which guild/channel this is in
+      if (!msg.guild) return
+      const mapping = guildMappings.get(msg.guild.id)
+      if (!mapping) return
+      const channelConfig = mapping.channelMap.get(msg.channelId)
+        ?? mapping.channelNameMap.get(channelName)
+      if (!channelConfig) return
+
+      console.log(`[${timestamp}] 🔁 Re-investigate requested in #${channelName} by @${user.tag ?? (user as any).username ?? user.id}`)
+
+      // Fetch the original user message
+      let originalMessage: Message
+      try {
+        originalMessage = await msg.channel.messages.fetch(msg.reference.messageId) as Message
+      } catch {
+        console.warn(`  → Could not fetch original message for re-investigation`)
+        return
+      }
+
+      // Mark as processing
+      processingMessages.add(originalMessage.id)
+      await originalMessage.react('🔍').catch(() => {})
+      setInvestigatingStatus(client, channelName, originalMessage.author.tag ?? originalMessage.author.username)
+
+      try {
+        await reinvestigateAndRespond(originalMessage, msg.content ?? '', mapping, channelConfig, options, config, llmModel)
+        await originalMessage.reactions.cache.get('🔍')?.users.remove(client.user!.id).catch(() => {})
+        await originalMessage.react('✅').catch(() => {})
+      } catch {
+        await originalMessage.reactions.cache.get('🔍')?.users.remove(client.user!.id).catch(() => {})
+        await originalMessage.react('❌').catch(() => {})
+      } finally {
+        processingMessages.delete(originalMessage.id)
+        clearInvestigatingStatus(client)
+      }
     }
   })
 
@@ -630,6 +745,167 @@ async function investigateAndRespond(
     console.log(`  ✓ Response posted to #${channelName} (reply to @${authorTag})`)
   } catch (error: any) {
     console.warn(`  ✗ Failed to post response: ${error.message ?? error}`)
+  }
+}
+
+/**
+ * Re-investigate a message after a 🔁 reaction.
+ * Uses a stricter correction prompt that includes the previous (bad) response.
+ */
+async function reinvestigateAndRespond(
+  originalMessage: Message,
+  previousResponse: string,
+  mapping: GuildMapping,
+  channelConfig: ChannelConfig,
+  options: LiveOptions,
+  config: Record<string, unknown>,
+  model: string,
+): Promise<void> {
+  const guildName = mapping.guildConfig.name
+  const channelName = channelConfig.name
+  const authorTag = originalMessage.author.tag ?? originalMessage.author.username
+  const responseId = `reinvestigate-${guildName}-${channelName}-${originalMessage.id}-${Date.now()}`
+
+  console.log(`  → Re-investigating @${authorTag}'s message in #${channelName}...`)
+
+  const responseDir = join(RESPONSES_DIR, 'discord')
+  await ensureDir(responseDir)
+
+  // Fetch reply chain for context
+  let replyChain: ReplyChainMessage[] = []
+  try {
+    replyChain = await fetchReplyChain(originalMessage)
+  } catch { /* continue without */ }
+
+  let contextFilePath: string | undefined
+  if (replyChain.length > 0) {
+    try {
+      contextFilePath = await writeContextFile({
+        responseId,
+        responseDir,
+        replyChain,
+        triggerMessage: {
+          author: authorTag,
+          content: originalMessage.content,
+          timestamp: originalMessage.createdAt.toISOString(),
+          messageId: originalMessage.id,
+        },
+      })
+      contextFilePath = contextFilePath.replace(/\\/g, '/').replace(/^.*?(data\/)/, '$1')
+    } catch { /* continue without */ }
+  }
+
+  // Build correction-aware prompt
+  const discordConfig = getValue(config, ['discord'], {} as Record<string, unknown>)
+  const channelSystemPrompt = getSystemPrompt(discordConfig, mapping.guildConfig, channelConfig)
+
+  const correctionNote = [
+    `## Previous Response (REJECTED — received negative feedback)`,
+    ``,
+    `The following response was previously given but was downvoted or flagged for re-investigation:`,
+    ``,
+    `> ${previousResponse.replace(/\n/g, '\n> ').substring(0, 2000)}`,
+    ``,
+    `**Your task:** Investigate from scratch. Do NOT repeat the same answer. Verify every claim against source code. The previous response likely contained incorrect CLI syntax, wrong parameter names, or hallucinated information. Find the correct answer.`,
+    ``,
+  ].join('\n')
+
+  const prompt = buildInvestigationPrompt({
+    author: authorTag,
+    content: originalMessage.content,
+    responseId,
+    source: { type: 'discord', guildName, channelName },
+    systemPrompt: (channelSystemPrompt ? channelSystemPrompt + '\n\n' : '') + correctionNote,
+    contextFile: contextFilePath,
+    repoDir: options.repoDir,
+    docsDir: options.docsDir,
+    isFollowUp: true, // Always thorough for re-investigation
+  })
+
+  console.log(`  → LLM running (${model}) — correction mode...`)
+
+  try {
+    const args = ['-p', '--model', model, '--max-turns', '30']
+    args.push(
+      '--allowedTools', 'Read',
+      '--allowedTools', 'Glob',
+      '--allowedTools', 'Grep',
+      '--allowedTools', 'Bash',
+      '--allowedTools', 'Write',
+    )
+    args.push(
+      '--disallowedTools', 'Edit',
+      '--disallowedTools', 'WebFetch',
+      '--disallowedTools', 'WebSearch',
+      '--disallowedTools', 'NotebookEdit',
+      '--disallowedTools', 'Task',
+    )
+
+    const env = { ...process.env }
+    delete env.CLAUDECODE
+
+    const proc = spawn('claude', args, {
+      cwd: REPO_ROOT,
+      stdio: ['pipe', 'inherit', 'inherit'],
+      env,
+    })
+    proc.stdin.end(prompt)
+    await once(proc, 'exit')
+  } catch (error: any) {
+    console.warn(`  ✗ Re-investigation LLM failed: ${error.message ?? error}`)
+    throw new Error(`Re-investigation LLM failed: ${error.message ?? error}`)
+  }
+
+  // Read the new response
+  const responseFile = join(responseDir, `${responseId}.md`)
+  let responseContent: string
+  try {
+    responseContent = await readFile(responseFile, 'utf-8')
+  } catch {
+    console.warn(`  ✗ No response file from re-investigation`)
+    throw new Error('No response file from re-investigation')
+  }
+
+  const { body } = parseFrontMatter(responseContent)
+  const cleaned = body
+    .replace(/-#\s*Was this helpful\?[^\n]*/gi, '')
+    .replace(/Was this helpful\?\s*React with[^\n]*/gi, '')
+    .trim()
+  if (!cleaned) {
+    throw new Error('Re-investigation response is empty')
+  }
+
+  console.log(`  → Corrected response ready (${cleaned.length} chars).`)
+
+  if (options.dryRun) {
+    console.log(`  → DRY RUN: would post corrected response.`)
+    return
+  }
+
+  // Post as a reply to the original message with a correction header
+  try {
+    const header = `**Corrected response** (previous answer was flagged for re-investigation):\n\n`
+    const bodyWithFeedback = header + cleaned + FEEDBACK_PROMPT
+    const chunks = splitContent(bodyWithFeedback)
+
+    for (const [index, chunk] of chunks.entries()) {
+      const chunkContent = chunks.length > 1
+        ? `(part ${index + 1}/${chunks.length})\n${chunk}`
+        : chunk
+
+      await originalMessage.reply({
+        content: chunkContent,
+        allowedMentions: { repliedUser: true },
+      })
+
+      if (index < chunks.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+      }
+    }
+
+    console.log(`  ✓ Corrected response posted to #${channelName} (reply to @${authorTag})`)
+  } catch (error: any) {
+    console.warn(`  ✗ Failed to post corrected response: ${error.message ?? error}`)
   }
 }
 
