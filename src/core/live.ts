@@ -8,7 +8,7 @@ import { updateState, setPostedDiscordResponse, loadState, getPostedDiscordRespo
 import { ensureDir } from '../utils/fs'
 import { REPO_ROOT, RESPONSES_DIR } from '../utils/paths'
 import { parseFrontMatter } from '../utils/frontmatter'
-import { isMonitoredChannel, formatMessagePreview, buildSingleMessagePrompt, formatTime } from './live-utils'
+import { isMonitoredChannel, formatMessagePreview, buildSingleMessagePrompt, formatTime, writeContextFile, ReplyChainMessage } from './live-utils'
 
 const DISCORD_API = 'https://discord.com/api/v10'
 const MAX_DISCORD_LENGTH = 2000
@@ -300,6 +300,35 @@ export async function runLive(options: LiveOptions): Promise<void> {
 }
 
 /**
+ * Fetch the reply chain for a message by following message.reference links.
+ * Returns messages in chronological order (oldest first).
+ */
+async function fetchReplyChain(message: Message, maxDepth = 15): Promise<ReplyChainMessage[]> {
+  const chain: ReplyChainMessage[] = []
+  let current = message
+  let depth = 0
+
+  while (current.reference?.messageId && depth < maxDepth) {
+    try {
+      const parent = await current.channel.messages.fetch(current.reference.messageId)
+      chain.unshift({
+        author: parent.author.tag ?? parent.author.username,
+        content: parent.content,
+        timestamp: parent.createdAt.toISOString(),
+        isBot: parent.author.bot,
+        messageId: parent.id,
+      })
+      current = parent
+      depth++
+    } catch {
+      break // Can't fetch further — permission issue or deleted message
+    }
+  }
+
+  return chain
+}
+
+/**
  * Investigate a single message via LLM and post the response.
  */
 async function investigateAndRespond(
@@ -314,6 +343,17 @@ async function investigateAndRespond(
   const channelName = channelConfig.name
   const authorTag = message.author.tag ?? message.author.username
   const responseId = `live-${guildName}-${channelName}-${message.id}`
+
+  // Fetch reply chain (follow message.reference links backwards)
+  let replyChain: ReplyChainMessage[] = []
+  try {
+    replyChain = await fetchReplyChain(message)
+    if (replyChain.length > 0) {
+      console.log(`  → Fetched reply chain: ${replyChain.length} message(s)`)
+    }
+  } catch {
+    // Reply chain fetch failed — continue without it
+  }
 
   // Build thread context if in a thread
   let threadContext: Array<{ author: string; content: string; timestamp: string }> | undefined
@@ -333,6 +373,33 @@ async function investigateAndRespond(
     }
   }
 
+  // Write context file if we have reply chain or thread context
+  const responseDir = join(RESPONSES_DIR, 'discord')
+  await ensureDir(responseDir)
+
+  let contextFilePath: string | undefined
+  if (replyChain.length > 0 || (threadContext && threadContext.length > 0)) {
+    try {
+      contextFilePath = await writeContextFile({
+        responseId,
+        responseDir,
+        replyChain,
+        threadContext,
+        triggerMessage: {
+          author: authorTag,
+          content: message.content,
+          timestamp: message.createdAt.toISOString(),
+          messageId: message.id,
+        },
+      })
+      // Make path relative to repo root for the LLM
+      contextFilePath = contextFilePath.replace(/\\/g, '/').replace(/^.*?(data\/)/, '$1')
+      console.log(`  → Context written to ${contextFilePath}`)
+    } catch {
+      // Context file write failed — continue without it
+    }
+  }
+
   // Build the channel system prompt
   const discordConfig = getValue(config, ['discord'], {} as Record<string, unknown>)
   const channelSystemPrompt = getSystemPrompt(discordConfig, mapping.guildConfig, channelConfig)
@@ -343,16 +410,13 @@ async function investigateAndRespond(
     channelName,
     guildName,
     content: message.content,
-    threadContext,
+    threadContext: contextFilePath ? undefined : threadContext, // Skip inline if written to file
     channelSystemPrompt,
     repoDir: options.repoDir,
     docsDir: options.docsDir,
     responseId,
+    contextFile: contextFilePath,
   })
-
-  // Ensure response directory exists
-  const responseDir = join(RESPONSES_DIR, 'discord')
-  await ensureDir(responseDir)
 
   // Run Claude investigation
   console.log(`  → LLM running (${model})...`)

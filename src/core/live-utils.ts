@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { ChannelConfig, GuildConfig } from '../config'
 
 /**
@@ -98,6 +100,67 @@ export function formatMessagePreview(content: string, maxLen = 120): string {
 }
 
 /**
+ * A message in the reply chain context.
+ */
+export interface ReplyChainMessage {
+  author: string
+  content: string
+  timestamp: string
+  isBot: boolean
+  messageId: string
+}
+
+/**
+ * Write conversation context (reply chain + thread) to a file for the LLM to read.
+ * Returns the path to the context file relative to repo root.
+ */
+export async function writeContextFile(options: {
+  responseId: string
+  responseDir: string
+  replyChain: ReplyChainMessage[]
+  threadContext?: Array<{ author: string; content: string; timestamp: string }>
+  triggerMessage: { author: string; content: string; timestamp: string; messageId: string }
+}): Promise<string> {
+  const sections: string[] = []
+
+  sections.push(`# Conversation Context`)
+  sections.push(``)
+
+  if (options.replyChain.length > 0) {
+    sections.push(`## Reply Chain (oldest → newest)`)
+    sections.push(``)
+    sections.push(`This is the chain of replies leading to the message you're investigating.`)
+    sections.push(``)
+    for (const msg of options.replyChain) {
+      const role = msg.isBot ? ' [BOT]' : ''
+      sections.push(`### @${msg.author}${role} (${msg.timestamp})`)
+      sections.push(msg.content.substring(0, 2000))
+      sections.push(``)
+    }
+  }
+
+  if (options.threadContext && options.threadContext.length > 0) {
+    sections.push(`## Thread Messages (most recent)`)
+    sections.push(``)
+    for (const msg of options.threadContext.slice(-10)) {
+      sections.push(`### @${msg.author} (${msg.timestamp})`)
+      sections.push(msg.content.substring(0, 2000))
+      sections.push(``)
+    }
+  }
+
+  sections.push(`## Current Message (the one you're responding to)`)
+  sections.push(``)
+  sections.push(`### @${options.triggerMessage.author} (${options.triggerMessage.timestamp})`)
+  sections.push(options.triggerMessage.content)
+  sections.push(``)
+
+  const contextPath = join(options.responseDir, `${options.responseId}-context.md`)
+  await writeFile(contextPath, sections.join('\n'), 'utf-8')
+  return contextPath
+}
+
+/**
  * Build a focused single-message investigation prompt for the LLM.
  */
 export function buildSingleMessagePrompt(options: {
@@ -110,6 +173,7 @@ export function buildSingleMessagePrompt(options: {
   repoDir?: string
   docsDir?: string
   responseId: string
+  contextFile?: string
 }): string {
   const sections: string[] = []
 
@@ -129,7 +193,13 @@ export function buildSingleMessagePrompt(options: {
   sections.push(options.content)
   sections.push('')
 
-  if (options.threadContext && options.threadContext.length > 0) {
+  if (options.contextFile) {
+    sections.push(`## Conversation Context`)
+    sections.push(`Full reply chain and thread context has been written to:`)
+    sections.push(`  ${options.contextFile}`)
+    sections.push(`**Read this file first** to understand the full conversation before responding.`)
+    sections.push('')
+  } else if (options.threadContext && options.threadContext.length > 0) {
     sections.push(`## Thread Context (most recent messages)`)
     for (const msg of options.threadContext.slice(-5)) {
       sections.push(`@${msg.author} (${msg.timestamp}): ${msg.content.substring(0, 300)}`)
@@ -137,17 +207,31 @@ export function buildSingleMessagePrompt(options: {
     sections.push('')
   }
 
-  sections.push(`## Instructions`)
-  sections.push(`1. Analyze this message to determine what help is needed.`)
+  sections.push(`## Available Source Code & Documentation`)
+  sections.push(``)
+  sections.push(`You have FULL access to these GameCI repositories (search them with Grep/Read/Glob):`)
+  sections.push(`- data/reference/repos/unity-builder/ — GitHub Action for Unity builds`)
+  sections.push(`- data/reference/repos/unity-test-runner/ — GitHub Action for Unity tests`)
+  sections.push(`- data/reference/repos/unity-actions/ — Shared Unity CI actions`)
+  sections.push(`- data/reference/repos/docker/ — GameCI Docker images`)
+  sections.push(`- data/reference/repos/steam-deploy/ — Steam deployment action`)
+  sections.push(`- data/reference/repos/documentation/ — Full game.ci documentation site`)
+  sections.push(`- data/github/issues/ — Synced GitHub issues from all repos`)
+  sections.push(``)
+  sections.push(`**Always verify your answers against actual source code.** Read action.yml, grep for env vars, check Dockerfiles. Do not guess.`)
 
   if (options.repoDir) {
-    sections.push(`2. Search the source code at ${options.repoDir} for relevant information.`)
+    sections.push(`Additional repo clone: ${options.repoDir}`)
   }
   if (options.docsDir) {
-    sections.push(`3. Search documentation at ${options.docsDir} for relevant pages.`)
+    sections.push(`Additional docs clone: ${options.docsDir}`)
   }
 
-  sections.push(`4. Write your response to data/responses/discord/${options.responseId}.md`)
+  sections.push(``)
+  sections.push(`## Instructions`)
+  sections.push(`1. Analyze this message to determine what help is needed.`)
+  sections.push(`2. Search the relevant repo source code to verify your answer.`)
+  sections.push(`3. Write your response to data/responses/discord/${options.responseId}.md`)
   sections.push('')
 
   sections.push(`## Response File Format`)
