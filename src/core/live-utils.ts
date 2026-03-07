@@ -41,6 +41,54 @@ export function isLikelyHelpRequest(content: string): boolean {
 }
 
 /**
+ * Check if a message is about GameCI-related topics.
+ * Rejects off-topic messages and potential security probes.
+ */
+export type TopicCheckResult = { relevant: true } | { relevant: false; reason: string }
+
+export function checkTopicRelevance(content: string): TopicCheckResult {
+  const lower = content.toLowerCase()
+
+  // Security probes — asking about the bot's infrastructure, host, internals
+  const securityProbePatterns = [
+    /what\s+(server|host|machine|os|system|computer|ip|version)\s+(are you|do you|is)/i,
+    /running\s+on\s+what/i,
+    /your\s+(server|host|ip|system|infrastructure|config)/i,
+    /reveal\s+(your|the)\s+(system|prompt|instructions|config)/i,
+    /ignore\s+(previous|above|all)\s+(instructions|prompts)/i,
+    /system\s*prompt/i,
+    /what\s+are\s+your\s+instructions/i,
+  ]
+
+  for (const pattern of securityProbePatterns) {
+    if (pattern.test(lower)) {
+      return { relevant: false, reason: 'security probe detected' }
+    }
+  }
+
+  // Off-topic — no GameCI/CI/CD/Unity/Docker/build keywords at all
+  const topicKeywords = [
+    'unity', 'game-ci', 'gameci', 'game ci',
+    'ci/cd', 'ci cd', 'pipeline', 'workflow', 'github action',
+    'docker', 'container', 'build', 'test', 'deploy',
+    'il2cpp', 'mono', 'webgl', 'android', 'ios', 'steam',
+    'activation', 'license', 'ulf', 'serial',
+    'runner', 'self-hosted', 'ubuntu', 'windows', 'macos',
+    'unity-builder', 'unity-test-runner', 'steam-deploy',
+    'dockerfile', 'image', 'action.yml', 'action',
+    'error', 'fail', 'bug', 'crash', 'issue',
+    'help', 'how to', 'how do',
+  ]
+
+  const hasTopicKeyword = topicKeywords.some((kw) => lower.includes(kw))
+  if (!hasTopicKeyword) {
+    return { relevant: false, reason: 'off-topic (no GameCI/CI/CD keywords)' }
+  }
+
+  return { relevant: true }
+}
+
+/**
  * Truncate message content for terminal display.
  */
 export function formatMessagePreview(content: string, maxLen = 120): string {

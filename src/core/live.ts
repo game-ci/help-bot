@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Events, Message, ChannelType } from 'discord.js'
+import { Client, GatewayIntentBits, Events, Message, ChannelType, ActivityType } from 'discord.js'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { readFile, readdir } from 'node:fs/promises'
@@ -8,7 +8,7 @@ import { updateState, setPostedDiscordResponse, loadState, getPostedDiscordRespo
 import { ensureDir } from '../utils/fs'
 import { REPO_ROOT, RESPONSES_DIR } from '../utils/paths'
 import { parseFrontMatter } from '../utils/frontmatter'
-import { isMonitoredChannel, isLikelyHelpRequest, formatMessagePreview, buildSingleMessagePrompt, formatTime } from './live-utils'
+import { isMonitoredChannel, isLikelyHelpRequest, checkTopicRelevance, formatMessagePreview, buildSingleMessagePrompt, formatTime } from './live-utils'
 
 const DISCORD_API = 'https://discord.com/api/v10'
 const MAX_DISCORD_LENGTH = 2000
@@ -134,6 +134,17 @@ export async function runLive(options: LiveOptions): Promise<void> {
       }
     }
 
+    // Set bot presence/status
+    const monitoredCount = [...guildMappings.values()]
+      .reduce((acc, m) => acc + [...m.channelNameMap.values()].filter(ch => ch.monitor !== false).length, 0)
+    readyClient.user.setPresence({
+      status: 'online',
+      activities: [{
+        name: `${monitoredCount} channels for help requests`,
+        type: ActivityType.Watching,
+      }],
+    })
+
     console.log('')
     console.log(`Ready. Listening for messages...`)
     console.log('─'.repeat(50))
@@ -196,6 +207,13 @@ export async function runLive(options: LiveOptions): Promise<void> {
     // Check: is this a help request?
     if (!isLikelyHelpRequest(content)) {
       console.log(`  → Skipped (not a help request)`)
+      return
+    }
+
+    // Check: is this on-topic and not a security probe?
+    const topicCheck = checkTopicRelevance(content)
+    if (!topicCheck.relevant) {
+      console.log(`  → Skipped (${topicCheck.reason})`)
       return
     }
 
@@ -323,9 +341,14 @@ async function investigateAndRespond(
       '--disallowedTools', 'Task',
     )
 
+    // Unset CLAUDECODE to allow nested Claude invocation
+    const env = { ...process.env }
+    delete env.CLAUDECODE
+
     const proc = spawn('claude', args, {
       cwd: REPO_ROOT,
       stdio: ['pipe', 'inherit', 'inherit'],
+      env,
     })
     proc.stdin.end(prompt)
     await once(proc, 'exit')
