@@ -1,7 +1,7 @@
-import { Client, GatewayIntentBits, Events, Message, ChannelType, ActivityType } from 'discord.js'
+import { Client, GatewayIntentBits, Events, Message, ChannelType, ActivityType, Attachment } from 'discord.js'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { readFile, readdir } from 'node:fs/promises'
+import { readFile, writeFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { getConfig, getValue, resolveGuilds, resolveGuildId, getSystemPrompt, GuildConfig, ChannelConfig } from '../config'
 import { updateState, setPostedDiscordResponse, loadState, getPostedDiscordResponses, getLastOnlineAt, getFirstOnlineAt, setLastOnlineAt } from '../state'
@@ -364,6 +364,64 @@ async function fetchReplyChain(message: Message, maxDepth = 15): Promise<ReplyCh
   return chain
 }
 
+/** Allowed text file extensions for attachment downloads. */
+const TEXT_EXTENSIONS = new Set(['.txt', '.log', '.yml', '.yaml', '.json', '.xml', '.csv', '.md', '.ini', '.cfg', '.conf', '.toml', '.env.example'])
+
+/** Max attachment size to download (256 KB). */
+const MAX_ATTACHMENT_SIZE = 256 * 1024
+
+/**
+ * Download text file attachments from a Discord message.
+ * Writes each file to the response directory and returns relative paths.
+ * Only downloads safe text-based files; skips images, binaries, and oversized files.
+ */
+async function downloadTextAttachments(
+  message: Message,
+  responseDir: string,
+  responseId: string,
+): Promise<Array<{ filename: string; path: string; size: number }>> {
+  const downloaded: Array<{ filename: string; path: string; size: number }> = []
+
+  for (const [, attachment] of message.attachments) {
+    const name = attachment.name ?? 'unknown'
+    const ext = name.includes('.') ? '.' + name.split('.').pop()!.toLowerCase() : ''
+
+    // Only allow known text extensions
+    if (!TEXT_EXTENSIONS.has(ext)) {
+      console.log(`  → Attachment skipped (not a text file): ${name}`)
+      continue
+    }
+
+    // Size guard
+    if (attachment.size > MAX_ATTACHMENT_SIZE) {
+      console.log(`  → Attachment skipped (too large: ${Math.round(attachment.size / 1024)}KB): ${name}`)
+      continue
+    }
+
+    try {
+      const response = await fetch(attachment.url)
+      if (!response.ok) {
+        console.log(`  → Attachment download failed (${response.status}): ${name}`)
+        continue
+      }
+      const text = await response.text()
+
+      // Write to response dir with a safe filename
+      const safeFilename = `${responseId}-attachment-${name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+      const filePath = join(responseDir, safeFilename)
+      await writeFile(filePath, text, 'utf-8')
+
+      const relPath = filePath.replace(/\\/g, '/').replace(/^.*?(data\/)/, '$1')
+      downloaded.push({ filename: name, path: relPath, size: text.length })
+      console.log(`  → Attachment downloaded: ${name} (${text.length} chars) → ${relPath}`)
+    } catch (err: any) {
+      console.log(`  → Attachment download failed: ${name}: ${err.message ?? err}`)
+    }
+  }
+
+  return downloaded
+}
+
 /**
  * Investigate a single message via LLM and post the response.
  */
@@ -409,12 +467,18 @@ async function investigateAndRespond(
     }
   }
 
-  // Write context file if we have reply chain or thread context
+  // Download text file attachments (.txt, .log, .json, .yaml, etc.)
   const responseDir = join(RESPONSES_DIR, 'discord')
   await ensureDir(responseDir)
 
+  let attachments: Array<{ filename: string; path: string; size: number }> = []
+  if (message.attachments.size > 0) {
+    attachments = await downloadTextAttachments(message, responseDir, responseId)
+  }
+
+  // Write context file if we have reply chain, thread context, or attachments
   let contextFilePath: string | undefined
-  if (replyChain.length > 0 || (threadContext && threadContext.length > 0)) {
+  if (replyChain.length > 0 || (threadContext && threadContext.length > 0) || attachments.length > 0) {
     try {
       contextFilePath = await writeContextFile({
         responseId,
@@ -427,6 +491,7 @@ async function investigateAndRespond(
           timestamp: message.createdAt.toISOString(),
           messageId: message.id,
         },
+        attachments,
       })
       // Make path relative to repo root for the LLM
       contextFilePath = contextFilePath.replace(/\\/g, '/').replace(/^.*?(data\/)/, '$1')

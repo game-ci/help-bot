@@ -120,6 +120,8 @@ export async function writeContextFile(options: {
   replyChain: ReplyChainMessage[]
   threadContext?: Array<{ author: string; content: string; timestamp: string }>
   triggerMessage: { author: string; content: string; timestamp: string; messageId: string }
+  /** Text file attachments downloaded from the message */
+  attachments?: Array<{ filename: string; path: string; size: number }>
 }): Promise<string> {
   const sections: string[] = []
 
@@ -154,6 +156,17 @@ export async function writeContextFile(options: {
   sections.push(`### @${options.triggerMessage.author} (${options.triggerMessage.timestamp})`)
   sections.push(options.triggerMessage.content)
   sections.push(``)
+
+  if (options.attachments && options.attachments.length > 0) {
+    sections.push(`## Attached Files`)
+    sections.push(``)
+    sections.push(`The user attached the following text files. **Read these files** — they contain important context (logs, configs, etc.).`)
+    sections.push(``)
+    for (const att of options.attachments) {
+      sections.push(`- **${att.filename}** (${att.size} chars): \`${att.path}\``)
+    }
+    sections.push(``)
+  }
 
   const contextPath = join(options.responseDir, `${options.responseId}-context.md`)
   await writeFile(contextPath, sections.join('\n'), 'utf-8')
