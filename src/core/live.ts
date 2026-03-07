@@ -8,7 +8,7 @@ import { updateState, setPostedDiscordResponse, loadState, getPostedDiscordRespo
 import { ensureDir } from '../utils/fs'
 import { REPO_ROOT, RESPONSES_DIR } from '../utils/paths'
 import { parseFrontMatter } from '../utils/frontmatter'
-import { isMonitoredChannel, isLikelyHelpRequest, checkTopicRelevance, formatMessagePreview, buildSingleMessagePrompt, formatTime } from './live-utils'
+import { isMonitoredChannel, formatMessagePreview, buildSingleMessagePrompt, formatTime } from './live-utils'
 
 const DISCORD_API = 'https://discord.com/api/v10'
 const MAX_DISCORD_LENGTH = 2000
@@ -214,14 +214,22 @@ export async function runLive(options: LiveOptions): Promise<void> {
       return
     }
 
-    // Skip: command prefixes
-    const content = message.content.trim()
-    if (ignorePrefixes.some((p) => content.startsWith(p))) {
+    // Only respond if the user @mentions the bot or is replying to the bot
+    const botId = client.user?.id
+    const isMentioned = botId ? message.mentions.users.has(botId) : false
+    const isReplyToBot = message.reference?.messageId
+      ? await message.channel.messages.fetch(message.reference.messageId)
+          .then((ref) => ref.author.id === botId)
+          .catch(() => false)
+      : false
+
+    if (!isMentioned && !isReplyToBot) {
       return
     }
 
-    // Skip: too short
-    if (content.length < minMessageLength) {
+    // Skip: command prefixes
+    const content = message.content.trim()
+    if (ignorePrefixes.some((p) => content.startsWith(p))) {
       return
     }
 
@@ -242,20 +250,7 @@ export async function runLive(options: LiveOptions): Promise<void> {
       return
     }
 
-    // Check: is this a help request?
-    if (!isLikelyHelpRequest(content)) {
-      console.log(`  → Skipped (not a help request)`)
-      return
-    }
-
-    // Check: is this on-topic and not a security probe?
-    const topicCheck = checkTopicRelevance(content)
-    if (!topicCheck.relevant) {
-      console.log(`  → Skipped (${topicCheck.reason})`)
-      return
-    }
-
-    console.log(`  → Help request detected.`)
+    console.log(`  → Responding to ${isMentioned ? '@mention' : 'reply'}...`)
 
     // Dispatch gate
     if (dispatchMode === 'auto') {
@@ -524,9 +519,19 @@ async function catchUpMissedMessages(
 
           // Same filters as the live handler
           if (filters.ignoreBots && message.author.bot) continue
+
+          // Only process @mentions or replies to the bot
+          const botId = client.user?.id
+          const isMentioned = botId ? message.mentions.users.has(botId) : false
+          const isReplyToBot = message.reference?.messageId
+            ? await channel.messages.fetch(message.reference.messageId)
+                .then((ref) => ref.author.id === botId)
+                .catch(() => false)
+            : false
+          if (!isMentioned && !isReplyToBot) continue
+
           const content = message.content.trim()
           if (filters.ignorePrefixes.some((p) => content.startsWith(p))) continue
-          if (content.length < filters.minMessageLength) continue
 
           // Dedup: check state
           const state = await loadState()
@@ -538,11 +543,6 @@ async function catchUpMissedMessages(
 
           // Already processing
           if (processingMessages.has(message.id)) continue
-
-          // Help request + topic check
-          if (!isLikelyHelpRequest(content)) continue
-          const topicCheck = checkTopicRelevance(content)
-          if (!topicCheck.relevant) continue
 
           eligible++
           const authorTag = message.author.tag ?? message.author.username
