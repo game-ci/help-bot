@@ -14,6 +14,40 @@ const DISCORD_API = 'https://discord.com/api/v10'
 const MAX_DISCORD_LENGTH = 2000
 const FEEDBACK_PROMPT = '\n\n-# Was this helpful? React with :thumbsup: or :thumbsdown: to help improve future responses.'
 
+// --- Status management ---
+let idleStatusText = 'help requests'
+let activeInvestigations = 0
+
+function setIdleStatus(client: Client): void {
+  client.user?.setPresence({
+    status: 'online',
+    activities: [{
+      name: idleStatusText,
+      type: ActivityType.Watching,
+    }],
+  })
+}
+
+function setInvestigatingStatus(client: Client, channelName: string, author: string): void {
+  activeInvestigations++
+  const suffix = activeInvestigations > 1 ? ` (+${activeInvestigations - 1} more)` : ''
+  client.user?.setPresence({
+    status: 'dnd',
+    activities: [{
+      name: `@${author} in #${channelName}${suffix}`,
+      type: ActivityType.Custom,
+      state: `Investigating @${author} in #${channelName}${suffix}`,
+    }],
+  })
+}
+
+function clearInvestigatingStatus(client: Client): void {
+  activeInvestigations = Math.max(0, activeInvestigations - 1)
+  if (activeInvestigations === 0) {
+    setIdleStatus(client)
+  }
+}
+
 export interface LiveOptions {
   dispatchMode?: string
   repos?: string[]
@@ -137,17 +171,21 @@ export async function runLive(options: LiveOptions): Promise<void> {
     // Set bot presence/status
     const monitoredCount = [...guildMappings.values()]
       .reduce((acc, m) => acc + [...m.channelNameMap.values()].filter(ch => ch.monitor !== false).length, 0)
-    readyClient.user.setPresence({
-      status: 'online',
-      activities: [{
-        name: `${monitoredCount} channels for help requests`,
-        type: ActivityType.Watching,
-      }],
-    })
+    idleStatusText = `${monitoredCount} channels for help requests`
+    setIdleStatus(readyClient)
 
     console.log('')
     console.log(`Ready. Listening for messages...`)
     console.log('─'.repeat(50))
+
+    // --- Catch-up: scan recent messages missed while offline ---
+    if (dispatchMode === 'auto') {
+      catchUpMissedMessages(readyClient, guildMappings, options, config, llmModel, {
+        ignoreBots, ignorePrefixes, minMessageLength,
+      }).catch((err) => {
+        console.warn(`  Catch-up scan failed: ${err.message ?? err}`)
+      })
+    }
   })
 
   // --- Message handler ---
@@ -224,10 +262,12 @@ export async function runLive(options: LiveOptions): Promise<void> {
       // Auto mode: investigate immediately
       console.log(`  → Investigating...`)
       processingMessages.add(message.id)
+      setInvestigatingStatus(client, channelName, authorTag)
       try {
         await investigateAndRespond(message, mapping, channelConfig, options, config, llmModel)
       } finally {
         processingMessages.delete(message.id)
+        clearInvestigatingStatus(client)
       }
     } else {
       // Approval / countdown mode: log and defer
@@ -368,24 +408,28 @@ async function investigateAndRespond(
   }
 
   const { body } = parseFrontMatter(responseContent)
-  const trimmed = body.trim()
-  if (!trimmed) {
+  // Strip any LLM-generated feedback prompt to avoid duplicates
+  const cleaned = body
+    .replace(/-#\s*Was this helpful\?[^\n]*/gi, '')
+    .replace(/Was this helpful\?\s*React with[^\n]*/gi, '')
+    .trim()
+  if (!cleaned) {
     console.warn(`  ✗ Response file is empty`)
     return
   }
 
-  console.log(`  → Response ready (${trimmed.length} chars).`)
+  console.log(`  → Response ready (${cleaned.length} chars).`)
 
   if (options.dryRun) {
     console.log(`  → DRY RUN: would post response. Preview:`)
-    console.log(`    ${formatMessagePreview(trimmed, 200)}`)
+    console.log(`    ${formatMessagePreview(cleaned, 200)}`)
     return
   }
 
   // Post the response to Discord
   console.log(`  → Posting...`)
   try {
-    const bodyWithFeedback = trimmed + FEEDBACK_PROMPT
+    const bodyWithFeedback = cleaned + FEEDBACK_PROMPT
     const chunks = splitContent(bodyWithFeedback)
     let lastMessageId: string | undefined
 
@@ -436,4 +480,95 @@ function splitContent(content: string): string[] {
     remaining = remaining.slice(splitAt).trimStart()
   }
   return chunks
+}
+
+/**
+ * Scan recent messages in monitored channels for any that were missed while offline.
+ * Only processes messages not already responded to (state.json dedup).
+ */
+async function catchUpMissedMessages(
+  client: Client,
+  guildMappings: Map<string, GuildMapping>,
+  options: LiveOptions,
+  config: Record<string, unknown>,
+  model: string,
+  filters: { ignoreBots: boolean; ignorePrefixes: string[]; minMessageLength: number },
+): Promise<void> {
+  const syncHours = Number(getValue(config, ['discord', 'sync_hours'], 6))
+  const cutoff = Date.now() - (syncHours * 60 * 60 * 1000)
+
+  console.log('')
+  console.log(`Catch-up: scanning messages from the last ${syncHours}h...`)
+
+  let total = 0
+  let eligible = 0
+
+  for (const [guildId, mapping] of guildMappings) {
+    const discordGuild = client.guilds.cache.get(guildId)
+    if (!discordGuild) continue
+
+    for (const [channelId, channelConfig] of mapping.channelMap) {
+      if (channelConfig.monitor === false) continue
+
+      const channel = discordGuild.channels.cache.get(channelId)
+      if (!channel || !channel.isTextBased() || !('messages' in channel)) continue
+
+      try {
+        const messages = await channel.messages.fetch({ limit: 50 })
+        const sorted = [...messages.values()]
+          .filter((m) => m.createdTimestamp >= cutoff)
+          .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
+
+        for (const message of sorted) {
+          total++
+
+          // Same filters as the live handler
+          if (filters.ignoreBots && message.author.bot) continue
+          const content = message.content.trim()
+          if (filters.ignorePrefixes.some((p) => content.startsWith(p))) continue
+          if (content.length < filters.minMessageLength) continue
+
+          // Dedup: check state
+          const state = await loadState()
+          const posted = getPostedDiscordResponses(state)
+          const guildName = mapping.guildConfig.name
+          const channelName = channelConfig.name
+          const responseKey = `discord:${guildName}/${channelName}#${message.id}`
+          if (posted[responseKey]) continue
+
+          // Already processing
+          if (processingMessages.has(message.id)) continue
+
+          // Help request + topic check
+          if (!isLikelyHelpRequest(content)) continue
+          const topicCheck = checkTopicRelevance(content)
+          if (!topicCheck.relevant) continue
+
+          eligible++
+          const authorTag = message.author.tag ?? message.author.username
+          const preview = formatMessagePreview(content)
+          console.log(`  [catch-up] #${channelName} @${authorTag}: ${preview}`)
+          console.log(`    → Investigating...`)
+
+          processingMessages.add(message.id)
+          setInvestigatingStatus(client, channelName, authorTag)
+          try {
+            await investigateAndRespond(message, mapping, channelConfig, options, config, model)
+          } finally {
+            processingMessages.delete(message.id)
+            clearInvestigatingStatus(client)
+          }
+        }
+      } catch (err: any) {
+        console.warn(`  Catch-up: failed to fetch #${channelConfig.name}: ${err.message ?? err}`)
+      }
+    }
+  }
+
+  if (eligible > 0) {
+    console.log(`Catch-up complete: ${eligible} messages processed out of ${total} scanned.`)
+  } else {
+    console.log(`Catch-up complete: no missed messages found (${total} scanned).`)
+  }
+  console.log('─'.repeat(50))
 }

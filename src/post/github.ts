@@ -47,8 +47,12 @@ export async function postGitHubResponses(options: PostGitHubOptions): Promise<v
       continue
     }
 
-    // Append feedback prompt to response body
-    const bodyWithFeedback = body.trim() + FEEDBACK_PROMPT
+    // Strip any LLM-generated feedback prompt to avoid duplicates, then append ours
+    const cleanedBody = body
+      .replace(/<sub>\s*Was this helpful\?[^<]*<\/sub>/gi, '')
+      .replace(/Was this helpful\?\s*React with[^\n]*/gi, '')
+      .trim()
+    const bodyWithFeedback = cleanedBody + FEEDBACK_PROMPT
 
     try {
       // Post comment and capture the comment URL (contains comment ID)

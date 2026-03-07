@@ -227,7 +227,11 @@ export async function postDiscordResponses(options: PostDiscordOptions): Promise
       continue
     }
 
-    const trimmed = body.trim()
+    // Strip any LLM-generated feedback prompt to avoid duplicates
+    const trimmed = body
+      .replace(/-#\s*Was this helpful\?[^\n]*/gi, '')
+      .replace(/Was this helpful\?\s*React with[^\n]*/gi, '')
+      .trim()
     if (!trimmed) {
       continue
     }
