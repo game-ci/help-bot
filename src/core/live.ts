@@ -284,8 +284,18 @@ export async function runLive(options: LiveOptions): Promise<void> {
       console.log(`  → Investigating...`)
       processingMessages.add(message.id)
       setInvestigatingStatus(client, channelName, authorTag)
+      // React with 🔍 to show investigation has started
+      await message.react('🔍').catch(() => {})
       try {
         await investigateAndRespond(message, mapping, channelConfig, options, config, llmModel)
+        // Replace 🔍 with ✅ on success
+        await message.reactions.cache.get('🔍')?.users.remove(client.user!.id).catch(() => {})
+        await message.react('✅').catch(() => {})
+      } catch (err) {
+        // Replace 🔍 with ❌ on failure
+        await message.reactions.cache.get('🔍')?.users.remove(client.user!.id).catch(() => {})
+        await message.react('❌').catch(() => {})
+        throw err
       } finally {
         processingMessages.delete(message.id)
         clearInvestigatingStatus(client)
@@ -479,7 +489,7 @@ async function investigateAndRespond(
     await once(proc, 'exit')
   } catch (error: any) {
     console.warn(`  ✗ LLM investigation failed: ${error.message ?? error}`)
-    return
+    throw new Error(`LLM investigation failed: ${error.message ?? error}`)
   }
 
   // Log investigation artifacts
@@ -501,7 +511,7 @@ async function investigateAndRespond(
     responseContent = await readFile(responseFile, 'utf-8')
   } catch {
     console.warn(`  ✗ No response file produced at ${responseFile}`)
-    return
+    throw new Error(`No response file produced at ${responseFile}`)
   }
 
   const { body } = parseFrontMatter(responseContent)
@@ -512,7 +522,7 @@ async function investigateAndRespond(
     .trim()
   if (!cleaned) {
     console.warn(`  ✗ Response file is empty`)
-    return
+    throw new Error('Response file is empty')
   }
 
   console.log(`  → Response ready (${cleaned.length} chars).`)
@@ -655,8 +665,14 @@ async function catchUpMissedMessages(
 
           processingMessages.add(message.id)
           setInvestigatingStatus(client, channelName, authorTag)
+          await message.react('🔍').catch(() => {})
           try {
             await investigateAndRespond(message, mapping, channelConfig, options, config, model)
+            await message.reactions.cache.get('🔍')?.users.remove(client.user!.id).catch(() => {})
+            await message.react('✅').catch(() => {})
+          } catch {
+            await message.reactions.cache.get('🔍')?.users.remove(client.user!.id).catch(() => {})
+            await message.react('❌').catch(() => {})
           } finally {
             processingMessages.delete(message.id)
             clearInvestigatingStatus(client)
