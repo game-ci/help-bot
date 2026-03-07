@@ -482,6 +482,18 @@ async function investigateAndRespond(
     return
   }
 
+  // Log investigation artifacts
+  const findingsFile = join(responseDir, `${responseId}-findings.md`)
+  const analysisFile = join(responseDir, `${responseId}-analysis.md`)
+  try {
+    await readFile(findingsFile, 'utf-8')
+    console.log(`  → Findings captured: ${responseId}-findings.md`)
+  } catch { /* findings file is optional */ }
+  try {
+    await readFile(analysisFile, 'utf-8')
+    console.log(`  → Analysis captured: ${responseId}-analysis.md`)
+  } catch { /* analysis file is optional */ }
+
   // Read the response file
   const responseFile = join(responseDir, `${responseId}.md`)
   let responseContent: string
