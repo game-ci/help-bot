@@ -375,8 +375,14 @@ export function buildInvestigationPrompt(options: InvestigationOptions): string 
   s.push(`- Verify that all quoting, spacing, and escaping in code examples exactly matches what the source code expects.`)
   s.push(`- Never reproduce CLI syntax from memory — it is frequently wrong.`)
   s.push(``)
-  s.push(`**Final gut check:** Would a GameCI maintainer be embarrassed by this response? If the answer is yes, go back and search more.`)
-  s.push(`If any check fails, go back and search more. Then write the final response.`)
+  s.push(`**Do you actually have enough information to answer?**`)
+  s.push(`- If you are not confident in your diagnosis, DO NOT guess. Instead, tell the user what you found and ask a specific clarifying question.`)
+  s.push(`- Asking "which specific assembly is missing?" or "is this file tracked by Git LFS?" is MORE helpful than a wrong answer.`)
+  s.push(`- You are NOT required to provide a solution. You ARE required to not provide a wrong one.`)
+  s.push(`- It is better to say "I found X and Y — can you confirm Z so I can narrow this down?" than to assume Z and give bad advice.`)
+  s.push(``)
+  s.push(`**Final gut check:** Would a GameCI maintainer be embarrassed by this response? If the answer is yes, go back and search more — or ask instead of guessing.`)
+  s.push(`If any check fails, go back and search more, or ask a clarifying question. Then write the final response.`)
   s.push(``)
 
   // --- Response file ---
@@ -405,16 +411,22 @@ export function buildInvestigationPrompt(options: InvestigationOptions): string 
 
   s.push(`## Response Rules`)
   s.push(``)
+  s.push(`**Asking questions is encouraged.** If your investigation reveals multiple possible causes and you cannot determine which one from the information given, ask the user a specific diagnostic question instead of guessing. A targeted question like "Is Naninovel.Common.dll tracked by Git LFS in your repo?" is more valuable than five bullet points of speculation.`)
+  s.push(``)
+  s.push(`**Do not assume the user made a mistake.** They may have done everything correctly and hit a genuine bug or edge case. Verify before suggesting fixes.`)
+  s.push(``)
 
   if (options.source.type === 'discord') {
     if (isFollowUp) {
-      s.push(`This is a FOLLOW-UP in an ongoing conversation. Be thorough.`)
+      s.push(`This is a FOLLOW-UP in an ongoing conversation. Read the conversation context file carefully — your previous responses are in the reply chain. Continue the conversation naturally.`)
+      s.push(`- Build on what was already discussed — do not repeat your previous answer`)
+      s.push(`- If the user provided new information, use it to narrow your diagnosis`)
+      s.push(`- If the user asked a follow-up question, answer it directly`)
       s.push(`- Detailed explanations, full code examples, step-by-step walkthroughs`)
       s.push(`- Stay under 1800 chars to fit Discord`)
-      s.push(`- Show relevant file contents and configs`)
     } else {
       s.push(`This is a FIRST REPLY. Respect the human's context window.`)
-      s.push(`- Format: 1 sentence answer + up to 5 bullet points + invite to ask more`)
+      s.push(`- Format: 1 sentence answer OR a diagnostic question + up to 5 bullet points`)
       s.push(`- Maximum 500 characters`)
       s.push(`- One code block max, under 3 lines, only if essential`)
     }
