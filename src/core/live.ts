@@ -4,7 +4,7 @@ import { once } from 'node:events'
 import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { getConfig, getValue, resolveGuilds, resolveGuildId, getSystemPrompt, GuildConfig, ChannelConfig } from '../config'
-import { updateState, setPostedDiscordResponse, loadState, getPostedDiscordResponses } from '../state'
+import { updateState, setPostedDiscordResponse, loadState, getPostedDiscordResponses, getLastOnlineAt, getFirstOnlineAt, setLastOnlineAt } from '../state'
 import { ensureDir } from '../utils/fs'
 import { REPO_ROOT, RESPONSES_DIR } from '../utils/paths'
 import { parseFrontMatter } from '../utils/frontmatter'
@@ -178,14 +178,33 @@ export async function runLive(options: LiveOptions): Promise<void> {
     console.log(`Ready. Listening for messages...`)
     console.log('─'.repeat(50))
 
-    // --- Catch-up: scan recent messages missed while offline ---
-    if (dispatchMode === 'auto') {
-      catchUpMissedMessages(readyClient, guildMappings, options, config, llmModel, {
-        ignoreBots, ignorePrefixes, minMessageLength,
-      }).catch((err) => {
-        console.warn(`  Catch-up scan failed: ${err.message ?? err}`)
-      })
-    }
+    // --- Timestamp-based catch-up: never process messages before firstOnlineAt ---
+    ;(async () => {
+      const state = await loadState()
+      const lastOnline = getLastOnlineAt(state)
+
+      if (!lastOnline) {
+        // First-ever run — stamp now, skip catch-up, never answer anything older
+        console.log(`First run — stamping firstOnlineAt. Will never process messages before this point.`)
+        await updateState((s) => setLastOnlineAt(s))
+      } else if (dispatchMode === 'auto') {
+        const cutoff = new Date(lastOnline)
+        console.log(`Last online: ${cutoff.toISOString()} — catching up from there.`)
+        await catchUpMissedMessages(readyClient, guildMappings, options, config, llmModel, {
+          ignoreBots, ignorePrefixes, minMessageLength,
+        }, cutoff)
+        await updateState((s) => setLastOnlineAt(s))
+      } else {
+        await updateState((s) => setLastOnlineAt(s))
+      }
+
+      // Heartbeat: update lastOnlineAt every 5 minutes so restarts know the gap
+      setInterval(async () => {
+        await updateState((s) => setLastOnlineAt(s)).catch(() => {})
+      }, 5 * 60 * 1000)
+    })().catch((err) => {
+      console.warn(`  Catch-up scan failed: ${err.message ?? err}`)
+    })
   })
 
   // --- Message handler ---
@@ -224,6 +243,13 @@ export async function runLive(options: LiveOptions): Promise<void> {
       : false
 
     if (!isMentioned && !isReplyToBot) {
+      return
+    }
+
+    // Skip: messages older than firstOnlineAt — never process pre-existing messages
+    const state0 = await loadState()
+    const firstOnline = getFirstOnlineAt(state0)
+    if (firstOnline && message.createdAt < new Date(firstOnline)) {
       return
     }
 
@@ -552,12 +578,13 @@ async function catchUpMissedMessages(
   config: Record<string, unknown>,
   model: string,
   filters: { ignoreBots: boolean; ignorePrefixes: string[]; minMessageLength: number },
+  since: Date,
 ): Promise<void> {
-  const syncHours = Number(getValue(config, ['discord', 'sync_hours'], 6))
-  const cutoff = Date.now() - (syncHours * 60 * 60 * 1000)
+  const cutoff = since.getTime()
+  const ago = Math.round((Date.now() - cutoff) / 60000)
 
   console.log('')
-  console.log(`Catch-up: scanning messages from the last ${syncHours}h...`)
+  console.log(`Catch-up: scanning messages since ${since.toISOString()} (${ago}m ago)...`)
 
   let total = 0
   let eligible = 0

@@ -112,6 +112,36 @@ export function setPostedDiscordResponse(
   state.meta.postedDiscordResponses = posted
 }
 
+// --- Live mode online timestamp ---
+
+/**
+ * Get the last time the bot was known to be online.
+ * Returns undefined on first-ever run (no catch-up should happen).
+ */
+export function getLastOnlineAt(state: SyncState): string | undefined {
+  return state.meta?.lastOnlineAt as string | undefined
+}
+
+/**
+ * Get the first-ever online timestamp. Nothing before this should ever be processed.
+ */
+export function getFirstOnlineAt(state: SyncState): string | undefined {
+  return state.meta?.firstOnlineAt as string | undefined
+}
+
+/**
+ * Update the last-online timestamp (call periodically while running).
+ * Also sets firstOnlineAt on first-ever call (never overwritten after that).
+ */
+export function setLastOnlineAt(state: SyncState, iso?: string): void {
+  state.meta ??= {}
+  const now = iso ?? new Date().toISOString()
+  if (!state.meta.firstOnlineAt) {
+    state.meta.firstOnlineAt = now
+  }
+  state.meta.lastOnlineAt = now
+}
+
 // --- Guild-namespaced cursor helpers ---
 
 export function getGuildCursor(state: SyncState, guildName: string, channelId: string): string | undefined {
