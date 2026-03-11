@@ -146,6 +146,8 @@ Add a `triage_channel_id` to your guild config and list Discord user IDs for tri
 | `discord.triage_user_ids` | Array of Discord user IDs (snowflakes) allowed to use triage buttons. Checked alongside `github.collaborators`. |
 | `guild.triage_channel_id` | Discord channel ID of the private admin channel where triage notifications are posted. |
 | `dispatch.discord_mode` | Set to `"triage"` to enable triage mode, or pass `--dispatch-mode triage` on the CLI. |
+| `dispatch.github_triage` | Enable GitHub issue polling in triage mode (default: `false`). |
+| `dispatch.github_poll_interval_minutes` | How often to poll GitHub repos for new issues (default: `10`). |
 
 ### Access control
 
@@ -155,13 +157,28 @@ Button clicks are verified against two lists:
 
 Non-authorized users get an ephemeral "Only maintainers can use triage controls" reply.
 
+### GitHub issue triage (opt-in)
+
+By default, triage mode only handles Discord messages. To also triage GitHub issues and PRs from the same Discord UI, enable GitHub triage:
+
+```json
+{
+  "dispatch": {
+    "github_triage": true,
+    "github_poll_interval_minutes": 10
+  }
+}
+```
+
+When enabled, the bot polls GitHub repos periodically (default: every 10 minutes), syncs issues, filters eligible ones, and posts triage notifications to the Discord admin channel. The same buttons and workflow apply -- Investigate, View, Re-investigate, Send all work for GitHub sources. "Send Response" posts a comment on the GitHub issue via `gh issue comment`.
+
 ### Supported source types
 
 Triage mode handles messages from:
 - **Text channels** -- Regular channel messages
 - **Threads** -- Messages inside threads (resolved to parent channel config)
 - **Forum posts** -- Forum channel posts (resolved to parent forum channel config)
-- **GitHub issues/PRs** -- (via cycle-based detection, routed to the same triage UI)
+- **GitHub issues/PRs** -- Opt-in via `dispatch.github_triage`. Polls `github.repos` for eligible issues.
 
 ## Dispatch pipeline in cycle mode
 

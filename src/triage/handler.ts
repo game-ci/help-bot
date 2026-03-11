@@ -150,6 +150,9 @@ async function handleInvestigate(
     const readyEmbed = buildEmbedOptions(record, result.responsePreview)
     await updateTriageNotification(triageChannel, record.triageMessageId, readyEmbed, sourceType, compactId)
 
+    // Auto-post full response to thread so maintainers can review before sending
+    await postFullResponseToThread(triageChannel, record, triageKey)
+
     console.log(`  Triage: Investigation complete for ${triageKey} (${result.responsePreview.length} char preview)`)
   } else {
     // Investigation failed -- revert to pending
@@ -297,6 +300,9 @@ async function handleReinvestigate(
     const readyEmbed = buildEmbedOptions(record, result.responsePreview)
     await updateTriageNotification(triageChannel, record.triageMessageId, readyEmbed, sourceType, compactId)
 
+    // Auto-post full response to thread so maintainers can review before sending
+    await postFullResponseToThread(triageChannel, record, triageKey)
+
     console.log(`  Triage: Re-investigation complete for ${triageKey}`)
   } else {
     record.status = 'ready' // Revert to ready (keep old response)
@@ -326,7 +332,12 @@ async function handleView(
 
   console.log(`  Triage: ${username} clicked View Investigation for ${triageKey}`)
 
-  await postFullResponseToThread(triageChannel, record)
+  const posted = await postFullResponseToThread(triageChannel, record, triageKey)
+  if (posted) {
+    console.log(`  Triage: Full response posted to thread for ${triageKey}`)
+  } else {
+    console.warn(`  Triage: Failed to post full response to thread for ${triageKey}`)
+  }
 }
 
 // --- Helpers ---
@@ -335,13 +346,41 @@ const MAX_DISCORD_LENGTH = 2000
 
 /**
  * Post the full investigation response to a thread on the triage message.
- * Creates the thread if it doesn't exist. Posts investigation artifacts too.
+ * Creates the thread if it doesn't exist.
+ * Returns true on success, false on failure.
  */
 async function postFullResponseToThread(
   triageChannel: TextChannel,
   record: TriageRecord,
-): Promise<void> {
-  if (!record.responseFile) return
+  triageKey: string,
+): Promise<boolean> {
+  if (!record.responseFile) {
+    console.warn(`  Thread post: no responseFile for ${triageKey}`)
+    return false
+  }
+
+  // Read the response file first (before touching Discord) to fail fast
+  const filePath = record.responseFile.startsWith('data/')
+    ? join(REPO_ROOT, record.responseFile)
+    : record.responseFile
+
+  let cleaned: string
+  try {
+    const content = await readFile(filePath, 'utf-8')
+    const { body } = parseFrontMatter(content)
+    cleaned = body
+      .replace(/-#\s*Was this helpful\?[^\n]*/gi, '')
+      .replace(/Was this helpful\?\s*React with[^\n]*/gi, '')
+      .trim()
+  } catch (err: any) {
+    console.warn(`  Thread post: could not read response file ${filePath}: ${err.message ?? err}`)
+    return false
+  }
+
+  if (!cleaned) {
+    console.warn(`  Thread post: response body is empty for ${triageKey}`)
+    return false
+  }
 
   try {
     const triageMsg = await triageChannel.messages.fetch(record.triageMessageId)
@@ -350,6 +389,10 @@ async function postFullResponseToThread(
     let thread: ThreadChannel
     if (triageMsg.thread) {
       thread = triageMsg.thread
+      // Unarchive if needed
+      if (thread.archived) {
+        await thread.setArchived(false)
+      }
     } else {
       thread = await triageMsg.startThread({
         name: `Investigation: ${(record.sourceTitle ?? 'Help request').substring(0, 90)}`,
@@ -357,20 +400,7 @@ async function postFullResponseToThread(
       })
     }
 
-    // Read the full response
-    const filePath = record.responseFile.startsWith('data/')
-      ? join(REPO_ROOT, record.responseFile)
-      : record.responseFile
-    const content = await readFile(filePath, 'utf-8')
-    const { body } = parseFrontMatter(content)
-    const cleaned = body
-      .replace(/-#\s*Was this helpful\?[^\n]*/gi, '')
-      .replace(/Was this helpful\?\s*React with[^\n]*/gi, '')
-      .trim()
-
-    if (!cleaned) return
-
-    // Post the full response in chunks if needed
+    // Post the full response in chunks
     const header = record.reinvestigationCount > 0
       ? `**Re-investigation #${record.reinvestigationCount} — Full Response:**\n\n`
       : `**Full Response:**\n\n`
@@ -383,9 +413,12 @@ async function postFullResponseToThread(
 
     // Save the thread ID on the record
     record.instructionThreadId = thread.id
-    await updateState((s) => setTriageRecord(s, record.triageKey, record))
+    await updateState((s) => setTriageRecord(s, triageKey, record))
+    return true
   } catch (err: any) {
-    console.warn(`  Failed to post full response to thread: ${err.message ?? err}`)
+    console.warn(`  Thread post failed for ${triageKey}: ${err.message ?? err}`)
+    if (err.code) console.warn(`    Discord API error code: ${err.code}`)
+    return false
   }
 }
 

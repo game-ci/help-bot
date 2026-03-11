@@ -9,7 +9,9 @@ import { ensureDir } from '../utils/fs'
 import { REPO_ROOT, RESPONSES_DIR, DATA_DIR } from '../utils/paths'
 import { parseFrontMatter } from '../utils/frontmatter'
 import { isMonitoredChannel, formatMessagePreview, buildSingleMessagePrompt, buildInvestigationPrompt, formatTime, writeContextFile, ReplyChainMessage } from './live-utils'
-import { handleTriageInteraction, postTriageNotification, discordCompactId, type TriageHandlerContext } from '../triage'
+import { handleTriageInteraction, postTriageNotification, discordCompactId, githubCompactId, type TriageHandlerContext } from '../triage'
+import { syncGitHub } from '../sync/github'
+import { filterIssues, type EligibleIssue } from './filter-issues'
 
 const DISCORD_API = 'https://discord.com/api/v10'
 const MAX_DISCORD_LENGTH = 2000
@@ -85,6 +87,9 @@ export async function runLive(options: LiveOptions): Promise<void> {
     ?? (getValue(config, ['llm', 'claude', 'model'], 'claude-sonnet-4-20250514') as string)
   const ignoreBots = Boolean(getValue(discordConfig, ['ignore_bots'], true))
   const ignorePrefixes = (getValue(discordConfig, ['ignore_prefixes'], ['!', '/', '$', '.']) as string[])
+  const githubTriage = Boolean(getValue(config, ['dispatch', 'github_triage'], false))
+  const githubPollMinutes = Number(getValue(config, ['dispatch', 'github_poll_interval_minutes'], 10))
+  const githubRepos = getValue(config, ['github', 'repos'], [] as string[])
   const minMessageLength = Number(getValue(discordConfig, ['min_message_length'], 15))
 
   const token = process.env.DISCORD_BOT_TOKEN
@@ -109,6 +114,9 @@ export async function runLive(options: LiveOptions): Promise<void> {
   }
   if (options.docsDir) {
     console.log(`  Docs: ${options.docsDir}`)
+  }
+  if (githubTriage && dispatchMode === 'triage') {
+    console.log(`  GitHub triage: enabled (polling every ${githubPollMinutes}m)`)
   }
   console.log('')
   console.log('Connecting to Discord...')
@@ -250,6 +258,14 @@ export async function runLive(options: LiveOptions): Promise<void> {
       setInterval(async () => {
         await updateState((s) => setLastOnlineAt(s)).catch(() => {})
       }, 5 * 60 * 1000)
+
+      // GitHub triage polling (opt-in)
+      if (githubTriage && dispatchMode === 'triage' && triageChannels.size > 0) {
+        // Run an initial poll after a short delay, then on interval
+        setTimeout(() => pollGitHubForTriage().catch((e) => console.warn(`  GitHub poll error: ${e.message ?? e}`)), 15_000)
+        setInterval(() => pollGitHubForTriage().catch((e) => console.warn(`  GitHub poll error: ${e.message ?? e}`)), githubPollMinutes * 60 * 1000)
+        console.log(`  GitHub triage polling started (every ${githubPollMinutes}m)`)
+      }
     })().catch((err) => {
       console.warn(`  Catch-up scan failed: ${err.message ?? err}`)
     })
@@ -622,6 +638,103 @@ export async function runLive(options: LiveOptions): Promise<void> {
       }
     }
   })
+
+  // --- GitHub triage polling ---
+  let githubPollRunning = false
+
+  async function pollGitHubForTriage(): Promise<void> {
+    if (githubPollRunning) return
+    githubPollRunning = true
+    try {
+      const timestamp = formatTime()
+      console.log(`[${timestamp}] GitHub poll: syncing issues...`)
+
+      // Sync latest GitHub data
+      await syncGitHub({ repos: options.repos ?? githubRepos })
+
+      // Pick the first available triage channel (for now, post all GitHub triage to the first guild's triage channel)
+      const triageChannel = [...triageChannels.values()][0]
+      if (!triageChannel) return
+
+      // Filter eligible issues from each repo
+      let totalNew = 0
+      for (const repo of (options.repos ?? githubRepos)) {
+        const repoSlug = repo.replace(/\//g, '-')
+        const result = await filterIssues(repoSlug, repo)
+        if (result.eligible.length === 0) continue
+
+        for (const issue of result.eligible) {
+          const compactId = githubCompactId(repo, issue.number)
+          const triageKey = `triage:g:${compactId}`
+
+          // Skip if already triaged
+          const state = await loadState()
+          if (getTriageRecord(state, triageKey)) continue
+
+          // Read issue content from the synced markdown file
+          let issueContent = ''
+          try {
+            const fileContent = await readFile(issue.file, 'utf-8')
+            const { body } = parseFrontMatter(fileContent)
+            issueContent = body.substring(0, 4000) // Truncate for embed
+          } catch {
+            issueContent = `(Could not read issue content from ${issue.file})`
+          }
+
+          // Post triage notification
+          try {
+            const triageMsg = await postTriageNotification(
+              triageChannel,
+              {
+                sourceType: 'g',
+                title: issue.title,
+                content: issueContent,
+                author: issue.author,
+                repo,
+                issueNumber: issue.number,
+                labels: issue.labels,
+                status: 'pending',
+              },
+              'g',
+              compactId,
+            )
+
+            // Save triage record
+            await updateState((s) => {
+              setTriageRecord(s, triageKey, {
+                triageKey,
+                triageMessageId: triageMsg.id,
+                triageChannelId: triageChannel.id,
+                sourceType: issue.type === 'pull_request' ? 'github_pr' : 'github_issue',
+                sourceRepo: repo,
+                sourceIssueNumber: issue.number,
+                sourceTitle: issue.title,
+                sourceContent: issueContent,
+                sourceAuthor: issue.author,
+                sourceLabels: issue.labels,
+                status: 'pending',
+                createdAt: new Date().toISOString(),
+                reinvestigationCount: 0,
+              })
+            })
+
+            totalNew++
+            console.log(`  → Triage: ${repo}#${issue.number} "${issue.title}" by @${issue.author}`)
+          } catch (err: any) {
+            console.warn(`  → Failed to post triage for ${repo}#${issue.number}: ${err.message ?? err}`)
+          }
+        }
+      }
+
+      if (totalNew > 0) {
+        console.log(`[${timestamp}] GitHub poll: ${totalNew} new issue(s) posted to triage`)
+      } else {
+        console.log(`[${timestamp}] GitHub poll: no new issues`)
+      }
+    } finally {
+      githubPollRunning = false
+    }
+  }
 
   // --- Graceful shutdown ---
   function shutdown() {

@@ -238,7 +238,9 @@
     "approve_reactions": ["+1", "rocket"],
     "cancel_reactions": ["-1"],
     "max_detections_per_cycle": 10,
-    "close_on_dispatch": true
+    "close_on_dispatch": true,
+    "github_triage": false,
+    "github_poll_interval_minutes": 10
   },
   "investigations": {
     "enabled": false,
