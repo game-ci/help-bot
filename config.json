@@ -98,6 +98,7 @@
       {
         "name": "game-ci-develop",
         "guild_id": "1381241944226664498",
+        "triage_channel_id": "1481216813437026424",
         "system_prompt": "You are helping users in the GameCI Develop Discord server. This is a controlled testing environment. Be concise and helpful. Always offer help proactively.",
         "channels": [
           {
@@ -117,6 +118,13 @@
             "monitor": true
           },
           {
+            "name": "help-forum-test",
+            "system_prompt": "This is a forum channel for testing. Respond to all posts.",
+            "channel_type": "forum",
+            "reply_mode": "bot_api",
+            "monitor": true
+          },
+          {
             "name": "general",
             "channel_type": "text",
             "reply_mode": "bot_api",
@@ -126,6 +134,7 @@
         ]
       }
     ],
+    "triage_user_ids": ["274202899347800074"],
     "sync_hours": 6,
     "ignore_bots": true,
     "ignore_prefixes": [

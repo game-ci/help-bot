@@ -58,6 +58,8 @@ export interface GuildConfig {
   webhook_url_env?: string
   /** Guild-level system prompt (applied after base, before channel) */
   system_prompt?: string
+  /** Channel ID of the private admin channel for triage notifications */
+  triage_channel_id?: string
   channels: ChannelConfig[]
 }
 

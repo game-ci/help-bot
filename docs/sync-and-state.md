@@ -10,7 +10,7 @@ This document explains how the bot keeps `data/` in sync, tracks its place in ea
 
 ## Discord coverage
 
-- **Channels:** Every channel in `discord.channels` is synced, including threads.  
+- **Channels:** Every channel listed under `discord.guilds[].channels[]` is synced, including threads and forum posts.
 - **Cursor state:** The latest message snowflake per channel is stored in `data/state.json`. Each run resumes from that snowflake, so the bot only reads the newest messages. You can reset a channel’s cursor by editing `data/state.json` or deleting the entire file.  
 - **Official roles/users:** Set `discord.official_roles` and/or `discord.official_users` to skip replies when members from those groups already responded. The bot can still post if you pass `--allow-official`, `--force-reply-id`, or react with the configured emoji to re-trigger a reply.
 

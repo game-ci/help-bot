@@ -28,7 +28,7 @@ yargs(hideBin(process.argv))
     .option('docs-dir', { type: 'string', description: 'Path to local clone of documentation repo (skips HTTP docs sync)' })
     .option('investigation-issues', { type: 'boolean', description: 'Create GitHub issues for each investigation in the target repo' })
     .option('investigation-repo', { type: 'string', description: 'Target repo for investigation issues (default: game-ci/help-bot)' })
-    .option('dispatch-mode', { type: 'string', choices: ['auto', 'approval', 'countdown'] as const, description: 'Dispatch mode: auto (immediate), approval (require reaction), countdown (staged warnings)' })
+    .option('dispatch-mode', { type: 'string', choices: ['auto', 'approval', 'countdown', 'triage'] as const, description: 'Dispatch mode: auto (immediate), approval (require reaction), countdown (staged warnings)' })
     .option('countdown-hours', { type: 'number', description: 'Hours between countdown warning stages (default: 24)' })
     .option('model', { type: 'string', description: 'Override LLM model (e.g. claude-opus-4-20250514 for deep investigation)' })
   , async (args) => {
@@ -50,7 +50,7 @@ yargs(hideBin(process.argv))
       docsDir: args['docs-dir'],
       investigationIssues: args['investigation-issues'] || false,
       investigationRepo: args['investigation-repo'],
-      dispatchMode: args['dispatch-mode'] as 'auto' | 'approval' | 'countdown' | undefined,
+      dispatchMode: args['dispatch-mode'] as 'auto' | 'approval' | 'countdown' | 'triage' | undefined,
       countdownHours: args['countdown-hours'],
       modelOverride: args.model,
     })
@@ -60,7 +60,7 @@ yargs(hideBin(process.argv))
     .option('provider', { type: 'string', description: 'Override LLM provider' })
     .option('github-only', { type: 'boolean', description: 'Skip Discord entirely (no token needed)' })
     .option('repos', { type: 'string', array: true, description: 'Override repos to sync' })
-    .option('dispatch-mode', { type: 'string', choices: ['auto', 'approval', 'countdown'] as const, description: 'Dispatch mode: auto (immediate), approval (require reaction), countdown (staged warnings)' })
+    .option('dispatch-mode', { type: 'string', choices: ['auto', 'approval', 'countdown', 'triage'] as const, description: 'Dispatch mode: auto (immediate), approval (require reaction), countdown (staged warnings)' })
     .option('countdown-hours', { type: 'number', description: 'Hours between countdown warning stages (default: 24)' })
     .option('investigation-issues', { type: 'boolean', description: 'Create GitHub issues for each investigation' })
     .option('investigation-repo', { type: 'string', description: 'Target repo for investigation issues' })
@@ -74,7 +74,7 @@ yargs(hideBin(process.argv))
       provider: args.provider,
       githubOnly: args['github-only'] || false,
       repos: args.repos,
-      dispatchMode: args['dispatch-mode'] as 'auto' | 'approval' | 'countdown' | undefined,
+      dispatchMode: args['dispatch-mode'] as 'auto' | 'approval' | 'countdown' | 'triage' | undefined,
       countdownHours: args['countdown-hours'],
       investigationIssues: args['investigation-issues'] || false,
       investigationRepo: args['investigation-repo'],
@@ -82,7 +82,7 @@ yargs(hideBin(process.argv))
     })
   })
   .command('live', 'run as a live Discord bot (persistent Gateway connection)', (y) => y
-    .option('dispatch-mode', { type: 'string', choices: ['auto', 'approval', 'countdown'] as const, description: 'Dispatch mode for incoming messages (default: discord_mode from config)' })
+    .option('dispatch-mode', { type: 'string', choices: ['auto', 'approval', 'countdown', 'triage'] as const, description: 'Dispatch mode for incoming messages (default: discord_mode from config)' })
     .option('repos', { type: 'string', array: true, description: 'GitHub repos for cross-referencing' })
     .option('repo-dir', { type: 'string', description: 'Path to local clone of target repo (Claude reads code directly)' })
     .option('docs-dir', { type: 'string', description: 'Path to local docs clone' })

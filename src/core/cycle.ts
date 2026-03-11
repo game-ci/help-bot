@@ -55,7 +55,7 @@ export interface CycleOptions extends ProviderOptions {
   docsDir?: string
   investigationIssues?: boolean
   investigationRepo?: string
-  dispatchMode?: 'auto' | 'approval' | 'countdown'
+  dispatchMode?: 'auto' | 'approval' | 'countdown' | 'triage'
   countdownHours?: number
 }
 

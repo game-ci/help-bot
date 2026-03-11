@@ -1,0 +1,473 @@
+import type { Interaction, Client, TextChannel, ThreadChannel } from 'discord.js'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { parseButtonId, parseDiscordCompactId, parseGithubCompactId } from './types'
+import type { TriageRecord } from './types'
+import { updateTriageNotification, type TriageEmbedOptions } from './notification'
+import { runTriageInvestigation, fetchMaintainerInstructions, type TriageInvestigationOptions } from './investigation'
+import { sendTriageResponse } from './send'
+import { loadState, updateState, getTriageRecord, setTriageRecord } from '../state'
+import { getValue, type GuildConfig, type ChannelConfig } from '../config'
+import { REPO_ROOT } from '../utils/paths'
+import { parseFrontMatter } from '../utils/frontmatter'
+
+export interface TriageHandlerContext {
+  config: Record<string, unknown>
+  model: string
+  repoDir?: string
+  docsDir?: string
+  /** Resolve guild/channel config from guild name and channel name */
+  resolveGuildChannel: (guildName: string, channelName: string) => {
+    guildConfig: GuildConfig
+    channelConfig: ChannelConfig
+  } | undefined
+  /** GitHub collaborator usernames (also checked for triage access) */
+  collaborators: string[]
+  /** Discord user IDs allowed to use triage controls */
+  triageUserIds: string[]
+  /** Set bot status to "investigating" */
+  setInvestigating: (channelName: string, author: string) => void
+  /** Clear bot investigation status */
+  clearInvestigating: () => void
+}
+
+/**
+ * Main InteractionCreate handler for triage buttons.
+ * Registered once in live.ts.
+ */
+export async function handleTriageInteraction(
+  interaction: Interaction,
+  client: Client,
+  context: TriageHandlerContext,
+): Promise<void> {
+  if (!interaction.isButton()) return
+
+  const parsed = parseButtonId(interaction.customId)
+  if (!parsed) return // Not a triage button
+
+  const { action, sourceType, compactId } = parsed
+
+  // Build the triage key to look up the record
+  const triageKey = `triage:${sourceType}:${compactId}`
+
+  // Load the triage record
+  const state = await loadState()
+  const record = getTriageRecord(state, triageKey)
+
+  if (!record) {
+    // Stale button -- record was cleaned up
+    await interaction.reply({ content: 'This triage request is no longer active.', ephemeral: true })
+    return
+  }
+
+  // Verify the user is allowed to use triage controls
+  const userId = interaction.user.id
+  const username = interaction.user.username
+  const displayName = interaction.user.tag ?? username
+  const isCollaborator = context.collaborators.some((c) => c.toLowerCase() === username.toLowerCase())
+  const isTriageUser = context.triageUserIds.includes(userId)
+
+  if (!isCollaborator && !isTriageUser) {
+    await interaction.reply({
+      content: 'Only maintainers can use triage controls.',
+      ephemeral: true,
+    })
+    return
+  }
+
+  // Acknowledge the interaction
+  await interaction.deferUpdate()
+
+  const triageChannel = interaction.channel as TextChannel
+
+  switch (action) {
+    case 'investigate':
+      await handleInvestigate(record, triageKey, triageChannel, client, context, displayName)
+      break
+    case 'ignore':
+      await handleIgnore(record, triageKey, triageChannel, sourceType, compactId, displayName)
+      break
+    case 'send':
+      await handleSend(record, triageKey, triageChannel, client, sourceType, compactId, displayName)
+      break
+    case 'reinvestigate':
+      await handleReinvestigate(record, triageKey, triageChannel, client, context, displayName)
+      break
+    case 'view':
+      await handleView(record, triageKey, triageChannel, displayName)
+      break
+  }
+}
+
+/**
+ * Handle "Investigate" button click.
+ * Updates embed to investigating, runs Claude, updates to ready with preview.
+ */
+async function handleInvestigate(
+  record: TriageRecord,
+  triageKey: string,
+  triageChannel: TextChannel,
+  client: Client,
+  context: TriageHandlerContext,
+  username: string,
+): Promise<void> {
+  if (record.status !== 'pending') {
+    console.log(`  Triage ${triageKey}: already ${record.status}, skipping investigate`)
+    return
+  }
+
+  console.log(`  Triage: ${username} clicked Investigate for ${triageKey}`)
+
+  const channelName = record.sourceDiscordPath?.split('/')[1] ?? record.sourceRepo ?? 'triage'
+  const author = record.sourceAuthor ?? 'unknown'
+
+  // Update to investigating
+  record.status = 'investigating'
+  record.investigatedBy = username
+  record.investigationStartedAt = new Date().toISOString()
+  await updateState((s) => setTriageRecord(s, triageKey, record))
+
+  const embedOptions = buildEmbedOptions(record)
+  const [sourceType, compactId] = extractSourceInfo(triageKey)
+  await updateTriageNotification(triageChannel, record.triageMessageId, embedOptions, sourceType, compactId)
+
+  // Set bot status
+  context.setInvestigating(channelName, author)
+
+  // Run investigation
+  const investigationOptions = buildInvestigationOptions(record, client, context)
+  const result = await runTriageInvestigation(record, investigationOptions)
+
+  // Clear bot status
+  context.clearInvestigating()
+
+  if (result) {
+    record.status = 'ready'
+    record.responseFile = result.responseFile
+    record.investigationCompletedAt = new Date().toISOString()
+    await updateState((s) => setTriageRecord(s, triageKey, record))
+
+    const readyEmbed = buildEmbedOptions(record, result.responsePreview)
+    await updateTriageNotification(triageChannel, record.triageMessageId, readyEmbed, sourceType, compactId)
+
+    console.log(`  Triage: Investigation complete for ${triageKey} (${result.responsePreview.length} char preview)`)
+  } else {
+    // Investigation failed -- revert to pending
+    record.status = 'pending'
+    record.investigatedBy = undefined
+    await updateState((s) => setTriageRecord(s, triageKey, record))
+
+    const failedEmbed = buildEmbedOptions(record)
+    await updateTriageNotification(triageChannel, record.triageMessageId, failedEmbed, sourceType, compactId)
+    console.warn(`  Triage: Investigation failed for ${triageKey}`)
+  }
+}
+
+/**
+ * Handle "Ignore" / "Discard" / "Cancel" button click.
+ */
+async function handleIgnore(
+  record: TriageRecord,
+  triageKey: string,
+  triageChannel: TextChannel,
+  sourceType: 'd' | 'g',
+  compactId: string,
+  username: string,
+): Promise<void> {
+  console.log(`  Triage: ${username} clicked Ignore for ${triageKey}`)
+
+  record.status = 'ignored'
+  record.ignoredBy = username
+  await updateState((s) => setTriageRecord(s, triageKey, record))
+
+  const embedOptions = buildEmbedOptions(record)
+  await updateTriageNotification(triageChannel, record.triageMessageId, embedOptions, sourceType, compactId)
+}
+
+/**
+ * Handle "Send Response" button click.
+ * Posts the response to the original source and updates the triage message.
+ */
+async function handleSend(
+  record: TriageRecord,
+  triageKey: string,
+  triageChannel: TextChannel,
+  client: Client,
+  sourceType: 'd' | 'g',
+  compactId: string,
+  username: string,
+): Promise<void> {
+  if (record.status !== 'ready') {
+    console.log(`  Triage ${triageKey}: not ready, skipping send`)
+    return
+  }
+
+  console.log(`  Triage: ${username} clicked Send for ${triageKey}`)
+
+  const success = await sendTriageResponse(record, client)
+
+  if (success) {
+    record.status = 'sent'
+    record.sentBy = username
+    await updateState((s) => setTriageRecord(s, triageKey, record))
+
+    const embedOptions = buildEmbedOptions(record)
+    await updateTriageNotification(triageChannel, record.triageMessageId, embedOptions, sourceType, compactId)
+    console.log(`  Triage: Response sent for ${triageKey}`)
+  } else {
+    console.warn(`  Triage: Failed to send response for ${triageKey}`)
+  }
+}
+
+/**
+ * Handle "Re-investigate" button click.
+ * Fetches thread instructions, re-runs investigation with previous response context.
+ */
+async function handleReinvestigate(
+  record: TriageRecord,
+  triageKey: string,
+  triageChannel: TextChannel,
+  client: Client,
+  context: TriageHandlerContext,
+  username: string,
+): Promise<void> {
+  if (record.status !== 'ready') {
+    console.log(`  Triage ${triageKey}: not ready, skipping reinvestigate`)
+    return
+  }
+
+  console.log(`  Triage: ${username} clicked Re-investigate for ${triageKey}`)
+
+  // Check if the triage message has a thread for maintainer instructions
+  let maintainerInstructions: string | undefined
+  try {
+    const triageMsg = await triageChannel.messages.fetch(record.triageMessageId)
+    if (triageMsg.thread) {
+      record.instructionThreadId = triageMsg.thread.id
+      maintainerInstructions = await fetchMaintainerInstructions(client, triageMsg.thread.id)
+    }
+  } catch {
+    // No thread or couldn't fetch
+  }
+
+  // Read the previous response for correction context
+  let previousResponse: string | undefined
+  if (record.responseFile) {
+    try {
+      const filePath = record.responseFile.startsWith('data/')
+        ? join(REPO_ROOT, record.responseFile)
+        : record.responseFile
+      const content = await readFile(filePath, 'utf-8')
+      const { body } = parseFrontMatter(content)
+      previousResponse = body.trim()
+    } catch {
+      // Previous response not available -- that's ok
+    }
+  }
+
+  // Update to investigating
+  record.status = 'investigating'
+  record.reinvestigationCount++
+  record.investigatedBy = username
+  record.investigationStartedAt = new Date().toISOString()
+  await updateState((s) => setTriageRecord(s, triageKey, record))
+
+  const [sourceType, compactId] = extractSourceInfo(triageKey)
+  const investigatingEmbed = buildEmbedOptions(record)
+  await updateTriageNotification(triageChannel, record.triageMessageId, investigatingEmbed, sourceType, compactId)
+
+  // Set bot status
+  const channelName = record.sourceDiscordPath?.split('/')[1] ?? record.sourceRepo ?? 'triage'
+  const author = record.sourceAuthor ?? 'unknown'
+  context.setInvestigating(channelName, author)
+
+  // Run re-investigation
+  const investigationOptions = buildInvestigationOptions(record, client, context, previousResponse, maintainerInstructions)
+  const result = await runTriageInvestigation(record, investigationOptions)
+
+  // Clear bot status
+  context.clearInvestigating()
+
+  if (result) {
+    record.status = 'ready'
+    record.responseFile = result.responseFile
+    record.investigationCompletedAt = new Date().toISOString()
+    await updateState((s) => setTriageRecord(s, triageKey, record))
+
+    const readyEmbed = buildEmbedOptions(record, result.responsePreview)
+    await updateTriageNotification(triageChannel, record.triageMessageId, readyEmbed, sourceType, compactId)
+
+    console.log(`  Triage: Re-investigation complete for ${triageKey}`)
+  } else {
+    record.status = 'ready' // Revert to ready (keep old response)
+    record.reinvestigationCount-- // Undo increment
+    await updateState((s) => setTriageRecord(s, triageKey, record))
+
+    const failedEmbed = buildEmbedOptions(record)
+    await updateTriageNotification(triageChannel, record.triageMessageId, failedEmbed, sourceType, compactId)
+    console.warn(`  Triage: Re-investigation failed for ${triageKey}`)
+  }
+}
+
+/**
+ * Handle "View Investigation" button click.
+ * Posts the full investigation response to a thread on the triage message.
+ */
+async function handleView(
+  record: TriageRecord,
+  triageKey: string,
+  triageChannel: TextChannel,
+  username: string,
+): Promise<void> {
+  if (record.status !== 'ready') {
+    console.log(`  Triage ${triageKey}: not ready, skipping view`)
+    return
+  }
+
+  console.log(`  Triage: ${username} clicked View Investigation for ${triageKey}`)
+
+  await postFullResponseToThread(triageChannel, record)
+}
+
+// --- Helpers ---
+
+const MAX_DISCORD_LENGTH = 2000
+
+/**
+ * Post the full investigation response to a thread on the triage message.
+ * Creates the thread if it doesn't exist. Posts investigation artifacts too.
+ */
+async function postFullResponseToThread(
+  triageChannel: TextChannel,
+  record: TriageRecord,
+): Promise<void> {
+  if (!record.responseFile) return
+
+  try {
+    const triageMsg = await triageChannel.messages.fetch(record.triageMessageId)
+
+    // Create or get existing thread
+    let thread: ThreadChannel
+    if (triageMsg.thread) {
+      thread = triageMsg.thread
+    } else {
+      thread = await triageMsg.startThread({
+        name: `Investigation: ${(record.sourceTitle ?? 'Help request').substring(0, 90)}`,
+        autoArchiveDuration: 1440, // 24 hours
+      })
+    }
+
+    // Read the full response
+    const filePath = record.responseFile.startsWith('data/')
+      ? join(REPO_ROOT, record.responseFile)
+      : record.responseFile
+    const content = await readFile(filePath, 'utf-8')
+    const { body } = parseFrontMatter(content)
+    const cleaned = body
+      .replace(/-#\s*Was this helpful\?[^\n]*/gi, '')
+      .replace(/Was this helpful\?\s*React with[^\n]*/gi, '')
+      .trim()
+
+    if (!cleaned) return
+
+    // Post the full response in chunks if needed
+    const header = record.reinvestigationCount > 0
+      ? `**Re-investigation #${record.reinvestigationCount} — Full Response:**\n\n`
+      : `**Full Response:**\n\n`
+    const fullText = header + cleaned
+    const chunks = splitForDiscord(fullText)
+
+    for (const chunk of chunks) {
+      await thread.send(chunk)
+    }
+
+    // Save the thread ID on the record
+    record.instructionThreadId = thread.id
+    await updateState((s) => setTriageRecord(s, record.triageKey, record))
+  } catch (err: any) {
+    console.warn(`  Failed to post full response to thread: ${err.message ?? err}`)
+  }
+}
+
+function splitForDiscord(content: string): string[] {
+  const chunks: string[] = []
+  let remaining = content.trim()
+  while (remaining.length > 0) {
+    if (remaining.length <= MAX_DISCORD_LENGTH) {
+      chunks.push(remaining)
+      break
+    }
+    let splitAt = remaining.lastIndexOf('\n', MAX_DISCORD_LENGTH)
+    if (splitAt < 0 || splitAt < MAX_DISCORD_LENGTH / 2) {
+      splitAt = MAX_DISCORD_LENGTH
+    }
+    chunks.push(remaining.slice(0, splitAt).trim())
+    remaining = remaining.slice(splitAt).trimStart()
+  }
+  return chunks
+}
+
+function buildEmbedOptions(record: TriageRecord, responsePreview?: string): TriageEmbedOptions {
+  const isDiscord = record.sourceType === 'discord'
+  const [guildName, channelName] = (record.sourceDiscordPath ?? '/').split('/')
+
+  return {
+    sourceType: isDiscord ? 'd' : 'g',
+    title: record.sourceTitle ?? 'Help request',
+    content: record.sourceContent ?? '',
+    author: record.sourceAuthor ?? 'unknown',
+    guildName: isDiscord ? guildName : undefined,
+    guildId: record.sourceGuildId,
+    channelName: isDiscord ? channelName : undefined,
+    channelId: record.sourceChannelId,
+    messageId: record.sourceMessageId,
+    repo: record.sourceRepo,
+    issueNumber: record.sourceIssueNumber,
+    labels: record.sourceLabels,
+    status: record.status,
+    investigatedBy: record.investigatedBy,
+    responsePreview,
+    reinvestigationCount: record.reinvestigationCount,
+  }
+}
+
+function extractSourceInfo(triageKey: string): ['d' | 'g', string] {
+  // triageKey format: triage:{d|g}:{compactId}
+  const parts = triageKey.split(':')
+  // triage:d:gci-dev:help:1234567890 → sourceType='d', compactId='gci-dev:help:1234567890'
+  const sourceType = parts[1] as 'd' | 'g'
+  const compactId = parts.slice(2).join(':')
+  return [sourceType, compactId]
+}
+
+function buildInvestigationOptions(
+  record: TriageRecord,
+  client: Client,
+  context: TriageHandlerContext,
+  previousResponse?: string,
+  maintainerInstructions?: string,
+): TriageInvestigationOptions {
+  let guildConfig: GuildConfig | undefined
+  let channelConfig: ChannelConfig | undefined
+
+  if (record.sourceType === 'discord' && record.sourceDiscordPath) {
+    const [guildName, channelName] = record.sourceDiscordPath.split('/')
+    const resolved = context.resolveGuildChannel(guildName, channelName)
+    if (resolved) {
+      guildConfig = resolved.guildConfig
+      channelConfig = resolved.channelConfig
+    }
+  }
+
+  return {
+    client,
+    config: context.config,
+    model: context.model,
+    repoDir: context.repoDir,
+    docsDir: context.docsDir,
+    guildConfig,
+    channelConfig,
+    previousResponse,
+    maintainerInstructions,
+  }
+}

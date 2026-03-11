@@ -142,6 +142,29 @@ export function setLastOnlineAt(state: SyncState, iso?: string): void {
   state.meta.lastOnlineAt = now
 }
 
+// --- Triage helpers ---
+
+import type { TriageRecord } from './triage/types'
+
+export function getTriageRecords(state: SyncState): Record<string, TriageRecord> {
+  return (state.meta?.triageRecords as Record<string, TriageRecord>) ?? {}
+}
+
+export function setTriageRecords(state: SyncState, records: Record<string, TriageRecord>): void {
+  state.meta ??= {}
+  state.meta.triageRecords = records
+}
+
+export function getTriageRecord(state: SyncState, key: string): TriageRecord | undefined {
+  return getTriageRecords(state)[key]
+}
+
+export function setTriageRecord(state: SyncState, key: string, record: TriageRecord): void {
+  const records = getTriageRecords(state)
+  records[key] = record
+  setTriageRecords(state, records)
+}
+
 // --- Guild-namespaced cursor helpers ---
 
 export function getGuildCursor(state: SyncState, guildName: string, channelId: string): string | undefined {

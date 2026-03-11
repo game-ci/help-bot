@@ -1,14 +1,15 @@
-import { Client, GatewayIntentBits, Events, Message, ChannelType, ActivityType, Attachment } from 'discord.js'
+import { Client, GatewayIntentBits, Events, Message, ChannelType, ActivityType, Attachment, type TextChannel } from 'discord.js'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { readFile, writeFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { getConfig, getValue, resolveGuilds, resolveGuildId, getSystemPrompt, GuildConfig, ChannelConfig } from '../config'
-import { updateState, setPostedDiscordResponse, loadState, getPostedDiscordResponses, getLastOnlineAt, getFirstOnlineAt, setLastOnlineAt } from '../state'
+import { updateState, setPostedDiscordResponse, loadState, getPostedDiscordResponses, getLastOnlineAt, getFirstOnlineAt, setLastOnlineAt, getTriageRecord, setTriageRecord } from '../state'
 import { ensureDir } from '../utils/fs'
 import { REPO_ROOT, RESPONSES_DIR, DATA_DIR } from '../utils/paths'
 import { parseFrontMatter } from '../utils/frontmatter'
 import { isMonitoredChannel, formatMessagePreview, buildSingleMessagePrompt, buildInvestigationPrompt, formatTime, writeContextFile, ReplyChainMessage } from './live-utils'
+import { handleTriageInteraction, postTriageNotification, discordCompactId, type TriageHandlerContext } from '../triage'
 
 const DISCORD_API = 'https://discord.com/api/v10'
 const MAX_DISCORD_LENGTH = 2000
@@ -130,6 +131,37 @@ export async function runLive(options: LiveOptions): Promise<void> {
     }
   }
 
+  // --- Triage setup ---
+  const triageChannels = new Map<string, TextChannel>()
+  const collaborators = getValue(config, ['github', 'collaborators'], [] as string[])
+
+  /** Resolve guild+channel config by name (used by triage handler) */
+  function resolveGuildChannel(guildName: string, channelName: string) {
+    for (const [, mapping] of guildMappings) {
+      if (mapping.guildConfig.name === guildName) {
+        const channelConfig = mapping.channelNameMap.get(channelName)
+        if (channelConfig) {
+          return { guildConfig: mapping.guildConfig, channelConfig }
+        }
+      }
+    }
+    return undefined
+  }
+
+  const triageUserIds = getValue(config, ['discord', 'triage_user_ids'], [] as string[])
+
+  const triageHandlerContext: TriageHandlerContext = {
+    config,
+    model: llmModel,
+    repoDir: options.repoDir,
+    docsDir: options.docsDir,
+    resolveGuildChannel,
+    collaborators,
+    triageUserIds,
+    setInvestigating: (channelName: string, author: string) => setInvestigatingStatus(client, channelName, author),
+    clearInvestigating: () => clearInvestigatingStatus(client),
+  }
+
   // --- Create client ---
   const client = new Client({
     intents: [
@@ -166,6 +198,21 @@ export async function runLive(options: LiveOptions): Promise<void> {
         console.log(`  ✓ ${mapping.guildConfig.name} — monitoring: ${monitoredChannels.join(', ') || '(none)'}`)
       } else {
         console.log(`  ⚠ ${mapping.guildConfig.name} — bot not in this server (invite needed)`)
+      }
+    }
+
+    // Resolve triage channels
+    for (const [guildId, mapping] of guildMappings) {
+      const triageChannelId = mapping.guildConfig.triage_channel_id
+      if (!triageChannelId) continue
+      const discordGuild = readyClient.guilds.cache.get(guildId)
+      if (!discordGuild) continue
+      const triageCh = discordGuild.channels.cache.get(triageChannelId)
+      if (triageCh?.isTextBased()) {
+        triageChannels.set(guildId, triageCh as TextChannel)
+        console.log(`  ✓ Triage channel: #${'name' in triageCh ? triageCh.name : triageChannelId} in ${mapping.guildConfig.name}`)
+      } else {
+        console.warn(`  ⚠ Triage channel ${triageChannelId} not found in ${mapping.guildConfig.name}`)
       }
     }
 
@@ -217,10 +264,34 @@ export async function runLive(options: LiveOptions): Promise<void> {
     const mapping = guildMappings.get(message.guild.id)
     if (!mapping) return // Not a configured guild
 
-    // Get channel info
-    const channelName = ('name' in message.channel ? message.channel.name : '') ?? ''
-    const channelConfig = mapping.channelMap.get(message.channelId)
+    // Get channel info — resolve parent for threads and forum posts
+    let channelName = ('name' in message.channel ? message.channel.name : '') ?? ''
+    let resolvedChannelId = message.channelId
+    let channelConfig = mapping.channelMap.get(message.channelId)
       ?? mapping.channelNameMap.get(channelName)
+
+    // If not found, check if this is a thread/forum post and resolve the parent
+    if (!channelConfig && message.channel.isThread()) {
+      const parentId = message.channel.parentId
+      if (parentId) {
+        channelConfig = mapping.channelMap.get(parentId)
+        if (channelConfig) {
+          channelName = channelConfig.name
+          resolvedChannelId = parentId
+        } else {
+          // Try resolving parent by name
+          const parentChannel = message.guild.channels.cache.get(parentId)
+          const parentName = parentChannel && 'name' in parentChannel ? parentChannel.name : ''
+          if (parentName) {
+            channelConfig = mapping.channelNameMap.get(parentName)
+            if (channelConfig) {
+              channelName = parentName
+              resolvedChannelId = parentId
+            }
+          }
+        }
+      }
+    }
 
     // Check if channel is monitored
     if (!channelConfig || channelConfig.monitor === false) return
@@ -301,10 +372,86 @@ export async function runLive(options: LiveOptions): Promise<void> {
         processingMessages.delete(message.id)
         clearInvestigatingStatus(client)
       }
+    } else if (dispatchMode === 'triage') {
+      // Triage mode: post notification to admin channel
+      const triageChannel = triageChannels.get(message.guild!.id)
+      if (!triageChannel) {
+        console.log(`  → Triage mode but no triage channel configured for this guild. Skipping.`)
+        return
+      }
+
+      const compactId = discordCompactId(guildName, channelName, message.id)
+      const triageKey = `triage:d:${compactId}`
+
+      // Check if triage already exists
+      const triageState = await loadState()
+      const existing = getTriageRecord(triageState, triageKey)
+      if (existing) {
+        console.log(`  → Triage already exists for this message. Skipping.`)
+        return
+      }
+
+      try {
+        const triageMsg = await postTriageNotification(
+          triageChannel,
+          {
+            sourceType: 'd',
+            title: formatMessagePreview(content, 200),
+            content,
+            author: authorTag,
+            guildName,
+            guildId: message.guild!.id,
+            channelName,
+            channelId: message.channelId,
+            messageId: message.id,
+            status: 'pending',
+          },
+          'd',
+          compactId,
+        )
+
+        // Save triage record
+        await updateState((s) => {
+          setTriageRecord(s, triageKey, {
+            triageKey,
+            triageMessageId: triageMsg.id,
+            triageChannelId: triageChannel.id,
+            sourceType: 'discord',
+            sourceDiscordPath: `${guildName}/${channelName}`,
+            sourceGuildId: message.guild!.id,
+            sourceChannelId: message.channelId,
+            sourceMessageId: message.id,
+            sourceTitle: formatMessagePreview(content, 200),
+            sourceContent: content,
+            sourceAuthor: authorTag,
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+            reinvestigationCount: 0,
+          })
+        })
+
+        // Let the user know their question was received
+        await message.reply({
+          content: 'Your question has been received and is queued for investigation. A maintainer will review it shortly.',
+          allowedMentions: { repliedUser: false },
+        }).catch(() => {})
+        console.log(`  → Triage notification posted to #${'name' in triageChannel ? triageChannel.name : 'triage'}`)
+      } catch (err: any) {
+        console.warn(`  → Failed to post triage notification: ${err.message ?? err}`)
+      }
     } else {
       // Approval / countdown mode: log and defer
       console.log(`  → Dispatch mode is "${dispatchMode}" — message queued for next cycle.`)
       console.log(`    Run "gameci-help-bot cycle" to create detection issues and check approvals.`)
+    }
+  })
+
+  // --- Interaction handler (triage buttons) ---
+  client.on(Events.InteractionCreate, async (interaction) => {
+    try {
+      await handleTriageInteraction(interaction, client, triageHandlerContext)
+    } catch (err: any) {
+      console.warn(`  Interaction handler error: ${err.message ?? err}`)
     }
   })
 

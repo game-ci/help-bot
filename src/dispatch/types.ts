@@ -1,4 +1,4 @@
-export type DispatchMode = 'auto' | 'approval' | 'countdown'
+export type DispatchMode = 'auto' | 'approval' | 'countdown' | 'triage'
 
 export type DetectionStatus = 'pending' | 'approved' | 'cancelled' | 'dispatched'
 

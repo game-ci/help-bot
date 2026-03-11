@@ -32,7 +32,7 @@ const report_1 = require("./report");
     .option('docs-dir', { type: 'string', description: 'Path to local clone of documentation repo (skips HTTP docs sync)' })
     .option('investigation-issues', { type: 'boolean', description: 'Create GitHub issues for each investigation in the target repo' })
     .option('investigation-repo', { type: 'string', description: 'Target repo for investigation issues (default: game-ci/help-bot)' })
-    .option('dispatch-mode', { type: 'string', choices: ['auto', 'approval', 'countdown'], description: 'Dispatch mode: auto (immediate), approval (require reaction), countdown (staged warnings)' })
+    .option('dispatch-mode', { type: 'string', choices: ['auto', 'approval', 'countdown', 'triage'], description: 'Dispatch mode: auto (immediate), approval (require reaction), countdown (staged warnings)' })
     .option('countdown-hours', { type: 'number', description: 'Hours between countdown warning stages (default: 24)' })
     .option('model', { type: 'string', description: 'Override LLM model (e.g. claude-opus-4-20250514 for deep investigation)' }), async (args) => {
     if (!args['github-only']) {
@@ -63,7 +63,7 @@ const report_1 = require("./report");
     .option('provider', { type: 'string', description: 'Override LLM provider' })
     .option('github-only', { type: 'boolean', description: 'Skip Discord entirely (no token needed)' })
     .option('repos', { type: 'string', array: true, description: 'Override repos to sync' })
-    .option('dispatch-mode', { type: 'string', choices: ['auto', 'approval', 'countdown'], description: 'Dispatch mode: auto (immediate), approval (require reaction), countdown (staged warnings)' })
+    .option('dispatch-mode', { type: 'string', choices: ['auto', 'approval', 'countdown', 'triage'], description: 'Dispatch mode: auto (immediate), approval (require reaction), countdown (staged warnings)' })
     .option('countdown-hours', { type: 'number', description: 'Hours between countdown warning stages (default: 24)' })
     .option('investigation-issues', { type: 'boolean', description: 'Create GitHub issues for each investigation' })
     .option('investigation-repo', { type: 'string', description: 'Target repo for investigation issues' })
@@ -84,7 +84,7 @@ const report_1 = require("./report");
     });
 })
     .command('live', 'run as a live Discord bot (persistent Gateway connection)', (y) => y
-    .option('dispatch-mode', { type: 'string', choices: ['auto', 'approval', 'countdown'], description: 'Dispatch mode for incoming messages (default: discord_mode from config)' })
+    .option('dispatch-mode', { type: 'string', choices: ['auto', 'approval', 'countdown', 'triage'], description: 'Dispatch mode for incoming messages (default: discord_mode from config)' })
     .option('repos', { type: 'string', array: true, description: 'GitHub repos for cross-referencing' })
     .option('repo-dir', { type: 'string', description: 'Path to local clone of target repo (Claude reads code directly)' })
     .option('docs-dir', { type: 'string', description: 'Path to local docs clone' })

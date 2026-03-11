@@ -13,6 +13,10 @@ exports.setPostedDiscordResponse = setPostedDiscordResponse;
 exports.getLastOnlineAt = getLastOnlineAt;
 exports.getFirstOnlineAt = getFirstOnlineAt;
 exports.setLastOnlineAt = setLastOnlineAt;
+exports.getTriageRecords = getTriageRecords;
+exports.setTriageRecords = setTriageRecords;
+exports.getTriageRecord = getTriageRecord;
+exports.setTriageRecord = setTriageRecord;
 exports.getGuildCursor = getGuildCursor;
 exports.setGuildCursor = setGuildCursor;
 const promises_1 = require("node:fs/promises");
@@ -112,6 +116,21 @@ function setLastOnlineAt(state, iso) {
         state.meta.firstOnlineAt = now;
     }
     state.meta.lastOnlineAt = now;
+}
+function getTriageRecords(state) {
+    return state.meta?.triageRecords ?? {};
+}
+function setTriageRecords(state, records) {
+    state.meta ??= {};
+    state.meta.triageRecords = records;
+}
+function getTriageRecord(state, key) {
+    return getTriageRecords(state)[key];
+}
+function setTriageRecord(state, key, record) {
+    const records = getTriageRecords(state);
+    records[key] = record;
+    setTriageRecords(state, records);
 }
 // --- Guild-namespaced cursor helpers ---
 function getGuildCursor(state, guildName, channelId) {
