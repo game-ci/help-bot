@@ -10,6 +10,9 @@ exports.getPostedResponses = getPostedResponses;
 exports.setPostedResponse = setPostedResponse;
 exports.getPostedDiscordResponses = getPostedDiscordResponses;
 exports.setPostedDiscordResponse = setPostedDiscordResponse;
+exports.getLastOnlineAt = getLastOnlineAt;
+exports.getFirstOnlineAt = getFirstOnlineAt;
+exports.setLastOnlineAt = setLastOnlineAt;
 exports.getGuildCursor = getGuildCursor;
 exports.setGuildCursor = setGuildCursor;
 const promises_1 = require("node:fs/promises");
@@ -83,6 +86,32 @@ function setPostedDiscordResponse(state, guildName, channelName, messageId) {
     const posted = getPostedDiscordResponses(state);
     posted[`discord:${guildName}/${channelName}#${messageId}`] = new Date().toISOString();
     state.meta.postedDiscordResponses = posted;
+}
+// --- Live mode online timestamp ---
+/**
+ * Get the last time the bot was known to be online.
+ * Returns undefined on first-ever run (no catch-up should happen).
+ */
+function getLastOnlineAt(state) {
+    return state.meta?.lastOnlineAt;
+}
+/**
+ * Get the first-ever online timestamp. Nothing before this should ever be processed.
+ */
+function getFirstOnlineAt(state) {
+    return state.meta?.firstOnlineAt;
+}
+/**
+ * Update the last-online timestamp (call periodically while running).
+ * Also sets firstOnlineAt on first-ever call (never overwritten after that).
+ */
+function setLastOnlineAt(state, iso) {
+    state.meta ??= {};
+    const now = iso ?? new Date().toISOString();
+    if (!state.meta.firstOnlineAt) {
+        state.meta.firstOnlineAt = now;
+    }
+    state.meta.lastOnlineAt = now;
 }
 // --- Guild-namespaced cursor helpers ---
 function getGuildCursor(state, guildName, channelId) {

@@ -130,7 +130,7 @@ async function postDiscordResponses(options) {
     const guildWebhooks = new Map();
     const channelConfigs = new Map();
     for (const guild of guilds) {
-        const webhookUrl = process.env[guild.webhook_url_env];
+        const webhookUrl = (0, config_1.resolveWebhookUrl)(guild);
         if (webhookUrl) {
             guildWebhooks.set(guild.name, webhookUrl);
         }
@@ -176,7 +176,11 @@ async function postDiscordResponses(options) {
             console.log(`DRY RUN: would post Discord response from ${file} (mode: ${replyMode})`);
             continue;
         }
-        const trimmed = body.trim();
+        // Strip any LLM-generated feedback prompt to avoid duplicates
+        const trimmed = body
+            .replace(/-#\s*Was this helpful\?[^\n]*/gi, '')
+            .replace(/Was this helpful\?\s*React with[^\n]*/gi, '')
+            .trim();
         if (!trimmed) {
             continue;
         }

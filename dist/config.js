@@ -3,6 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getConfig = getConfig;
 exports.getValue = getValue;
 exports.resolveGuilds = resolveGuilds;
+exports.resolveGuildId = resolveGuildId;
+exports.resolveWebhookUrl = resolveWebhookUrl;
 exports.getSystemPrompt = getSystemPrompt;
 exports.getLabelPrompts = getLabelPrompts;
 exports.buildLabelSystemPrompt = buildLabelSystemPrompt;
@@ -71,6 +73,26 @@ function resolveGuilds(discordConfig) {
     }
     // No guilds configured
     return [];
+}
+/**
+ * Resolve a guild's ID from either the direct guild_id field or the guild_id_env environment variable.
+ */
+function resolveGuildId(guild) {
+    if (guild.guild_id)
+        return guild.guild_id;
+    if (guild.guild_id_env)
+        return process.env[guild.guild_id_env];
+    return undefined;
+}
+/**
+ * Resolve a guild's webhook URL from either the direct webhook_url field or the webhook_url_env environment variable.
+ */
+function resolveWebhookUrl(guild) {
+    if (guild.webhook_url)
+        return guild.webhook_url;
+    if (guild.webhook_url_env)
+        return process.env[guild.webhook_url_env];
+    return undefined;
 }
 /**
  * Build a layered system prompt by combining:

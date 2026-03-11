@@ -124,16 +124,28 @@ async function runCycle(options = {}) {
     }
     // Pre-filter issues to remove collaborator-responded, closed, stale, etc.
     // This is a hard filter — the LLM never sees filtered-out issues.
+    // filterResult is cached here and reused for dispatch + label prompts (avoids re-reading 800+ files)
     let filteredManifestPath;
+    let cachedFilterResult;
     if (githubOnly && options.repos?.length) {
         const repoSlug = options.repos[0].replace(/\//g, '-');
         console.log(`Filtering issues for ${repoSlug}...`);
-        const filterResult = await (0, filter_issues_1.filterIssues)(repoSlug, options.repos[0]);
-        console.log(`  Eligible: ${filterResult.eligible.length}, Skipped: ${filterResult.skippedCount}`);
-        for (const [reason, count] of Object.entries(filterResult.skipReasons)) {
+        cachedFilterResult = await (0, filter_issues_1.filterIssues)(repoSlug, options.repos[0]);
+        console.log(`  Eligible: ${cachedFilterResult.eligible.length}, Skipped: ${cachedFilterResult.skippedCount}`);
+        for (const [reason, count] of Object.entries(cachedFilterResult.skipReasons)) {
             console.log(`    ${reason}: ${count}`);
         }
-        filteredManifestPath = await (0, filter_issues_1.writeFilteredManifest)(repoSlug, filterResult);
+        // Deduplicate automated dependency-bump PRs (Snyk, Dependabot)
+        const beforeDedup = cachedFilterResult.eligible.length;
+        cachedFilterResult = {
+            ...cachedFilterResult,
+            eligible: (0, filter_issues_1.deduplicateAutomatedPRs)(cachedFilterResult.eligible),
+        };
+        const dedupCount = beforeDedup - cachedFilterResult.eligible.length;
+        if (dedupCount > 0) {
+            console.log(`  Deduped ${dedupCount} automated PRs (${beforeDedup} → ${cachedFilterResult.eligible.length})`);
+        }
+        filteredManifestPath = await (0, filter_issues_1.writeFilteredManifest)(repoSlug, cachedFilterResult);
         console.log(`  Manifest written to ${filteredManifestPath}`);
         // Security scan: check synced issues for prompt injection
         console.log(`Running security scan on ${repoSlug}...`);
@@ -194,7 +206,7 @@ async function runCycle(options = {}) {
     let approvedIssues;
     if (githubOnly && options.repos?.length && dispatchConfig.mode !== 'auto') {
         const repoSlug = options.repos[0].replace(/\//g, '-');
-        const filterResult = await (0, filter_issues_1.filterIssues)(repoSlug);
+        const filterResult = cachedFilterResult ?? await (0, filter_issues_1.filterIssues)(repoSlug);
         const collaborators = (0, config_1.getValue)(config, ['github', 'collaborators'], []);
         const investigationRepo = options.investigationRepo ?? (0, config_1.getValue)(config, ['investigations', 'target_repo'], 'game-ci/help-bot');
         console.log(`Running dispatch (mode: ${dispatchConfig.mode})...`);
@@ -241,12 +253,10 @@ async function runCycle(options = {}) {
     const repoContext = options.repos?.length ? ` Focus on: ${options.repos.join(', ')}.` : '';
     // Build per-label system prompt additions
     let labelPromptSection = '';
-    if (githubOnly && options.repos?.length) {
-        // Collect all unique labels from eligible issues
-        const repoSlug = options.repos[0].replace(/\//g, '-');
-        const filterResult = await (0, filter_issues_1.filterIssues)(repoSlug);
+    if (githubOnly && options.repos?.length && cachedFilterResult) {
+        // Collect all unique labels from eligible issues (using cached filter result)
         const allLabels = new Set();
-        for (const issue of filterResult.eligible) {
+        for (const issue of cachedFilterResult.eligible) {
             for (const label of issue.labels) {
                 allLabels.add(label);
             }
@@ -311,18 +321,28 @@ maintainers already responded, issues with skip labels, and stale issues.
 
 ONLY process issues listed in this manifest. Do NOT read or respond to any issue not in the manifest.
 
-### Step 2: Read the issue
+### Step 2: Read the issue and its comment thread
 For each eligible issue in the manifest, use the Read tool on the file path listed to read the full issue.
 
-### Step 3: Search for related issues
-Before investigating the issue itself, search for related issues:
-- Grep data/github/issues/ for the same error messages, platform keywords, and symptoms
-- Look for issues with overlapping labels (e.g., "macOS", "self-hosted", "docker")
+Pay special attention to the COMMENT THREAD below the issue body. Comments often contain:
+- Additional error logs or screenshots from the reporter
+- Workarounds discovered by other users
+- Clarifications about the environment or steps to reproduce
+- Follow-up questions that narrow down the root cause
+Incorporate ALL relevant information from comments into your investigation.
+
+### Step 3: Search for related issues (MANDATORY — at least 3 searches)
+Before investigating the issue itself, search for related issues. You MUST run at least 3 Grep searches:
+1. Grep data/github/issues/ for the exact error message or exit code from the issue
+2. Grep data/github/issues/ for the platform/runner type (e.g., "macOS", "self-hosted", "windows")
+3. Grep data/github/issues/ for the primary symptom keyword (e.g., "IL2CPP", "docker", "activation")
+- Also look for issues with overlapping labels
 - Check if multiple users report the same root cause under different titles
 - Note ALL related issue numbers — these will go in your investigation
 
-This step is CRITICAL. Many issues are symptoms of the same underlying problem. Your job is to
+This step is CRITICAL and MANDATORY. Many issues are symptoms of the same underlying problem. Your job is to
 connect the dots and identify patterns that individual reporters cannot see.
+If your related_issues array ends up empty, explain in the investigation why no matches were found.
 
 ### Step 4: Investigate (use tools — do not guess)
 - Read data/reference/repo/action.yml to verify any parameters you plan to mention
@@ -352,8 +372,15 @@ issue_number: {number}
 repo: {owner/repo}
 title: "{issue title}"
 classification: bug|user-error|limitation|feature-request
-related_issues: [{list of related issue numbers as integers}]
+severity: critical|high|medium|low
+related_issues: [{MUST contain at least one entry if Grep found any matches. Empty only if zero matches found.}]
 ---
+
+Severity guidelines:
+- critical: Security issue, data loss, or build completely broken with no workaround
+- high: Build fails for a common configuration, affects many users
+- medium: Build fails for a specific/unusual configuration, workaround exists
+- low: Cosmetic issue, documentation gap, or edge case with easy workaround
 
 ## Problem
 [1-2 sentence summary]
@@ -395,14 +422,38 @@ the same root cause: [description]."
 ### Step 7: Write response file
 Write to data/responses/github/{repo-slug}-{number}.md — only include verified information.
 
-In the response:
-- If related issues exist, mention them: "This appears related to #X and #Y which report similar symptoms."
-- If you found a bug, explain the root cause clearly and note it affects other users too.
-- If the issue is a duplicate of a better-described issue, say so and link to it.
-- Cross-link: help the user understand they are not alone and point them to related discussions.
+### Response Structure Requirements — CONCISE REPLIES
+
+**Respect the reader's time. Short first, expand only if asked.**
+
+Every response MUST follow this tight structure:
+1. **TL;DR:** — One sentence. Diagnosis + recommended action. (MANDATORY first line)
+2. **Fix** — Code block or steps. Copy-paste ready. 5 lines max.
+3. **Context** — 1-3 bullet points max. Only what's essential.
+4. **Related** — "#X, #Y" if applicable. One line.
+
+**Hard limits:**
+- Total response under 800 characters (excluding code blocks)
+- One code block max, keep it short
+- No "Why This Works" section — if the fix is clear, no explanation needed
+- No lengthy root cause analysis in the response (save that for the investigation file)
+- No preamble, no filler, no "I hope this helps"
+
+### Response Templates by Classification
+
+**Bug:** TL;DR: Bug in [file:line] — [behavior]. Workaround: [code]. See also #X.
+
+**User error:** TL;DR: Config issue — [what to change]. Fix: [corrected YAML]. Docs: [link].
+
+**Limitation:** TL;DR: [feature] doesn't support [use case]. Alternative: [workaround].
+
+**Feature request:** TL;DR: Not currently supported. Tracked in #X / no existing request.
 
 ## Critical Rules
 - Process at most ${String((0, config_1.getValue)(config, ['bot', 'max_responses_per_cycle'], 10))} issues per cycle.
+- Every response MUST begin with a "**TL;DR:**" line — one sentence, diagnosis + action.
+- Keep responses SHORT. Under 800 characters excluding code blocks. No waffling.
+- Include one actionable code block if applicable (under 5 lines). If no workaround exists, say so in one line.
 - Every parameter you mention MUST appear in action.yml (verified by Read tool).
 - Every env var you mention MUST appear in the source code (verified by Grep tool).
 - No emoji. No "Hi @user!" greetings. No sign-offs. Professional tone.
@@ -486,10 +537,14 @@ Follow the standard investigation and response workflow.`);
             dryRun,
         });
     }
+    // Determine model override (investigation_model from config or --model CLI flag)
+    const rawInvestigationModel = options.modelOverride
+        ?? (0, config_1.getValue)(config, ['llm', 'claude', 'investigation_model'], '');
+    const investigationModel = rawInvestigationModel || undefined;
     console.log('Running LLM provider...');
     let llmFailed = false;
     try {
-        await (0, llm_1.runProvider)(prompt, { provider: options.provider, systemPrompt });
+        await (0, llm_1.runProvider)(prompt, { provider: options.provider, systemPrompt, modelOverride: investigationModel });
     }
     catch (error) {
         console.error(`LLM provider failed: ${error.message ?? error}`);

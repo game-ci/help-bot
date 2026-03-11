@@ -129,7 +129,8 @@ async function runProvider(prompt, options = {}) {
     const instructions = await readClaudeInstructions();
     switch (provider) {
         case 'claude': {
-            const model = (0, config_1.getValue)(config, ['llm', 'claude', 'model'], 'claude-sonnet-4-20250514');
+            const model = options.modelOverride
+                ?? (0, config_1.getValue)(config, ['llm', 'claude', 'model'], 'claude-sonnet-4-20250514');
             const maxTurns = Number((0, config_1.getValue)(config, ['llm', 'claude', 'max_turns'], 0)) || undefined;
             // Claude Code auto-loads CLAUDE.md from cwd, so only include the cycle-specific prompt.
             // The instructions from readClaudeInstructions() are skipped for Claude to avoid triple-loading.

@@ -358,9 +358,9 @@ async function syncForumChannel(channel, guild, guildId, token, config, state, s
     }
 }
 async function syncGuild(guild, token, config) {
-    const guildId = process.env[guild.guild_id_env];
+    const guildId = (0, config_1.resolveGuildId)(guild);
     if (!guildId) {
-        console.warn(`Skipping guild "${guild.name}": env var ${guild.guild_id_env} is not set`);
+        console.warn(`Skipping guild "${guild.name}": no guild_id or env var ${guild.guild_id_env ?? '(none)'} set`);
         return;
     }
     const syncHours = Number((0, config_1.getValue)(config, ['discord', 'sync_hours'], 6));
@@ -372,6 +372,10 @@ async function syncGuild(guild, token, config) {
     const channelNames = guild.channels.map((ch) => ch.name);
     const headers = buildHeaders(token);
     const channelResponse = await fetchWithRetry(`${DISCORD_API}/guilds/${guildId}/channels`, headers);
+    if (channelResponse.statusCode === 403 || channelResponse.statusCode === 404) {
+        console.warn(`Skipping guild "${guild.name}": bot does not have access (HTTP ${channelResponse.statusCode}). Invite the bot to this server first.`);
+        return;
+    }
     if (channelResponse.statusCode >= 400) {
         throw new Error(`Failed to list guild channels for "${guild.name}": ${channelResponse.statusCode}`);
     }

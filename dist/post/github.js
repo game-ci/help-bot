@@ -41,8 +41,12 @@ async function postGitHubResponses(options) {
             console.log(`DRY RUN: would post GitHub response for ${repo}#${number}`);
             continue;
         }
-        // Append feedback prompt to response body
-        const bodyWithFeedback = body.trim() + FEEDBACK_PROMPT;
+        // Strip any LLM-generated feedback prompt to avoid duplicates, then append ours
+        const cleanedBody = body
+            .replace(/<sub>\s*Was this helpful\?[^<]*<\/sub>/gi, '')
+            .replace(/Was this helpful\?\s*React with[^\n]*/gi, '')
+            .trim();
+        const bodyWithFeedback = cleanedBody + FEEDBACK_PROMPT;
         try {
             // Post comment and capture the comment URL (contains comment ID)
             const { stdout } = await execFileAsync('gh', [
