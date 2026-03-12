@@ -1,4 +1,4 @@
-import type { Interaction, Client, TextChannel, ThreadChannel } from 'discord.js'
+import type { Interaction, ButtonInteraction, Client, TextChannel, ThreadChannel } from 'discord.js'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parseButtonId, parseDiscordCompactId, parseGithubCompactId } from './types'
@@ -94,7 +94,7 @@ export async function handleTriageInteraction(
       await handleReinvestigate(record, triageKey, triageChannel, client, context, displayName)
       break
     case 'view':
-      await handleView(record, triageKey, triageChannel, displayName)
+      await handleView(record, triageKey, triageChannel, displayName, interaction as ButtonInteraction)
       break
   }
 }
@@ -324,6 +324,7 @@ async function handleView(
   triageKey: string,
   triageChannel: TextChannel,
   username: string,
+  interaction: ButtonInteraction,
 ): Promise<void> {
   if (record.status !== 'ready') {
     console.log(`  Triage ${triageKey}: not ready, skipping view`)
@@ -331,12 +332,22 @@ async function handleView(
   }
 
   console.log(`  Triage: ${username} clicked View Investigation for ${triageKey}`)
+  console.log(`    responseFile: ${record.responseFile}`)
+  console.log(`    triageMessageId: ${record.triageMessageId}`)
 
   const posted = await postFullResponseToThread(triageChannel, record, triageKey)
   if (posted) {
     console.log(`  Triage: Full response posted to thread for ${triageKey}`)
   } else {
-    console.warn(`  Triage: Failed to post full response to thread for ${triageKey}`)
+    // Give visible feedback to the user
+    try {
+      await interaction.followUp({
+        content: `Failed to post investigation to thread. Check bot console for details.`,
+        ephemeral: true,
+      })
+    } catch {
+      // followUp can fail if interaction expired
+    }
   }
 }
 
@@ -383,7 +394,9 @@ async function postFullResponseToThread(
   }
 
   try {
+    console.log(`    Thread post: fetching triage message ${record.triageMessageId}...`)
     const triageMsg = await triageChannel.messages.fetch(record.triageMessageId)
+    console.log(`    Thread post: message fetched, hasThread=${!!triageMsg.thread}`)
 
     // Create or get existing thread
     let thread: ThreadChannel
@@ -391,13 +404,16 @@ async function postFullResponseToThread(
       thread = triageMsg.thread
       // Unarchive if needed
       if (thread.archived) {
+        console.log(`    Thread post: unarchiving thread ${thread.id}...`)
         await thread.setArchived(false)
       }
     } else {
+      console.log(`    Thread post: creating new thread...`)
       thread = await triageMsg.startThread({
         name: `Investigation: ${(record.sourceTitle ?? 'Help request').substring(0, 90)}`,
         autoArchiveDuration: 1440, // 24 hours
       })
+      console.log(`    Thread post: thread created ${thread.id}`)
     }
 
     // Post the full response in chunks
@@ -406,9 +422,11 @@ async function postFullResponseToThread(
       : `**Full Response:**\n\n`
     const fullText = header + cleaned
     const chunks = splitForDiscord(fullText)
+    console.log(`    Thread post: sending ${chunks.length} chunk(s), total ${fullText.length} chars`)
 
-    for (const chunk of chunks) {
+    for (const [i, chunk] of chunks.entries()) {
       await thread.send(chunk)
+      console.log(`    Thread post: chunk ${i + 1}/${chunks.length} sent (${chunk.length} chars)`)
     }
 
     // Save the thread ID on the record
@@ -416,8 +434,9 @@ async function postFullResponseToThread(
     await updateState((s) => setTriageRecord(s, triageKey, record))
     return true
   } catch (err: any) {
-    console.warn(`  Thread post failed for ${triageKey}: ${err.message ?? err}`)
-    if (err.code) console.warn(`    Discord API error code: ${err.code}`)
+    console.error(`  Thread post FAILED for ${triageKey}: ${err.message ?? err}`)
+    if (err.code) console.error(`    Discord API error code: ${err.code}`)
+    if (err.stack) console.error(`    Stack: ${err.stack}`)
     return false
   }
 }
