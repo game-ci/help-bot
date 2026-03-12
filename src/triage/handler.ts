@@ -317,7 +317,7 @@ async function handleReinvestigate(
 
 /**
  * Handle "View Investigation" button click.
- * Posts the full investigation response to a thread on the triage message.
+ * Posts the investigation artifacts (analysis + findings) to a thread.
  */
 async function handleView(
   record: TriageRecord,
@@ -332,14 +332,11 @@ async function handleView(
   }
 
   console.log(`  Triage: ${username} clicked View Investigation for ${triageKey}`)
-  console.log(`    responseFile: ${record.responseFile}`)
-  console.log(`    triageMessageId: ${record.triageMessageId}`)
 
-  const posted = await postFullResponseToThread(triageChannel, record, triageKey)
+  const posted = await postInvestigationToThread(triageChannel, record, triageKey)
   if (posted) {
-    console.log(`  Triage: Full response posted to thread for ${triageKey}`)
+    console.log(`  Triage: Investigation artifacts posted to thread for ${triageKey}`)
   } else {
-    // Give visible feedback to the user
     try {
       await interaction.followUp({
         content: `Failed to post investigation to thread. Check bot console for details.`,
@@ -437,6 +434,85 @@ async function postFullResponseToThread(
     console.error(`  Thread post FAILED for ${triageKey}: ${err.message ?? err}`)
     if (err.code) console.error(`    Discord API error code: ${err.code}`)
     if (err.stack) console.error(`    Stack: ${err.stack}`)
+    return false
+  }
+}
+
+/**
+ * Post investigation artifacts (-analysis.md, -findings.md) to a thread on the triage message.
+ * This shows the bot's reasoning/research, not the user-facing response.
+ */
+async function postInvestigationToThread(
+  triageChannel: TextChannel,
+  record: TriageRecord,
+  triageKey: string,
+): Promise<boolean> {
+  if (!record.responseFile) {
+    console.warn(`  Investigation thread: no responseFile for ${triageKey}`)
+    return false
+  }
+
+  // Derive investigation file paths from the response file path
+  // e.g. triage-...-reinv2.md -> triage-...-reinv2-analysis.md, triage-...-reinv2-findings.md
+  const basePath = record.responseFile.replace(/\.md$/, '')
+  const analysisSuffix = `${basePath}-analysis.md`
+  const findingsSuffix = `${basePath}-findings.md`
+
+  const sections: { label: string; content: string }[] = []
+
+  for (const { label, relPath } of [
+    { label: 'Analysis', relPath: analysisSuffix },
+    { label: 'Findings', relPath: findingsSuffix },
+  ]) {
+    const filePath = relPath.startsWith('data/')
+      ? join(REPO_ROOT, relPath)
+      : relPath
+    try {
+      const raw = await readFile(filePath, 'utf-8')
+      const text = raw.trim()
+      if (text) sections.push({ label, content: text })
+    } catch {
+      // File doesn't exist — skip
+    }
+  }
+
+  if (sections.length === 0) {
+    // Fall back to posting the response file itself if no investigation artifacts exist
+    console.log(`  Investigation thread: no artifacts found, falling back to response file`)
+    return postFullResponseToThread(triageChannel, record, triageKey)
+  }
+
+  try {
+    const triageMsg = await triageChannel.messages.fetch(record.triageMessageId)
+
+    let thread: ThreadChannel
+    if (triageMsg.thread) {
+      thread = triageMsg.thread
+      if (thread.archived) {
+        await thread.setArchived(false)
+      }
+    } else {
+      thread = await triageMsg.startThread({
+        name: `Investigation: ${(record.sourceTitle ?? 'Help request').substring(0, 84)}`,
+        autoArchiveDuration: 1440,
+      })
+    }
+
+    for (const section of sections) {
+      const header = `**${section.label}:**\n\n`
+      const chunks = splitForDiscord(header + section.content)
+      for (const chunk of chunks) {
+        await thread.send(chunk)
+      }
+    }
+
+    record.instructionThreadId = thread.id
+    await updateState((s) => setTriageRecord(s, triageKey, record))
+    console.log(`  Investigation thread: posted ${sections.length} artifact(s) for ${triageKey}`)
+    return true
+  } catch (err: any) {
+    console.error(`  Investigation thread FAILED for ${triageKey}: ${err.message ?? err}`)
+    if (err.code) console.error(`    Discord API error code: ${err.code}`)
     return false
   }
 }
