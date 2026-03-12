@@ -142,9 +142,9 @@ When a help request is detected, the bot posts a color-coded embed to your priva
 [Investigate] [Ignore]  -->  [Send Response] [View Investigation] [Re-investigate] [Discard]
 ```
 
-Maintainers can review the AI-generated response, provide plain English instructions in a thread, re-investigate with guidance, and send the approved response -- all without leaving Discord.
+After investigation, the full response is automatically posted to a thread on the triage embed so maintainers can review it before sending. Click **View Investigation** to see the bot's analysis and findings (source code references, verification proof, related issues). Reply in the thread with plain English guidance, then click **Re-investigate** to generate a new response incorporating your instructions.
 
-To steer a re-investigation: click **View Investigation** to see the full response in a thread, reply with instructions (e.g., "the user is on Unity 2022, check version-specific issues"), then click **Re-investigate**.
+Each re-investigation posts the updated response to the same thread, so the full history of iterations is visible.
 
 Full details: [docs/dispatch.md](docs/dispatch.md)
 
