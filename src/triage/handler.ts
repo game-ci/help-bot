@@ -410,7 +410,7 @@ async function postFullResponseToThread(
     } else {
       console.log(`    Thread post: creating new thread...`)
       thread = await triageMsg.startThread({
-        name: `Investigation: ${(record.sourceTitle ?? 'Help request').substring(0, 90)}`,
+        name: `Investigation: ${(record.sourceTitle ?? 'Help request').substring(0, 84)}`,
         autoArchiveDuration: 1440, // 24 hours
       })
       console.log(`    Thread post: thread created ${thread.id}`)
