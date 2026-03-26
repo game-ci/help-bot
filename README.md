@@ -37,7 +37,7 @@ Environment variables:
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `DISCORD_BOT_TOKEN` | Yes | Discord bot token (or use the built-in [keytar helper](docs/windows-secrets.md)) |
-| `ANTHROPIC_API_KEY` | Yes | Claude API key for investigations |
+| `ANTHROPIC_API_KEY` | No | Claude API key for investigations. Not needed if you are signed in to the Claude Code CLI locally (`claude` uses your authenticated session automatically). |
 | `GITHUB_TOKEN` | For GitHub sync | `gh auth login` sets this automatically |
 
 ## Quick start
@@ -53,7 +53,11 @@ npm run build
 
 # Set secrets
 export DISCORD_BOT_TOKEN="your-bot-token"
+
+# Option A: Use an API key
 export ANTHROPIC_API_KEY="your-api-key"
+# Option B: Use your local Claude CLI session (no API key needed)
+#   Just run `claude` once to sign in — the bot picks up your session automatically.
 
 # Start the live bot with triage mode (recommended)
 node dist/cli.js live --dispatch-mode triage
@@ -228,7 +232,7 @@ The default provider is Claude Code, which requires the `claude` CLI to be insta
 
 | Provider | How it runs | Setup |
 |----------|-------------|-------|
-| **Claude Code** (default) | Spawns `claude -p --model <model>` with filesystem access. | `npm i -g @anthropic-ai/claude-code` + `ANTHROPIC_API_KEY` |
+| **Claude Code** (default) | Spawns `claude -p --model <model>` with filesystem access. | `npm i -g @anthropic-ai/claude-code` + `ANTHROPIC_API_KEY` **or** a local `claude` CLI sign-in |
 | **LM Studio** | HTTP to local server. Context injected via prompt. | Run LM Studio with a model loaded |
 | **Continue CLI** | `continue --model <name>`. Interactive sessions. | Install Continue CLI |
 | **Codex / OpenAI** | OpenAI API completions. | Set `LLM_PROVIDER=codex` + `OPENAI_API_KEY` |
