@@ -35,7 +35,8 @@ jobs:
         run: npm run build
 
       - name: Stop help-bot service
-        run: nssm stop gameci-help-bot
+        shell: pwsh
+        run: Stop-Service -Name 'gameci-help-bot' -Force -ErrorAction SilentlyContinue
 
       - name: Copy config and dist
         shell: pwsh
@@ -44,7 +45,8 @@ jobs:
           Copy-Item -Path "dist\*" -Destination "C:\game-ci\help-bot\dist\" -Recurse -Force
 
       - name: Start help-bot service
-        run: nssm start gameci-help-bot
+        shell: pwsh
+        run: Start-Service -Name 'gameci-help-bot'
 
       - name: Verify service is running
         shell: pwsh
