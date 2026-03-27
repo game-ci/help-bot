@@ -51,6 +51,8 @@ export async function filterIssues(repoSlug: string, fullRepo?: string): Promise
   }
 
   const now = Date.now()
+  const syncDays = Number(getValue(config, ['github', 'sync_days'], 7))
+  const SYNC_CUTOFF = syncDays * 24 * 60 * 60 * 1000
   const NINETY_DAYS = 90 * 24 * 60 * 60 * 1000
 
   for (const file of files.filter(f => f.endsWith('.md'))) {
@@ -111,6 +113,15 @@ export async function filterIssues(repoSlug: string, fullRepo?: string): Promise
     if (hasCollaboratorComment) {
       skip('collaborator-responded-body')
       continue
+    }
+
+    // SKIP: older than sync_days cutoff — hard boundary for freshness
+    if (updated) {
+      const updatedTime = new Date(updated).getTime()
+      if (now - updatedTime > SYNC_CUTOFF) {
+        skip('older-than-sync-days')
+        continue
+      }
     }
 
     // SKIP: stale (>90 days since last update, no comments)

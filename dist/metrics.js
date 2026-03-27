@@ -44,7 +44,6 @@ function recordStat(key, amount = 1, guildName) {
         // This key is an object, not a number -- don't increment directly
         return;
     }
-    ;
     currentStats[key] += amount;
     // Per-guild tracking for Discord messages
     if (guildName && key === 'discordMessagesSynced') {

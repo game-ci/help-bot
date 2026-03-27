@@ -195,7 +195,7 @@ async function postDiscordResponses(options) {
             }
             const chunks = splitContent(bodyWithFeedback);
             let lastMessageId;
-            let firstReplyTo = replyToMessageId || undefined;
+            const firstReplyTo = replyToMessageId || undefined;
             for (const [index, chunk] of chunks.entries()) {
                 const chunkContent = chunks.length > 1
                     ? `(part ${index + 1}/${chunks.length})\n${chunk}`

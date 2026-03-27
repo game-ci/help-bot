@@ -1,0 +1,59 @@
+name: Deploy help-bot
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Only one deploy at a time
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to COOLMASTER-DESK
+    runs-on: [self-hosted, help-bot, deploy]
+    environment: production
+    # Prevent forks from running on self-hosted runner
+    if: github.repository == 'game-ci/help-bot'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Stop help-bot service
+        run: nssm stop gameci-help-bot
+
+      - name: Copy config and dist
+        shell: pwsh
+        run: |
+          Copy-Item -Path "config.json" -Destination "C:\game-ci\help-bot\config.json" -Force
+          Copy-Item -Path "dist\*" -Destination "C:\game-ci\help-bot\dist\" -Recurse -Force
+
+      - name: Start help-bot service
+        run: nssm start gameci-help-bot
+
+      - name: Verify service is running
+        shell: pwsh
+        run: |
+          Start-Sleep -Seconds 5
+          $svc = Get-Service -Name 'gameci-help-bot' -ErrorAction SilentlyContinue
+          if ($svc.Status -ne 'Running') {
+            Write-Error "Service is not running: $($svc.Status)"
+            Get-Content "C:\game-ci\help-bot\logs\service.log" -Tail 30
+            exit 1
+          }
+          Write-Host "Service is running"

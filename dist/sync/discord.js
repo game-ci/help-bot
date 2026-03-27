@@ -79,7 +79,7 @@ async function syncTextChannel(channel, guild, token, config, state, syncHours, 
     let currentAfter = storedCursor ? BigInt(storedCursor) : afterSnowflake;
     const channelDir = (0, paths_1.guildChannelDir)(guild.name, channelName);
     await (0, fs_1.ensureDir)(channelDir);
-    while (true) {
+    for (;;) {
         const url = `${DISCORD_API}/channels/${channelId}/messages?limit=100&after=${currentAfter}`;
         const response = await fetchWithRetry(url, headers);
         const text = await response.body.text();
@@ -183,7 +183,7 @@ async function syncChannelThreads(parentChannelId, parentChannelName, guild, gui
         const channelDir = (0, paths_1.guildChannelDir)(guild.name, parentChannelName);
         await (0, fs_1.ensureDir)(channelDir);
         let messageCount = 0;
-        while (true) {
+        for (;;) {
             const url = `${DISCORD_API}/channels/${threadId}/messages?limit=100&after=${currentAfter}`;
             const response = await fetchWithRetry(url, headers);
             const text = await response.body.text();
@@ -291,7 +291,7 @@ async function syncForumChannel(channel, guild, guildId, token, config, state, s
         let currentAfter = storedCursor ? BigInt(storedCursor) : afterSnowflake;
         // Collect all messages in this forum thread for context
         const threadMessages = [];
-        while (true) {
+        for (;;) {
             const url = `${DISCORD_API}/channels/${threadId}/messages?limit=100&after=${currentAfter}`;
             const response = await fetchWithRetry(url, headers);
             const text = await response.body.text();

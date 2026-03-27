@@ -108,13 +108,14 @@ const report_1 = require("./report");
     .command('nssm <action>', 'manage the Windows NSSM service', (y) => y
     .positional('action', { choices: ['install', 'start', 'stop', 'restart', 'status', 'remove'] })
     .option('mode', { type: 'string', description: 'live or incremental', default: 'live' })
+    .option('dispatch-mode', { type: 'string', description: 'Dispatch mode for live mode (auto, triage, approval)' })
     .option('env-vars', { type: 'string', description: 'Inline env vars for NSSM' })
     .option('env-file', { type: 'string', description: 'Path to dotenv file' }), async (args) => {
     const action = args.action;
     if (!action) {
         throw new Error('NSSM action is required');
     }
-    await (0, nssm_service_1.manageService)(action, { mode: args.mode, envFile: args['env-file'], envVars: args['env-vars'] });
+    await (0, nssm_service_1.manageService)(action, { mode: args.mode, dispatchMode: args['dispatch-mode'], envFile: args['env-file'], envVars: args['env-vars'] });
 })
     .command('feedback mark-good <responseId>', 'Mark a response as helpful', (y) => y
     .positional('responseId', { type: 'string', description: 'ID of the response file (without extension)' })

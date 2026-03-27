@@ -160,8 +160,8 @@ async function runCycle(options = {}) {
         }
     }
     // Discord filtering and dispatch (if not github-only)
-    let discordManifestPaths = [];
-    let approvedDiscordMessages = [];
+    const discordManifestPaths = [];
+    const approvedDiscordMessages = [];
     if (hasGuilds) {
         const discordDispatchMode = (options.dispatchMode
             ?? (0, config_1.getValue)(config, ['dispatch', 'discord_mode'], 'approval'));

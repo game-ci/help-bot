@@ -17,8 +17,8 @@ async function fetchPage(page, baseUrl) {
     const normalizedBase = baseUrl.replace(/\/$/, '');
     const fullUrl = `${normalizedBase}/${page}`;
     try {
-        let url = fullUrl;
-        let response = await (0, undici_1.request)(url, {
+        const url = fullUrl;
+        const response = await (0, undici_1.request)(url, {
             headers: { 'User-Agent': 'GameCI Help Bot/TS' },
             maxRedirections: 5,
         });

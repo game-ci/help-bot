@@ -125,13 +125,16 @@ export async function syncGitHub(options: GitHubSyncOptions = {}): Promise<void>
     console.log(`Syncing GitHub repo ${repo}...`)
 
     const repoState = state.github?.[repo] ?? {}
+    // Fall back to sync_days config when no cursor exists (first run / reset)
+    const syncDays = Number(getValue(config, ['github', 'sync_days'], 7))
+    const sinceFallback = new Date(Date.now() - syncDays * 24 * 60 * 60 * 1000).toISOString()
     const issues = await octokit.paginate(
       octokit.rest.issues.listForRepo,
       {
         owner,
         repo: name,
         state: 'all',
-        since: repoState.issueCursor,
+        since: repoState.issueCursor ?? sinceFallback,
         per_page: 100,
         headers: ISSUE_HEADERS,
       },
@@ -165,7 +168,7 @@ export async function syncGitHub(options: GitHubSyncOptions = {}): Promise<void>
         : []
 
       const allAuthors = new Set<string>()
-      function trackAuthor(value?: string) {
+      const trackAuthor = (value?: string) => {
         if (!value) return
         allAuthors.add(value.toLowerCase())
       }

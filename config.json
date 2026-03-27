@@ -37,6 +37,7 @@
       {
         "name": "game-ci",
         "guild_id": "710946343828455455",
+        "triage_channel_id": "1481216813437026424",
         "webhook_url_env": "DISCORD_WEBHOOK_URL",
         "system_prompt": "You are helping users in the GameCI Discord server. Be concise and helpful. Reference relevant documentation at https://game.ci/docs when applicable.",
         "channels": [
@@ -230,16 +231,19 @@
     "embedding_model": "local:BAAI/bge-small-en-v1.5",
     "persist_directory": "data/vector-store"
   },
+  "triage": {
+    "acknowledge_user": true
+  },
   "dispatch": {
-    "mode": "auto",
-    "discord_mode": "approval",
+    "mode": "triage",
+    "discord_mode": "triage",
     "warnings_required": 3,
     "warning_interval_hours": 24,
     "approve_reactions": ["+1", "rocket"],
     "cancel_reactions": ["-1"],
     "max_detections_per_cycle": 10,
     "close_on_dispatch": true,
-    "github_triage": false,
+    "github_triage": true,
     "github_poll_interval_minutes": 10
   },
   "investigations": {

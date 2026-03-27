@@ -209,18 +209,19 @@ export async function runLive(options: LiveOptions): Promise<void> {
       }
     }
 
-    // Resolve triage channels
+    // Resolve triage channels (supports cross-guild routing — channel can be in any guild the bot is in)
     for (const [guildId, mapping] of guildMappings) {
       const triageChannelId = mapping.guildConfig.triage_channel_id
       if (!triageChannelId) continue
-      const discordGuild = readyClient.guilds.cache.get(guildId)
-      if (!discordGuild) continue
-      const triageCh = discordGuild.channels.cache.get(triageChannelId)
+      const triageCh = readyClient.channels.cache.get(triageChannelId)
       if (triageCh?.isTextBased()) {
         triageChannels.set(guildId, triageCh as TextChannel)
-        console.log(`  ✓ Triage channel: #${'name' in triageCh ? triageCh.name : triageChannelId} in ${mapping.guildConfig.name}`)
+        const chName = 'name' in triageCh ? triageCh.name : triageChannelId
+        const targetGuild = 'guild' in triageCh ? (triageCh as any).guild?.name : 'unknown'
+        const crossGuild = targetGuild !== mapping.guildConfig.name ? ` (cross-guild → ${targetGuild})` : ''
+        console.log(`  ✓ Triage channel: #${chName} for ${mapping.guildConfig.name}${crossGuild}`)
       } else {
-        console.warn(`  ⚠ Triage channel ${triageChannelId} not found in ${mapping.guildConfig.name}`)
+        console.warn(`  ⚠ Triage channel ${triageChannelId} not found for ${mapping.guildConfig.name}`)
       }
     }
 
@@ -446,11 +447,14 @@ export async function runLive(options: LiveOptions): Promise<void> {
           })
         })
 
-        // Let the user know their question was received
-        await message.reply({
-          content: 'Your question has been received and is queued for investigation. A maintainer will review it shortly.',
-          allowedMentions: { repliedUser: false },
-        }).catch(() => {})
+        // Let the user know their question was received (configurable)
+        const ackEnabled = getValue(config, ['triage', 'acknowledge_user'], true as boolean) !== false
+        if (ackEnabled) {
+          await message.reply({
+            content: 'Your question has been received and is queued for investigation. A maintainer will review it shortly.',
+            allowedMentions: { repliedUser: false },
+          }).catch(() => {})
+        }
         console.log(`  → Triage notification posted to #${'name' in triageChannel ? triageChannel.name : 'triage'}`)
       } catch (err: any) {
         console.warn(`  → Failed to post triage notification: ${err.message ?? err}`)
@@ -613,8 +617,8 @@ export async function runLive(options: LiveOptions): Promise<void> {
         const responsePath = join(responseDir, `${responseId}.md`)
 
         let hasArtifacts = false
-        try { await readFile(findingsPath, 'utf-8'); hasArtifacts = true } catch {}
-        try { await readFile(analysisPath, 'utf-8'); hasArtifacts = true } catch {}
+        try { await readFile(findingsPath, 'utf-8'); hasArtifacts = true } catch { /* file not found */ }
+        try { await readFile(analysisPath, 'utf-8'); hasArtifacts = true } catch { /* file not found */ }
 
         if (!hasArtifacts) {
           console.log(`  → No investigation artifacts found for ${responseId}`)

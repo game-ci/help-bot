@@ -17,13 +17,12 @@ async function parseEnvFile(path) {
     try {
         const contents = await (0, promises_1.readFile)(path, 'utf-8');
         return contents
-            .split(/\\r?\\n/)
+            .split(/\r?\n/)
             .map((line) => line.trim())
-            .filter((line) => line && !line.startsWith('#'))
-            .join('\\n');
+            .filter((line) => line && !line.startsWith('#') && line.includes('='));
     }
     catch {
-        return '';
+        return [];
     }
 }
 async function manageService(action, opts = {}) {
@@ -32,8 +31,13 @@ async function manageService(action, opts = {}) {
     const logFile = opts.logFile ?? (0, node_path_1.join)(paths_1.REPO_ROOT, 'logs', 'service.log');
     const nodePath = process.execPath;
     const scriptPath = (0, node_path_1.join)(paths_1.REPO_ROOT, 'dist', 'cli.js');
-    const scriptArgs = mode === 'incremental' ? ['cycle'] : ['continuous'];
-    const envString = opts.envVars ?? (opts.envFile ? await parseEnvFile(opts.envFile) : '');
+    const baseArgs = mode === 'incremental' ? ['cycle'] : mode === 'live' ? ['live'] : ['continuous'];
+    const scriptArgs = opts.dispatchMode ? [...baseArgs, '--dispatch-mode', opts.dispatchMode] : baseArgs;
+    const envEntries = opts.envVars
+        ? opts.envVars.split(/\r?\n/).filter((l) => l.trim() && !l.trim().startsWith('#') && l.includes('='))
+        : opts.envFile
+            ? await parseEnvFile(opts.envFile)
+            : [];
     switch (action) {
         case 'install':
             await runCommand('nssm', ['install', serviceName, nodePath, scriptPath, ...scriptArgs]);
@@ -42,8 +46,8 @@ async function manageService(action, opts = {}) {
             await runCommand('nssm', ['set', serviceName, 'AppStderr', logFile]);
             await runCommand('nssm', ['set', serviceName, 'AppStdoutCreationDisposition', '1']);
             await runCommand('nssm', ['set', serviceName, 'AppStderrCreationDisposition', '1']);
-            if (envString) {
-                await runCommand('nssm', ['set', serviceName, 'AppEnvironmentExtra', envString]);
+            if (envEntries.length > 0) {
+                await runCommand('nssm', ['set', serviceName, 'AppEnvironmentExtra', ...envEntries]);
             }
             break;
         case 'start':

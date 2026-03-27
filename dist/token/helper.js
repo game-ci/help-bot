@@ -41,17 +41,32 @@ async function validateToken(token) {
     }
 }
 async function ensureDiscordToken() {
+    const interactive = Boolean(process.stdin.isTTY);
+    // When running non-interactively (e.g. as an NSSM service), trust the env var
+    // without validating — the SYSTEM account may not reach discord.com
     if (process.env.DISCORD_BOT_TOKEN) {
+        if (!interactive) {
+            return process.env.DISCORD_BOT_TOKEN;
+        }
         const valid = await validateToken(process.env.DISCORD_BOT_TOKEN);
         if (valid) {
             return process.env.DISCORD_BOT_TOKEN;
         }
         console.warn('Existing DISCORD_BOT_TOKEN is invalid');
     }
-    let stored = await loadFromStore();
-    if (stored && await validateToken(stored)) {
-        process.env.DISCORD_BOT_TOKEN = stored;
-        return stored;
+    const stored = await loadFromStore();
+    if (stored) {
+        if (!interactive) {
+            process.env.DISCORD_BOT_TOKEN = stored;
+            return stored;
+        }
+        if (await validateToken(stored)) {
+            process.env.DISCORD_BOT_TOKEN = stored;
+            return stored;
+        }
+    }
+    if (!interactive) {
+        throw new Error('Discord bot token is required — set DISCORD_BOT_TOKEN environment variable');
     }
     const response = await (0, prompts_1.default)({
         type: 'password',
