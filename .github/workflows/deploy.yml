@@ -35,21 +35,21 @@ jobs:
         run: npm run build
 
       - name: Stop help-bot service
-        shell: pwsh
+        shell: powershell
         run: Stop-Service -Name 'gameci-help-bot' -Force -ErrorAction SilentlyContinue
 
       - name: Copy config and dist
-        shell: pwsh
+        shell: powershell
         run: |
           Copy-Item -Path "config.json" -Destination "C:\game-ci\help-bot\config.json" -Force
           Copy-Item -Path "dist\*" -Destination "C:\game-ci\help-bot\dist\" -Recurse -Force
 
       - name: Start help-bot service
-        shell: pwsh
+        shell: powershell
         run: Start-Service -Name 'gameci-help-bot'
 
       - name: Verify service is running
-        shell: pwsh
+        shell: powershell
         run: |
           Start-Sleep -Seconds 5
           $svc = Get-Service -Name 'gameci-help-bot' -ErrorAction SilentlyContinue
