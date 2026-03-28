@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { homedir } from 'node:os'
@@ -42,7 +42,7 @@ export function resolveClaude(): string {
     // Not on PATH — fall through
   }
 
-  // 3. Check common locations
+  // 3. Check common locations (including all user profiles for NSSM/SYSTEM context)
   const home = homedir()
   const candidates = [
     join(home, '.local', 'bin', 'claude.cmd'),
@@ -51,6 +51,25 @@ export function resolveClaude(): string {
     join(home, 'AppData', 'Roaming', 'npm', 'claude.cmd'),
     join(home, 'AppData', 'Roaming', 'npm', 'claude'),
   ]
+
+  // When running as SYSTEM (NSSM service), also check user profiles
+  if (process.platform === 'win32') {
+    const usersDir = 'C:\\Users'
+    try {
+      for (const user of readdirSync(usersDir)) {
+        if (user === 'Public' || user === 'Default' || user === 'Default User') continue
+        const userHome = join(usersDir, user)
+        candidates.push(
+          join(userHome, '.local', 'bin', 'claude.exe'),
+          join(userHome, '.local', 'bin', 'claude.cmd'),
+          join(userHome, '.local', 'bin', 'claude'),
+          join(userHome, 'AppData', 'Roaming', 'npm', 'claude.cmd'),
+        )
+      }
+    } catch {
+      // Cannot read users directory
+    }
+  }
 
   for (const candidate of candidates) {
     if (existsSync(candidate)) {
