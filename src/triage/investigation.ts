@@ -71,7 +71,7 @@ export async function fetchMaintainerInstructions(
 export async function runTriageInvestigation(
   record: TriageRecord,
   options: TriageInvestigationOptions,
-): Promise<{ responseFile: string; responsePreview: string } | null> {
+): Promise<{ responseFile: string; responsePreview: string } | { error: string } | null> {
   const isDiscord = record.sourceType === 'discord'
   const dir = isDiscord ? 'discord' : 'github'
   const responseDir = join(RESPONSES_DIR, dir)
@@ -163,17 +163,42 @@ export async function runTriageInvestigation(
   const env = { ...process.env }
   delete env.CLAUDECODE
 
+  let stderrOutput = ''
+  let exitCode: number | null = null
+
   try {
-    const proc = spawn(resolveClaude(), args, {
+    const claudePath = resolveClaude()
+    const proc = spawn(claudePath, args, {
       cwd: REPO_ROOT,
-      stdio: ['pipe', 'inherit', 'inherit'],
+      stdio: ['pipe', 'inherit', 'pipe'],
       env,
     })
+    proc.stderr.on('data', (d: Buffer) => {
+      const chunk = d.toString()
+      stderrOutput += chunk
+      process.stderr.write(chunk)
+    })
     proc.stdin.end(prompt)
-    await once(proc, 'exit')
+    const [code] = (await once(proc, 'exit')) as [number | null]
+    exitCode = code
   } catch (error: any) {
-    console.warn(`  Triage investigation failed: ${error.message ?? error}`)
-    return null
+    const msg = error.message ?? String(error)
+    console.warn(`  Triage investigation failed: ${msg}`)
+    return { error: `Claude CLI spawn failed: ${msg}` }
+  }
+
+  // Detect common failure modes from stderr
+  const combined = stderrOutput.toLowerCase()
+  if (combined.includes('not logged in') || combined.includes('please run /login')) {
+    const msg = 'Claude CLI is not logged in. The service user needs to authenticate: run `claude /login` as the service account user.'
+    console.warn(`  ${msg}`)
+    return { error: msg }
+  }
+  if (combined.includes('invalid api key') || combined.includes('authentication')) {
+    return { error: 'Claude CLI authentication failed. Check ANTHROPIC_API_KEY or run `claude /login`.' }
+  }
+  if (exitCode && exitCode !== 0 && !stderrOutput.trim()) {
+    return { error: `Claude CLI exited with code ${exitCode}` }
   }
 
   // Read the response file
@@ -182,8 +207,11 @@ export async function runTriageInvestigation(
   try {
     responseContent = await readFile(responseFile, 'utf-8')
   } catch {
+    const hint = stderrOutput.trim()
+      ? `\nClaude output: ${stderrOutput.trim().substring(0, 200)}`
+      : ''
     console.warn(`  No response file produced at ${responseFile}`)
-    return null
+    return { error: `No response file produced.${hint}` }
   }
 
   const { body } = parseFrontMatter(responseContent)
@@ -194,7 +222,7 @@ export async function runTriageInvestigation(
 
   if (!cleaned) {
     console.warn(`  Response file is empty`)
-    return null
+    return { error: 'Claude produced an empty response.' }
   }
 
   // Return the relative path and a preview
