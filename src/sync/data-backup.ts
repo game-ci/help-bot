@@ -85,7 +85,12 @@ export async function syncDataToGitHub(options: SyncDataOptions = {}): Promise<s
 
   if (options.dryRun) {
     const diffStat = await runGit(['diff', '--cached', '--stat'], DATA_DIR)
-    await runGit(['reset', 'HEAD'], DATA_DIR)
+    // Reset staged changes (use --mixed for repos with commits, rm --cached for fresh repos)
+    try {
+      await runGit(['reset', 'HEAD'], DATA_DIR)
+    } catch {
+      await runGit(['rm', '-r', '--cached', '.'], DATA_DIR).catch(() => {})
+    }
     const msg = `DRY RUN: would commit and push:\n${diffStat}`
     console.log(`  ${msg}`)
     return msg
