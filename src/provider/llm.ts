@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import glob from 'glob'
 import { getConfig, getValue } from '../config'
 import { REPO_ROOT } from '../utils/paths'
+import { resolveClaude } from '../utils/claude'
 
 type Provider = 'claude' | 'lm_studio' | 'continue' | 'codex'
 
@@ -57,7 +58,7 @@ async function runClaude(prompt: string, model: string, maxTurns?: number): Prom
     '--disallowedTools', 'Task',
   )
   console.log(`Provider: Claude Code CLI (model: ${model}, max_turns: ${maxTurns ?? 'default'})`)
-  const proc = spawn('claude', args, {
+  const proc = spawn(resolveClaude(), args, {
     cwd: REPO_ROOT,
     stdio: ['pipe', 'inherit', 'inherit'],
   })

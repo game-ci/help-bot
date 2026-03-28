@@ -103,10 +103,18 @@ yargs(hideBin(process.argv))
   .command('sync-discord', 'sync Discord messages', () => {}, async () => { await ensureDiscordToken(); await syncDiscord() })
   .command('sync-github', 'sync GitHub issues', () => {}, async () => { await syncGitHub() })
   .command('sync-docs', 'sync docs pages', () => {}, async () => { await syncDocs() })
+  .command('sync-data', 'sync data/ directory to private GitHub repo', (y) => y
+    .option('remote-repo', { type: 'string', description: 'Override remote repo (e.g. game-ci/help-bot-data)' })
+    .option('dry-run', { type: 'boolean', description: 'Show what would be committed without pushing' })
+  , async (args) => {
+    const { syncDataToGitHub } = await import('./sync/data-backup.js')
+    await syncDataToGitHub({ remoteRepo: args['remote-repo'], dryRun: args['dry-run'] || false })
+  })
   .command('vector-bake', 'build the LlamaIndex vector store', () => {}, async () => { await vectorBake() })
   .command('nssm <action>', 'manage the Windows NSSM service', (y) => y
     .positional('action', { choices: ['install', 'start', 'stop', 'restart', 'status', 'remove'] })
     .option('mode', { type: 'string', description: 'live or incremental', default: 'live' })
+    .option('dispatch-mode', { type: 'string', description: 'Dispatch mode for live mode (auto, triage, approval)' })
     .option('env-vars', { type: 'string', description: 'Inline env vars for NSSM' })
     .option('env-file', { type: 'string', description: 'Path to dotenv file' })
   , async (args) => {
@@ -114,7 +122,7 @@ yargs(hideBin(process.argv))
     if (!action) {
       throw new Error('NSSM action is required')
     }
-    await manageService(action, { mode: args.mode as Mode, envFile: args['env-file'], envVars: args['env-vars'] })
+    await manageService(action, { mode: args.mode as Mode, dispatchMode: args['dispatch-mode'] as string | undefined, envFile: args['env-file'], envVars: args['env-vars'] })
   })
   .command('feedback mark-good <responseId>', 'Mark a response as helpful', (y) => y
     .positional('responseId', { type: 'string', description: 'ID of the response file (without extension)' })

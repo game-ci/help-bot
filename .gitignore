@@ -11,6 +11,7 @@ data/github/releases/*
 data/docs/*.md
 data/responses/discord/*.md
 data/responses/github/*.md
+data/responses/social/*.md
 data/responses/feedback.jsonl
 data/state.json
 data/logs/
@@ -43,6 +44,7 @@ venv/
 .env.*
 
 # Logs
+logs/
 *.log
 
 # OS files

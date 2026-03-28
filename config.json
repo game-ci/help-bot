@@ -231,6 +231,16 @@
     "embedding_model": "local:BAAI/bge-small-en-v1.5",
     "persist_directory": "data/vector-store"
   },
+  "social": {
+    "enabled": true,
+    "content_dir": "content",
+    "platforms": ["linkedin"],
+    "linkedin": {
+      "max_length": 3000,
+      "default_hashtags": ["#GameCI", "#Unity", "#CICD", "#GameDev"],
+      "tone": "professional, technically credible, community-focused"
+    }
+  },
   "triage": {
     "acknowledge_user": true
   },
@@ -267,5 +277,8 @@
       "help-bot"
     ],
     "work_directory": "_work"
+  },
+  "data_backup": {
+    "remote_repo": "game-ci/help-bot-data"
   }
 }

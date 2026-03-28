@@ -14,8 +14,8 @@ async function fetchPage(page: string, baseUrl: string): Promise<void> {
   const fullUrl = `${normalizedBase}/${page}`
 
   try {
-    let url = fullUrl
-    let response = await request(url, {
+    const url = fullUrl
+    const response = await request(url, {
       headers: { 'User-Agent': 'GameCI Help Bot/TS' },
       maxRedirections: 5,
     })
