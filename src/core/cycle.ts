@@ -181,8 +181,8 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
   }
 
   // Discord filtering and dispatch (if not github-only)
-  let discordManifestPaths: string[] = []
-  let approvedDiscordMessages: import('./filter-discord').EligibleDiscordMessage[] = []
+  const discordManifestPaths: string[] = []
+  const approvedDiscordMessages: import('./filter-discord').EligibleDiscordMessage[] = []
   if (hasGuilds) {
     const discordDispatchMode = (options.dispatchMode
       ?? getValue(config, ['dispatch', 'discord_mode'], 'approval')) as DispatchMode

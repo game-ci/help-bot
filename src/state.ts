@@ -165,6 +165,29 @@ export function setTriageRecord(state: SyncState, key: string, record: TriageRec
   setTriageRecords(state, records)
 }
 
+// --- Content (social) helpers ---
+
+import type { ContentRecord } from './social/types'
+
+export function getContentRecords(state: SyncState): Record<string, ContentRecord> {
+  return (state.meta?.contentRecords as Record<string, ContentRecord>) ?? {}
+}
+
+export function setContentRecords(state: SyncState, records: Record<string, ContentRecord>): void {
+  state.meta ??= {}
+  state.meta.contentRecords = records
+}
+
+export function getContentRecord(state: SyncState, key: string): ContentRecord | undefined {
+  return getContentRecords(state)[key]
+}
+
+export function setContentRecord(state: SyncState, key: string, record: ContentRecord): void {
+  const records = getContentRecords(state)
+  records[key] = record
+  setContentRecords(state, records)
+}
+
 // --- Guild-namespaced cursor helpers ---
 
 export function getGuildCursor(state: SyncState, guildName: string, channelId: string): string | undefined {

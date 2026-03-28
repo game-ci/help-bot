@@ -8,6 +8,7 @@ import { getSystemPrompt, getValue, type GuildConfig, type ChannelConfig } from 
 import { ensureDir } from '../utils/fs'
 import { REPO_ROOT, RESPONSES_DIR } from '../utils/paths'
 import { parseFrontMatter } from '../utils/frontmatter'
+import { resolveClaude } from '../utils/claude'
 import type { TriageRecord } from './types'
 
 export interface TriageInvestigationOptions {
@@ -163,7 +164,7 @@ export async function runTriageInvestigation(
   delete env.CLAUDECODE
 
   try {
-    const proc = spawn('claude', args, {
+    const proc = spawn(resolveClaude(), args, {
       cwd: REPO_ROOT,
       stdio: ['pipe', 'inherit', 'inherit'],
       env,

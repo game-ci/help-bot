@@ -98,7 +98,7 @@ async function syncTextChannel(
   const channelDir = guildChannelDir(guild.name, channelName)
   await ensureDir(channelDir)
 
-  while (true) {
+  for (;;) {
     const url = `${DISCORD_API}/channels/${channelId}/messages?limit=100&after=${currentAfter}`
     const response = await fetchWithRetry(url, headers)
     const text = await response.body.text()
@@ -233,7 +233,7 @@ async function syncChannelThreads(
 
     let messageCount = 0
 
-    while (true) {
+    for (;;) {
       const url = `${DISCORD_API}/channels/${threadId}/messages?limit=100&after=${currentAfter}`
       const response = await fetchWithRetry(url, headers)
       const text = await response.body.text()
@@ -366,7 +366,7 @@ async function syncForumChannel(
     // Collect all messages in this forum thread for context
     const threadMessages: Array<{ author: string; content: string; id: string; timestamp: string }> = []
 
-    while (true) {
+    for (;;) {
       const url = `${DISCORD_API}/channels/${threadId}/messages?limit=100&after=${currentAfter}`
       const response = await fetchWithRetry(url, headers)
       const text = await response.body.text()

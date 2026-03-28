@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { getConfig, getValue } from '../config'
 import { REPO_ROOT } from '../utils/paths'
+import { resolveClaude } from '../utils/claude'
 
 export interface ReviewOptions {
   modelOverride?: string
@@ -104,7 +105,7 @@ Write the full audit to data/reviews/security-audit-${new Date().toISOString().s
   )
 
   console.log(`Security Audit: launching Claude (model: ${model})...`)
-  const proc = spawn('claude', args, {
+  const proc = spawn(resolveClaude(), args, {
     cwd: REPO_ROOT,
     stdio: ['pipe', 'inherit', 'inherit'],
   })

@@ -249,7 +249,7 @@ export async function postDiscordResponses(options: PostDiscordOptions): Promise
 
       const chunks = splitContent(bodyWithFeedback)
       let lastMessageId: string | undefined
-      let firstReplyTo = replyToMessageId || undefined
+      const firstReplyTo = replyToMessageId || undefined
 
       for (const [index, chunk] of chunks.entries()) {
         const chunkContent = chunks.length > 1

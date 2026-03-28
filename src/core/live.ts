@@ -10,8 +10,11 @@ import { REPO_ROOT, RESPONSES_DIR, DATA_DIR } from '../utils/paths'
 import { parseFrontMatter } from '../utils/frontmatter'
 import { isMonitoredChannel, formatMessagePreview, buildSingleMessagePrompt, buildInvestigationPrompt, formatTime, writeContextFile, ReplyChainMessage } from './live-utils'
 import { handleTriageInteraction, postTriageNotification, discordCompactId, githubCompactId, type TriageHandlerContext } from '../triage'
+import { handleSocialRequest, handleSocialInteraction, type SocialHandlerContext } from '../social'
 import { syncGitHub } from '../sync/github'
 import { filterIssues, type EligibleIssue } from './filter-issues'
+import { resolveClaude } from '../utils/claude'
+import { initLogger, logInfo, logWarn, logError } from '../utils/logger'
 
 const DISCORD_API = 'https://discord.com/api/v10'
 const MAX_DISCORD_LENGTH = 2000
@@ -75,6 +78,7 @@ const processingMessages = new Set<string>()
  * Run the bot in live mode — persistent Discord Gateway connection.
  */
 export async function runLive(options: LiveOptions): Promise<void> {
+  initLogger({ logDir: join(REPO_ROOT, 'logs') })
   const config = await getConfig()
   const botConfig = getValue(config, ['bot'], {} as Record<string, unknown>)
   const botName = (getValue(botConfig, ['name'], 'GameCI Help Bot') as string)
@@ -168,6 +172,13 @@ export async function runLive(options: LiveOptions): Promise<void> {
     triageUserIds,
     setInvestigating: (channelName: string, author: string) => setInvestigatingStatus(client, channelName, author),
     clearInvestigating: () => clearInvestigatingStatus(client),
+  }
+
+  const socialHandlerContext: SocialHandlerContext = {
+    config,
+    model: llmModel,
+    collaborators: collaborators as string[],
+    triageUserIds: triageUserIds as string[],
   }
 
   // --- Create client ---
@@ -310,6 +321,86 @@ export async function runLive(options: LiveOptions): Promise<void> {
       }
     }
 
+    // --- Triage channel @mention commands ---
+    // The triage channel is not a "monitored" channel, so handle commands here before the filter
+    const triageCh = triageChannels.get(message.guild.id)
+    if (triageCh && message.channelId === triageCh.id) {
+      const botId0 = client.user?.id
+      if (botId0 && message.mentions.users.has(botId0) && !message.author.bot) {
+        const stripped = message.content.replace(/<@!?\d+>/g, '').trim().toLowerCase()
+        const userId = message.author.id
+        const username = message.author.username
+        const isCollab = collaborators.some((c: string) => c.toLowerCase() === username.toLowerCase())
+        const isTriage = triageUserIds.includes(userId)
+
+        if (isCollab || isTriage) {
+          if (stripped === 'status') {
+            const st = await loadState()
+            const lastOnline = getLastOnlineAt(st)
+            const firstOnline = getFirstOnlineAt(st)
+            const uptime = process.uptime()
+            const h = Math.floor(uptime / 3600)
+            const m = Math.floor((uptime % 3600) / 60)
+            const lines = [
+              `**${getValue(botConfig, ['name'], 'GameCI Help Bot')} v${getValue(botConfig, ['version'], '3.0.0')}**`,
+              `Dispatch mode: \`${dispatchMode}\``,
+              `Model: \`${llmModel}\``,
+              `Uptime: ${h}h ${m}m`,
+              `First online: ${firstOnline ?? 'unknown'}`,
+              `Last heartbeat: ${lastOnline ?? 'unknown'}`,
+              `Claude CLI: \`${resolveClaude()}\``,
+            ]
+            await message.reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } }).catch(() => {})
+            return
+          }
+          if (stripped === 'channels') {
+            const lines: string[] = ['**Guilds & Monitored Channels:**']
+            for (const [gId, gm] of guildMappings) {
+              const dGuild = client.guilds.cache.get(gId)
+              const status = dGuild ? 'online' : 'not in server'
+              lines.push(`\n**${gm.guildConfig.name}** (${status})`)
+              for (const ch of gm.guildConfig.channels ?? []) {
+                const mon = ch.monitor !== false ? 'monitoring' : 'not monitored'
+                const typ = ch.channel_type ?? 'text'
+                lines.push(`  \`#${ch.name}\` — ${typ}, ${mon}`)
+              }
+            }
+            await message.reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } }).catch(() => {})
+            return
+          }
+          if (stripped === 'settings') {
+            const dc = getValue(config, ['dispatch'], {} as Record<string, unknown>)
+            const gc = getValue(config, ['github'], {} as Record<string, unknown>)
+            const lc = getValue(config, ['llm'], {} as Record<string, unknown>)
+            const lines = [
+              '**Current Settings:**',
+              `Dispatch mode: \`${getValue(dc, ['mode'], 'auto')}\``,
+              `Discord dispatch: \`${getValue(dc, ['discord_mode'], 'auto')}\``,
+              `GitHub triage: \`${getValue(dc, ['github_triage'], false)}\``,
+              `Poll interval: \`${getValue(dc, ['github_poll_interval_minutes'], 10)}\` min`,
+              `Model: \`${getValue(lc, ['claude', 'model'], 'claude-sonnet-4-20250514')}\``,
+              `Max turns: \`${getValue(lc, ['claude', 'max_turns'], 25)}\``,
+              `Repos: ${(getValue(gc, ['repos'], []) as string[]).map(r => `\`${r}\``).join(', ')}`,
+            ]
+            await message.reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } }).catch(() => {})
+            return
+          }
+          if (stripped === 'help') {
+            const lines = [
+              '**Available commands** (triage channel only):',
+              '`@bot status` — Bot uptime, version, dispatch mode',
+              '`@bot channels` — List monitored guilds and channels',
+              '`@bot settings` — Show current configuration',
+              '`@bot help` — This message',
+            ]
+            await message.reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } }).catch(() => {})
+            return
+          }
+        }
+      }
+      return // All triage channel messages that aren't commands get dropped
+    }
+
     // Check if channel is monitored
     if (!channelConfig || channelConfig.monitor === false) return
 
@@ -350,6 +441,28 @@ export async function runLive(options: LiveOptions): Promise<void> {
 
     const preview = formatMessagePreview(content)
     console.log(`[${timestamp}] #${channelName} @${authorTag}: ${preview}`)
+
+    // --- Social content trigger: "@bot social <topic>" ---
+    const socialEnabled = getValue(config, ['social', 'enabled'], false)
+    if (socialEnabled) {
+      // Strip the @mention and check for "social" keyword
+      const stripped = content.replace(/<@!?\d+>/g, '').trim()
+      const socialMatch = stripped.match(/^social\s+(.+)/is)
+      if (socialMatch) {
+        const topic = socialMatch[1].trim()
+        if (topic.length > 0) {
+          // Find the triage channel for this guild
+          const triageCh = triageChannels.get(message.guild!.id)
+          if (triageCh) {
+            console.log(`  → Social content request: "${topic.substring(0, 80)}"`)
+            await handleSocialRequest(message, topic, triageCh, socialHandlerContext)
+          } else {
+            await message.reply({ content: 'No triage channel configured for social content.', allowedMentions: { repliedUser: false } }).catch(() => {})
+          }
+          return
+        }
+      }
+    }
 
     // Skip: already responded
     const state = await loadState()
@@ -466,10 +579,11 @@ export async function runLive(options: LiveOptions): Promise<void> {
     }
   })
 
-  // --- Interaction handler (triage buttons) ---
+  // --- Interaction handler (triage + social buttons) ---
   client.on(Events.InteractionCreate, async (interaction) => {
     try {
       await handleTriageInteraction(interaction, client, triageHandlerContext)
+      await handleSocialInteraction(interaction, client, socialHandlerContext)
     } catch (err: any) {
       console.warn(`  Interaction handler error: ${err.message ?? err}`)
     }
@@ -978,7 +1092,7 @@ async function investigateAndRespond(
     const env = { ...process.env }
     delete env.CLAUDECODE
 
-    const proc = spawn('claude', args, {
+    const proc = spawn(resolveClaude(), args, {
       cwd: REPO_ROOT,
       stdio: ['pipe', 'inherit', 'inherit'],
       env,
@@ -1170,7 +1284,7 @@ async function reinvestigateAndRespond(
     const env = { ...process.env }
     delete env.CLAUDECODE
 
-    const proc = spawn('claude', args, {
+    const proc = spawn(resolveClaude(), args, {
       cwd: REPO_ROOT,
       stdio: ['pipe', 'inherit', 'inherit'],
       env,
