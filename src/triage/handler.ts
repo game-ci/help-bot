@@ -141,7 +141,7 @@ async function handleInvestigate(
   // Clear bot status
   context.clearInvestigating()
 
-  if (result) {
+  if (result && 'responseFile' in result) {
     record.status = 'ready'
     record.responseFile = result.responseFile
     record.investigationCompletedAt = new Date().toISOString()
@@ -162,7 +162,12 @@ async function handleInvestigate(
 
     const failedEmbed = buildEmbedOptions(record)
     await updateTriageNotification(triageChannel, record.triageMessageId, failedEmbed, sourceType, compactId)
-    console.warn(`  Triage: Investigation failed for ${triageKey}`)
+
+    const errorMsg = result && 'error' in result ? result.error : 'Unknown error'
+    console.warn(`  Triage: Investigation failed for ${triageKey}: ${errorMsg}`)
+
+    // Post error details to the triage thread so maintainers see what went wrong
+    await postErrorToThread(triageChannel, record, triageKey, errorMsg)
   }
 }
 
@@ -291,7 +296,7 @@ async function handleReinvestigate(
   // Clear bot status
   context.clearInvestigating()
 
-  if (result) {
+  if (result && 'responseFile' in result) {
     record.status = 'ready'
     record.responseFile = result.responseFile
     record.investigationCompletedAt = new Date().toISOString()
@@ -311,7 +316,10 @@ async function handleReinvestigate(
 
     const failedEmbed = buildEmbedOptions(record)
     await updateTriageNotification(triageChannel, record.triageMessageId, failedEmbed, sourceType, compactId)
-    console.warn(`  Triage: Re-investigation failed for ${triageKey}`)
+
+    const errorMsg = result && 'error' in result ? result.error : 'Unknown error'
+    console.warn(`  Triage: Re-investigation failed for ${triageKey}: ${errorMsg}`)
+    await postErrorToThread(triageChannel, record, triageKey, errorMsg)
   }
 }
 
@@ -514,6 +522,30 @@ async function postInvestigationToThread(
     console.error(`  Investigation thread FAILED for ${triageKey}: ${err.message ?? err}`)
     if (err.code) console.error(`    Discord API error code: ${err.code}`)
     return false
+  }
+}
+
+async function postErrorToThread(
+  triageChannel: TextChannel,
+  record: TriageRecord,
+  triageKey: string,
+  errorMsg: string,
+): Promise<void> {
+  try {
+    const triageMsg = await triageChannel.messages.fetch(record.triageMessageId)
+    let thread: ThreadChannel
+    if (triageMsg.thread) {
+      thread = triageMsg.thread
+      if (thread.archived) await thread.setArchived(false)
+    } else {
+      thread = await triageMsg.startThread({
+        name: `Investigation: ${(record.sourceTitle ?? 'Help request').substring(0, 84)}`,
+        autoArchiveDuration: 1440,
+      })
+    }
+    await thread.send(`**Investigation failed**\n\n${errorMsg}`)
+  } catch (err: any) {
+    console.warn(`  Could not post error to thread for ${triageKey}: ${err.message ?? err}`)
   }
 }
 
