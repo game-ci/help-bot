@@ -15,6 +15,7 @@ import { syncGitHub } from '../sync/github'
 import { filterIssues, type EligibleIssue } from './filter-issues'
 import { resolveClaude } from '../utils/claude'
 import { initLogger, logInfo, logWarn, logError } from '../utils/logger'
+import { syncDataToGitHub } from '../sync/data-backup'
 
 const DISCORD_API = 'https://discord.com/api/v10'
 const MAX_DISCORD_LENGTH = 2000
@@ -848,6 +849,13 @@ export async function runLive(options: LiveOptions): Promise<void> {
         console.log(`[${timestamp}] GitHub poll: ${totalNew} new issue(s) posted to triage`)
       } else {
         console.log(`[${timestamp}] GitHub poll: no new issues`)
+      }
+
+      // Sync data to private repo after each poll
+      try {
+        await syncDataToGitHub()
+      } catch (err: any) {
+        console.warn(`  Data sync failed: ${err.message ?? err}`)
       }
     } finally {
       githubPollRunning = false
