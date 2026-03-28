@@ -34,28 +34,47 @@ jobs:
       - name: Build
         run: yarn build
 
-      - name: Stop help-bot service
-        shell: powershell
-        run: Stop-Service -Name 'gameci-help-bot' -Force -ErrorAction SilentlyContinue
-
       - name: Copy config and dist
         shell: powershell
         run: |
           Copy-Item -Path "config.json" -Destination "C:\game-ci\help-bot\config.json" -Force
           Copy-Item -Path "dist\*" -Destination "C:\game-ci\help-bot\dist\" -Recurse -Force
 
-      - name: Start help-bot service
+      - name: Restart help-bot (kill node so NSSM auto-restarts with new code)
         shell: powershell
-        run: Start-Service -Name 'gameci-help-bot'
+        run: |
+          # Get the NSSM child PID for our service
+          $nssmPid = (Get-WmiObject Win32_Service -Filter "Name='gameci-help-bot'").ProcessId
+          if ($nssmPid -and $nssmPid -ne 0) {
+            # Find child node.exe processes of the NSSM wrapper
+            $children = Get-WmiObject Win32_Process | Where-Object { $_.ParentProcessId -eq $nssmPid }
+            foreach ($child in $children) {
+              Write-Host "Killing child process $($child.ProcessId) ($($child.Name))"
+              Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
+            }
+            # NSSM will auto-restart the child process
+            Start-Sleep -Seconds 3
+          } else {
+            Write-Host "Service not running or PID not found, attempting service start"
+            try { Start-Service -Name 'gameci-help-bot' -ErrorAction Stop } catch {
+              Write-Host "Cannot start service: $_"
+            }
+          }
 
       - name: Verify service is running
         shell: powershell
         run: |
-          Start-Sleep -Seconds 5
+          Start-Sleep -Seconds 8
           $svc = Get-Service -Name 'gameci-help-bot' -ErrorAction SilentlyContinue
           if ($svc.Status -ne 'Running') {
             Write-Error "Service is not running: $($svc.Status)"
             Get-Content "C:\game-ci\help-bot\logs\service.log" -Tail 30
             exit 1
           }
-          Write-Host "Service is running"
+          # Verify the node process restarted recently
+          $nodes = Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.StartTime -gt (Get-Date).AddMinutes(-2) }
+          if ($nodes) {
+            Write-Host "Service is running with fresh node process (PID $($nodes[0].Id), started $($nodes[0].StartTime))"
+          } else {
+            Write-Host "WARNING: Service is running but node process may not have restarted"
+          }
