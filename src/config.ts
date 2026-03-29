@@ -1,22 +1,36 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 let cachedConfig: Record<string, unknown> = {} as Record<string, unknown>
 let configLoaded = false
 
+export function getConfigPath(): string {
+  return join(process.cwd(), 'config.json')
+}
+
 export async function getConfig(): Promise<Record<string, unknown>> {
   if (configLoaded) {
     return cachedConfig
   }
-  const configPath = join(process.cwd(), 'config.json')
   try {
-    const payload = await readFile(configPath, 'utf-8')
+    const payload = await readFile(getConfigPath(), 'utf-8')
     cachedConfig = JSON.parse(payload)
   } catch {
     cachedConfig = {}
   }
   configLoaded = true
   return cachedConfig
+}
+
+/** Re-read config.json from disk and update the cache. Returns the fresh config. */
+export async function reloadConfig(): Promise<Record<string, unknown>> {
+  configLoaded = false
+  return getConfig()
+}
+
+/** Write the current cached config back to config.json. */
+export async function saveConfig(): Promise<void> {
+  await writeFile(getConfigPath(), JSON.stringify(cachedConfig, null, 2) + '\n', 'utf-8')
 }
 
 export function getValue<T>(config: Record<string, unknown>, path: string[], fallback: T): T {

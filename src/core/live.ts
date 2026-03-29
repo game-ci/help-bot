@@ -3,7 +3,7 @@ import { spawn, execSync } from 'node:child_process'
 import { once } from 'node:events'
 import { readFile, writeFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { getConfig, getValue, resolveGuilds, resolveGuildId, getSystemPrompt, GuildConfig, ChannelConfig } from '../config'
+import { getConfig, getValue, resolveGuilds, resolveGuildId, getSystemPrompt, GuildConfig, ChannelConfig, reloadConfig, saveConfig } from '../config'
 import { updateState, setPostedDiscordResponse, loadState, getPostedDiscordResponses, getLastOnlineAt, getFirstOnlineAt, setLastOnlineAt, getTriageRecord, setTriageRecord } from '../state'
 import { ensureDir } from '../utils/fs'
 import { REPO_ROOT, RESPONSES_DIR, DATA_DIR } from '../utils/paths'
@@ -113,7 +113,7 @@ async function postDeployChangelog(
     if (commitList) {
       lines.push('', commitList)
     }
-    lines.push('', '**Commands:** `!status` `!channels` `!settings` `!sync-data` `!help` | `/ask` | `@bot social <topic>`')
+    lines.push('', '**Commands:** `!status` `!channels` `!settings` `!channel` `!sync-data` `!help` | `/ask` | `@bot social <topic>`')
 
     const msg = lines.join('\n')
     for (const [, ch] of triageChannels) {
@@ -122,6 +122,20 @@ async function postDeployChangelog(
     console.log(`  Deploy changelog posted (${version}, ${shortSha})`)
   } catch (err: any) {
     console.warn(`  Deploy changelog failed: ${err.message ?? err}`)
+  }
+}
+
+/** Commit config.json and push to main so changes persist and deploy. */
+async function commitAndPushConfig(description: string): Promise<string> {
+  const execOpts = { cwd: REPO_ROOT, encoding: 'utf-8' as const }
+  try {
+    execSync('git add config.json', execOpts)
+    execSync(`git commit -m "config: ${description}\n\nCo-Authored-By: GameCI Help Bot <help-bot@game.ci>"`, execOpts)
+    execSync('git pull --rebase origin main', execOpts)
+    execSync('git push origin main', execOpts)
+    return 'Pushed to main. Deploy will trigger automatically.'
+  } catch (err: any) {
+    return `Push failed: ${err.message ?? err}`
   }
 }
 
@@ -505,6 +519,179 @@ export async function runLive(options: LiveOptions): Promise<void> {
             }
             return
           }
+          // --- Channel management commands ---
+          if (stripped.startsWith('channel ')) {
+            const parts = stripped.slice('channel '.length).trim().split(/\s+/)
+            const sub = parts[0]
+
+            // Helper: find guild config by name (case-insensitive)
+            const findGuild = (name: string) => {
+              const dc = getValue(config, ['discord'], {} as Record<string, unknown>)
+              const gs = dc['guilds'] as GuildConfig[] | undefined
+              if (!gs) return undefined
+              return gs.find((g: GuildConfig) => g.name.toLowerCase() === name.toLowerCase())
+            }
+
+            // Helper: rebuild in-memory guild mappings after config change
+            const refreshMappings = () => {
+              const dc = getValue(config, ['discord'], {} as Record<string, unknown>)
+              const freshGuilds = resolveGuilds(dc)
+              for (const guild of freshGuilds) {
+                const gId = resolveGuildId(guild)
+                if (!gId) continue
+                const existing = guildMappings.get(gId)
+                if (existing) {
+                  existing.guildConfig = guild
+                  existing.channelNameMap.clear()
+                  existing.channelMap.clear()
+                  for (const ch of guild.channels) {
+                    existing.channelNameMap.set(ch.name, ch)
+                  }
+                  // Re-resolve channel IDs from cache
+                  const dGuild = client.guilds.cache.get(gId)
+                  if (dGuild) {
+                    for (const [, channel] of dGuild.channels.cache) {
+                      if (channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildForum) {
+                        const chCfg = existing.channelNameMap.get(channel.name)
+                        if (chCfg) existing.channelMap.set(channel.id, chCfg)
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+            // !channel list <guild>
+            if (sub === 'list') {
+              const guildName = parts.slice(1).join(' ')
+              if (!guildName) {
+                await message.reply({ content: 'Usage: `!channel list <guild-name>`', allowedMentions: { repliedUser: false } }).catch(() => {})
+                return
+              }
+              const guild = findGuild(guildName)
+              if (!guild) {
+                await message.reply({ content: `Guild "${guildName}" not found in config.`, allowedMentions: { repliedUser: false } }).catch(() => {})
+                return
+              }
+              const lines = [`**Channels for ${guild.name}:**`]
+              for (const ch of guild.channels) {
+                const props = [
+                  ch.channel_type ?? 'text',
+                  ch.monitor !== false ? 'monitoring' : 'not monitored',
+                  ch.read_threads !== false ? 'threads' : 'no threads',
+                  ch.reply_mode ?? 'bot_api',
+                ]
+                lines.push(`\`#${ch.name}\` — ${props.join(', ')}`)
+                if (ch.system_prompt) lines.push(`  *prompt:* ${ch.system_prompt.substring(0, 100)}${ch.system_prompt.length > 100 ? '...' : ''}`)
+              }
+              await message.reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } }).catch(() => {})
+              return
+            }
+
+            // !channel set <guild> <channel> <key> <value>
+            if (sub === 'set') {
+              if (parts.length < 5) {
+                await message.reply({ content: 'Usage: `!channel set <guild> <channel> <key> <value>`\nKeys: `monitor`, `read_threads`, `channel_type`, `reply_mode`, `system_prompt`', allowedMentions: { repliedUser: false } }).catch(() => {})
+                return
+              }
+              const guildName = parts[1]
+              const channelName = parts[2]
+              const key = parts[3]
+              const value = parts.slice(4).join(' ')
+              const guild = findGuild(guildName)
+              if (!guild) {
+                await message.reply({ content: `Guild "${guildName}" not found.`, allowedMentions: { repliedUser: false } }).catch(() => {})
+                return
+              }
+              const ch = guild.channels.find((c: ChannelConfig) => c.name.toLowerCase() === channelName.toLowerCase())
+              if (!ch) {
+                await message.reply({ content: `Channel "${channelName}" not found in guild "${guild.name}".`, allowedMentions: { repliedUser: false } }).catch(() => {})
+                return
+              }
+              const validKeys = ['monitor', 'read_threads', 'channel_type', 'reply_mode', 'system_prompt']
+              if (!validKeys.includes(key)) {
+                await message.reply({ content: `Invalid key "${key}". Valid keys: ${validKeys.map(k => `\`${k}\``).join(', ')}`, allowedMentions: { repliedUser: false } }).catch(() => {})
+                return
+              }
+              // Parse booleans
+              let parsed: unknown = value
+              if (value === 'true') parsed = true
+              else if (value === 'false') parsed = false
+              ;(ch as any)[key] = parsed
+              await saveConfig()
+              refreshMappings()
+              const pushResult = await commitAndPushConfig(`${key}=${value} for #${ch.name} in ${guild.name}`)
+              await message.reply({ content: `Updated \`#${ch.name}\` → \`${key}\` = \`${value}\`\n${pushResult}`, allowedMentions: { repliedUser: false } }).catch(() => {})
+              return
+            }
+
+            // !channel add <guild> <channel-name> [channel_type]
+            if (sub === 'add') {
+              if (parts.length < 3) {
+                await message.reply({ content: 'Usage: `!channel add <guild> <channel-name> [text|forum]`', allowedMentions: { repliedUser: false } }).catch(() => {})
+                return
+              }
+              const guildName = parts[1]
+              const channelName = parts[2]
+              const channelType = (parts[3] ?? 'text') as 'text' | 'forum'
+              const guild = findGuild(guildName)
+              if (!guild) {
+                await message.reply({ content: `Guild "${guildName}" not found.`, allowedMentions: { repliedUser: false } }).catch(() => {})
+                return
+              }
+              if (guild.channels.find((c: ChannelConfig) => c.name.toLowerCase() === channelName.toLowerCase())) {
+                await message.reply({ content: `Channel "${channelName}" already exists in guild "${guild.name}".`, allowedMentions: { repliedUser: false } }).catch(() => {})
+                return
+              }
+              const newCh: ChannelConfig = {
+                name: channelName,
+                channel_type: channelType,
+                reply_mode: 'bot_api',
+                read_threads: true,
+                monitor: true,
+              }
+              guild.channels.push(newCh)
+              await saveConfig()
+              refreshMappings()
+              const pushResult = await commitAndPushConfig(`add #${channelName} to ${guild.name}`)
+              await message.reply({ content: `Added \`#${channelName}\` (${channelType}, monitored) to **${guild.name}**\n${pushResult}`, allowedMentions: { repliedUser: false } }).catch(() => {})
+              return
+            }
+
+            // !channel remove <guild> <channel-name>
+            if (sub === 'remove') {
+              if (parts.length < 3) {
+                await message.reply({ content: 'Usage: `!channel remove <guild> <channel-name>`', allowedMentions: { repliedUser: false } }).catch(() => {})
+                return
+              }
+              const guildName = parts[1]
+              const channelName = parts[2]
+              const guild = findGuild(guildName)
+              if (!guild) {
+                await message.reply({ content: `Guild "${guildName}" not found.`, allowedMentions: { repliedUser: false } }).catch(() => {})
+                return
+              }
+              const idx = guild.channels.findIndex((c: ChannelConfig) => c.name.toLowerCase() === channelName.toLowerCase())
+              if (idx === -1) {
+                await message.reply({ content: `Channel "${channelName}" not found in guild "${guild.name}".`, allowedMentions: { repliedUser: false } }).catch(() => {})
+                return
+              }
+              guild.channels.splice(idx, 1)
+              await saveConfig()
+              refreshMappings()
+              const pushResult = await commitAndPushConfig(`remove #${channelName} from ${guild.name}`)
+              await message.reply({ content: `Removed \`#${channelName}\` from **${guild.name}**\n${pushResult}`, allowedMentions: { repliedUser: false } }).catch(() => {})
+              return
+            }
+
+            // Unknown subcommand
+            await message.reply({
+              content: '**Channel commands:**\n`!channel list <guild>` — Show channel details\n`!channel set <guild> <channel> <key> <value>` — Update a channel property\n`!channel add <guild> <channel> [text|forum]` — Add a new channel\n`!channel remove <guild> <channel>` — Remove a channel',
+              allowedMentions: { repliedUser: false },
+            }).catch(() => {})
+            return
+          }
+
           if (stripped === 'help') {
             const lines = [
               '**Triage commands** (`!` or `+` prefix):',
@@ -512,6 +699,7 @@ export async function runLive(options: LiveOptions): Promise<void> {
               '`!channels` — List monitored guilds and channels',
               '`!settings` — Show current configuration',
               '`!sync-data` — Sync data to private GitHub repo',
+              '`!channel list|set|add|remove` — Manage channel config',
               '`!help` — This message',
               '',
               '**Slash commands:**',
