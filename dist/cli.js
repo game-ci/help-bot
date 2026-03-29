@@ -104,6 +104,12 @@ const report_1 = require("./report");
     .command('sync-discord', 'sync Discord messages', () => { }, async () => { await (0, helper_1.ensureDiscordToken)(); await (0, discord_1.syncDiscord)(); })
     .command('sync-github', 'sync GitHub issues', () => { }, async () => { await (0, github_1.syncGitHub)(); })
     .command('sync-docs', 'sync docs pages', () => { }, async () => { await (0, docs_1.syncDocs)(); })
+    .command('sync-data', 'sync data/ directory to private GitHub repo', (y) => y
+    .option('remote-repo', { type: 'string', description: 'Override remote repo (e.g. game-ci/help-bot-data)' })
+    .option('dry-run', { type: 'boolean', description: 'Show what would be committed without pushing' }), async (args) => {
+    const { syncDataToGitHub } = await import('./sync/data-backup.js');
+    await syncDataToGitHub({ remoteRepo: args['remote-repo'], dryRun: args['dry-run'] || false });
+})
     .command('vector-bake', 'build the LlamaIndex vector store', () => { }, async () => { await (0, vector_bake_1.vectorBake)(); })
     .command('nssm <action>', 'manage the Windows NSSM service', (y) => y
     .positional('action', { choices: ['install', 'start', 'stop', 'restart', 'status', 'remove'] })

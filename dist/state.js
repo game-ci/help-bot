@@ -17,6 +17,10 @@ exports.getTriageRecords = getTriageRecords;
 exports.setTriageRecords = setTriageRecords;
 exports.getTriageRecord = getTriageRecord;
 exports.setTriageRecord = setTriageRecord;
+exports.getContentRecords = getContentRecords;
+exports.setContentRecords = setContentRecords;
+exports.getContentRecord = getContentRecord;
+exports.setContentRecord = setContentRecord;
 exports.getGuildCursor = getGuildCursor;
 exports.setGuildCursor = setGuildCursor;
 const promises_1 = require("node:fs/promises");
@@ -131,6 +135,21 @@ function setTriageRecord(state, key, record) {
     const records = getTriageRecords(state);
     records[key] = record;
     setTriageRecords(state, records);
+}
+function getContentRecords(state) {
+    return state.meta?.contentRecords ?? {};
+}
+function setContentRecords(state, records) {
+    state.meta ??= {};
+    state.meta.contentRecords = records;
+}
+function getContentRecord(state, key) {
+    return getContentRecords(state)[key];
+}
+function setContentRecord(state, key, record) {
+    const records = getContentRecords(state);
+    records[key] = record;
+    setContentRecords(state, records);
 }
 // --- Guild-namespaced cursor helpers ---
 function getGuildCursor(state, guildName, channelId) {

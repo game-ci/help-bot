@@ -1,6 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.getConfigPath = getConfigPath;
 exports.getConfig = getConfig;
+exports.reloadConfig = reloadConfig;
+exports.saveConfig = saveConfig;
 exports.getValue = getValue;
 exports.resolveGuilds = resolveGuilds;
 exports.resolveGuildId = resolveGuildId;
@@ -12,13 +15,15 @@ const promises_1 = require("node:fs/promises");
 const node_path_1 = require("node:path");
 let cachedConfig = {};
 let configLoaded = false;
+function getConfigPath() {
+    return (0, node_path_1.join)(process.cwd(), 'config.json');
+}
 async function getConfig() {
     if (configLoaded) {
         return cachedConfig;
     }
-    const configPath = (0, node_path_1.join)(process.cwd(), 'config.json');
     try {
-        const payload = await (0, promises_1.readFile)(configPath, 'utf-8');
+        const payload = await (0, promises_1.readFile)(getConfigPath(), 'utf-8');
         cachedConfig = JSON.parse(payload);
     }
     catch {
@@ -26,6 +31,15 @@ async function getConfig() {
     }
     configLoaded = true;
     return cachedConfig;
+}
+/** Re-read config.json from disk and update the cache. Returns the fresh config. */
+async function reloadConfig() {
+    configLoaded = false;
+    return getConfig();
+}
+/** Write the current cached config back to config.json. */
+async function saveConfig() {
+    await (0, promises_1.writeFile)(getConfigPath(), JSON.stringify(cachedConfig, null, 2) + '\n', 'utf-8');
 }
 function getValue(config, path, fallback) {
     let current = config;

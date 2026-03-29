@@ -12,6 +12,7 @@ const node_path_1 = require("node:path");
 const glob_1 = __importDefault(require("glob"));
 const config_1 = require("../config");
 const paths_1 = require("../utils/paths");
+const claude_1 = require("../utils/claude");
 async function readClaudeInstructions() {
     try {
         return await (0, promises_1.readFile)((0, node_path_1.join)(paths_1.REPO_ROOT, 'CLAUDE.md'), 'utf-8');
@@ -45,7 +46,7 @@ async function runClaude(prompt, model, maxTurns) {
     // Explicitly deny tools that could modify system files or access external resources
     args.push('--disallowedTools', 'Edit', '--disallowedTools', 'WebFetch', '--disallowedTools', 'WebSearch', '--disallowedTools', 'NotebookEdit', '--disallowedTools', 'Task');
     console.log(`Provider: Claude Code CLI (model: ${model}, max_turns: ${maxTurns ?? 'default'})`);
-    const proc = (0, node_child_process_1.spawn)('claude', args, {
+    const proc = (0, node_child_process_1.spawn)((0, claude_1.resolveClaude)(), args, {
         cwd: paths_1.REPO_ROOT,
         stdio: ['pipe', 'inherit', 'inherit'],
     });

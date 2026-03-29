@@ -39,8 +39,9 @@ async function manageService(action, opts = {}) {
             ? await parseEnvFile(opts.envFile)
             : [];
     switch (action) {
-        case 'install':
-            await runCommand('nssm', ['install', serviceName, nodePath, scriptPath, ...scriptArgs]);
+        case 'install': {
+            const startupScript = (0, node_path_1.join)(paths_1.REPO_ROOT, 'startup.ps1');
+            await runCommand('nssm', ['install', serviceName, 'powershell.exe', '-ExecutionPolicy', 'Bypass', '-File', startupScript]);
             await runCommand('nssm', ['set', serviceName, 'AppDirectory', paths_1.REPO_ROOT]);
             await runCommand('nssm', ['set', serviceName, 'AppStdout', logFile]);
             await runCommand('nssm', ['set', serviceName, 'AppStderr', logFile]);
@@ -50,6 +51,7 @@ async function manageService(action, opts = {}) {
                 await runCommand('nssm', ['set', serviceName, 'AppEnvironmentExtra', ...envEntries]);
             }
             break;
+        }
         case 'start':
             await runCommand('nssm', ['start', serviceName]);
             break;

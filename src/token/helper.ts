@@ -37,20 +37,14 @@ async function validateToken(token: string): Promise<boolean> {
 }
 
 export async function ensureDiscordToken(): Promise<string> {
-  const interactive = Boolean(process.stdin.isTTY)
-
-  // When running non-interactively (e.g. as an NSSM service), trust the env var
-  // without validating — the SYSTEM account may not reach discord.com
+  // If token is already in the environment, trust it — let client.login() handle
+  // validation. This avoids network issues on service restart (NSSM/SYSTEM account)
+  // and prevents falling through to the interactive prompt.
   if (process.env.DISCORD_BOT_TOKEN) {
-    if (!interactive) {
-      return process.env.DISCORD_BOT_TOKEN
-    }
-    const valid = await validateToken(process.env.DISCORD_BOT_TOKEN)
-    if (valid) {
-      return process.env.DISCORD_BOT_TOKEN
-    }
-    console.warn('Existing DISCORD_BOT_TOKEN is invalid')
+    return process.env.DISCORD_BOT_TOKEN
   }
+
+  const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY)
 
   const stored = await loadFromStore()
   if (stored) {
