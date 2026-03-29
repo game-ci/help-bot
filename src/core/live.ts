@@ -56,52 +56,73 @@ function clearInvestigatingStatus(client: Client): void {
 }
 
 // --- Deploy changelog ---
-/** Get git commit messages since the last known deploy (stored in data/last-deploy-sha.txt) */
-async function getDeployChangelog(): Promise<{ commits: string[]; newSha: string } | null> {
+const DEPLOY_SHA_FILE = join(DATA_DIR, 'last-deploy-sha.txt')
+
+/** Get version string from git: tag + commits since tag + short sha */
+function getGitVersion(): string {
   try {
-    const shaFile = join(DATA_DIR, 'last-deploy-sha.txt')
-    let lastSha = ''
-    try {
-      lastSha = (await readFile(shaFile, 'utf-8')).trim()
-    } catch {
-      // First deploy — no previous SHA
-    }
-    const currentSha = execSync('git rev-parse HEAD', { cwd: REPO_ROOT, encoding: 'utf-8' }).trim()
-    if (lastSha === currentSha) return null // No new commits
-    const range = lastSha ? `${lastSha}..HEAD` : '-10' // First deploy: show last 10 commits
-    const log = execSync(`git log ${range} --oneline --no-decorate`, { cwd: REPO_ROOT, encoding: 'utf-8' }).trim()
-    if (!log) return null
-    return { commits: log.split('\n'), newSha: currentSha }
+    return execSync('git describe --tags --always', { cwd: REPO_ROOT, encoding: 'utf-8' }).trim()
   } catch {
-    return null
+    try {
+      return execSync('git rev-parse --short HEAD', { cwd: REPO_ROOT, encoding: 'utf-8' }).trim()
+    } catch {
+      return 'unknown'
+    }
   }
 }
 
-/** Post deploy changelog to triage channels */
+/** Post deploy changelog to triage channels (idempotent — saves SHA before posting) */
 async function postDeployChangelog(
   triageChannels: Map<string, TextChannel>,
   botName: string,
-  botVersion: string,
 ): Promise<void> {
-  const changelog = await getDeployChangelog()
-  if (!changelog) return
-  const commitList = changelog.commits.slice(0, 15).map((c) => `- \`${c}\``).join('\n')
-  const msg = [
-    `**${botName} v${botVersion} — Updated**`,
-    '',
-    '**Changes since last deploy:**',
-    commitList,
-    '',
-    '**Commands:** `!status` `!channels` `!settings` `!help` `!sync-data`',
-  ].join('\n')
-  for (const [, ch] of triageChannels) {
-    await ch.send(msg).catch((e: any) => console.warn(`  Failed to post changelog: ${e.message ?? e}`))
+  try {
+    const currentSha = execSync('git rev-parse HEAD', { cwd: REPO_ROOT, encoding: 'utf-8' }).trim()
+    let lastSha = ''
+    try {
+      lastSha = (await readFile(DEPLOY_SHA_FILE, 'utf-8')).trim()
+    } catch {
+      // First deploy — no previous SHA
+    }
+    if (lastSha === currentSha) return // Same deploy, skip
+
+    // Save SHA immediately so restarts don't re-post
+    await ensureDir(DATA_DIR)
+    await writeFile(DEPLOY_SHA_FILE, currentSha, 'utf-8')
+
+    const version = getGitVersion()
+    const shortSha = currentSha.substring(0, 7)
+
+    // Get commits since last deploy
+    let commitList = ''
+    if (lastSha) {
+      try {
+        const log = execSync(`git log ${lastSha}..HEAD --oneline --no-decorate`, { cwd: REPO_ROOT, encoding: 'utf-8' }).trim()
+        if (log) {
+          const commits = log.split('\n').slice(0, 15)
+          commitList = commits.map((c) => `- \`${c}\``).join('\n')
+        }
+      } catch {
+        // lastSha might not exist in history (force push, etc.)
+      }
+    }
+
+    const lines = [
+      `**${botName} ${version}** deployed (\`${shortSha}\`)`,
+    ]
+    if (commitList) {
+      lines.push('', commitList)
+    }
+    lines.push('', '**Commands:** `!status` `!channels` `!settings` `!help` `!sync-data`')
+
+    const msg = lines.join('\n')
+    for (const [, ch] of triageChannels) {
+      await ch.send(msg).catch((e: any) => console.warn(`  Failed to post changelog: ${e.message ?? e}`))
+    }
+    console.log(`  Deploy changelog posted (${version}, ${shortSha})`)
+  } catch (err: any) {
+    console.warn(`  Deploy changelog failed: ${err.message ?? err}`)
   }
-  // Save current SHA
-  const shaFile = join(DATA_DIR, 'last-deploy-sha.txt')
-  await ensureDir(DATA_DIR)
-  await writeFile(shaFile, changelog.newSha, 'utf-8').catch(() => {})
-  console.log(`  Deploy changelog posted (${changelog.commits.length} commits)`)
 }
 
 export interface LiveOptions {
@@ -315,7 +336,7 @@ export async function runLive(options: LiveOptions): Promise<void> {
     registerSlashCommands()
 
     // --- Post deploy changelog ---
-    postDeployChangelog(triageChannels, botName, botVersion).catch(() => {})
+    postDeployChangelog(triageChannels, botName).catch(() => {})
 
     // Set bot presence/status
     const monitoredCount = [...guildMappings.values()]
