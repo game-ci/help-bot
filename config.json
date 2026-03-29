@@ -65,10 +65,11 @@
           },
           {
             "name": "general",
+            "system_prompt": "This is the main GameCI community channel. Help with general questions about GameCI, Unity CI/CD pipelines, and build automation. Be welcoming but concise.",
             "channel_type": "text",
             "reply_mode": "bot_api",
-            "read_threads": false,
-            "monitor": false
+            "read_threads": true,
+            "monitor": true
           },
           {
             "name": "bugs",
