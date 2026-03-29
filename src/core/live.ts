@@ -113,7 +113,7 @@ async function postDeployChangelog(
     if (commitList) {
       lines.push('', commitList)
     }
-    lines.push('', '**Commands:** `!status` `!channels` `!settings` `!help` `!sync-data`')
+    lines.push('', '**Commands:** `!status` `!channels` `!settings` `!sync-data` `!help` | `/ask` | `@bot social <topic>`')
 
     const msg = lines.join('\n')
     for (const [, ch] of triageChannels) {
@@ -507,14 +507,19 @@ export async function runLive(options: LiveOptions): Promise<void> {
           }
           if (stripped === 'help') {
             const lines = [
-              '**Available commands** (triage channel, `!` or `+` prefix):',
+              '**Triage commands** (`!` or `+` prefix):',
               '`!status` — Bot uptime, version, dispatch mode',
               '`!channels` — List monitored guilds and channels',
               '`!settings` — Show current configuration',
               '`!sync-data` — Sync data to private GitHub repo',
               '`!help` — This message',
               '',
-              'Also works with `@bot` mention or `+` prefix.',
+              '**Slash commands:**',
+              '`/ask <question>` — Submit a help question for triage',
+              '',
+              '**In any monitored channel:**',
+              '`@bot <question>` — Ask a help question (sent to triage)',
+              '`@bot social <topic>` — Draft a LinkedIn post on a topic',
             ]
             await message.reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } }).catch(() => {})
             return
