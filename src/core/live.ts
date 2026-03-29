@@ -287,7 +287,7 @@ export async function runLive(options: LiveOptions): Promise<void> {
     }
 
     // --- Clear stale slash commands and register /ask ---
-    ;(async () => {
+    const registerSlashCommands = async () => {
       try {
         if (readyClient.application) {
           const existing = await readyClient.application.commands.fetch()
@@ -311,7 +311,8 @@ export async function runLive(options: LiveOptions): Promise<void> {
       } catch (err: any) {
         console.warn(`  ⚠ Failed to register slash commands: ${err.message ?? err}`)
       }
-    })()
+    }
+    registerSlashCommands()
 
     // --- Post deploy changelog ---
     postDeployChangelog(triageChannels, botName, botVersion).catch(() => {})
