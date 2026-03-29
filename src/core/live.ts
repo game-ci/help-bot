@@ -1,5 +1,5 @@
-import { Client, GatewayIntentBits, Events, Message, ChannelType, ActivityType, Attachment, type TextChannel } from 'discord.js'
-import { spawn } from 'node:child_process'
+import { Client, GatewayIntentBits, Events, Message, ChannelType, ActivityType, Attachment, InteractionType, type TextChannel } from 'discord.js'
+import { spawn, execSync } from 'node:child_process'
 import { once } from 'node:events'
 import { readFile, writeFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -53,6 +53,55 @@ function clearInvestigatingStatus(client: Client): void {
   if (activeInvestigations === 0) {
     setIdleStatus(client)
   }
+}
+
+// --- Deploy changelog ---
+/** Get git commit messages since the last known deploy (stored in data/last-deploy-sha.txt) */
+async function getDeployChangelog(): Promise<{ commits: string[]; newSha: string } | null> {
+  try {
+    const shaFile = join(DATA_DIR, 'last-deploy-sha.txt')
+    let lastSha = ''
+    try {
+      lastSha = (await readFile(shaFile, 'utf-8')).trim()
+    } catch {
+      // First deploy — no previous SHA
+    }
+    const currentSha = execSync('git rev-parse HEAD', { cwd: REPO_ROOT, encoding: 'utf-8' }).trim()
+    if (lastSha === currentSha) return null // No new commits
+    const range = lastSha ? `${lastSha}..HEAD` : '-10' // First deploy: show last 10 commits
+    const log = execSync(`git log ${range} --oneline --no-decorate`, { cwd: REPO_ROOT, encoding: 'utf-8' }).trim()
+    if (!log) return null
+    return { commits: log.split('\n'), newSha: currentSha }
+  } catch {
+    return null
+  }
+}
+
+/** Post deploy changelog to triage channels */
+async function postDeployChangelog(
+  triageChannels: Map<string, TextChannel>,
+  botName: string,
+  botVersion: string,
+): Promise<void> {
+  const changelog = await getDeployChangelog()
+  if (!changelog) return
+  const commitList = changelog.commits.slice(0, 15).map((c) => `- \`${c}\``).join('\n')
+  const msg = [
+    `**${botName} v${botVersion} — Updated**`,
+    '',
+    '**Changes since last deploy:**',
+    commitList,
+    '',
+    '**Commands:** `!status` `!channels` `!settings` `!help` `!sync-data`',
+  ].join('\n')
+  for (const [, ch] of triageChannels) {
+    await ch.send(msg).catch((e: any) => console.warn(`  Failed to post changelog: ${e.message ?? e}`))
+  }
+  // Save current SHA
+  const shaFile = join(DATA_DIR, 'last-deploy-sha.txt')
+  await ensureDir(DATA_DIR)
+  await writeFile(shaFile, changelog.newSha, 'utf-8').catch(() => {})
+  console.log(`  Deploy changelog posted (${changelog.commits.length} commits)`)
 }
 
 export interface LiveOptions {
@@ -237,6 +286,36 @@ export async function runLive(options: LiveOptions): Promise<void> {
       }
     }
 
+    // --- Clear stale slash commands and register /ask ---
+    ;(async () => {
+      try {
+        if (readyClient.application) {
+          const existing = await readyClient.application.commands.fetch()
+          if (existing.size > 0) {
+            console.log(`  Clearing ${existing.size} stale slash command(s): ${existing.map(c => `/${c.name}`).join(', ')}`)
+          }
+          await readyClient.application.commands.set([
+            {
+              name: 'ask',
+              description: 'Ask the help bot a question (sent to triage for investigation)',
+              options: [{
+                name: 'question',
+                description: 'Your question about GameCI, Unity CI/CD, Docker, etc.',
+                type: 3, // STRING
+                required: true,
+              }],
+            },
+          ])
+          console.log(`  ✓ Registered /ask slash command`)
+        }
+      } catch (err: any) {
+        console.warn(`  ⚠ Failed to register slash commands: ${err.message ?? err}`)
+      }
+    })()
+
+    // --- Post deploy changelog ---
+    postDeployChangelog(triageChannels, botName, botVersion).catch(() => {})
+
     // Set bot presence/status
     const monitoredCount = [...guildMappings.values()]
       .reduce((acc, m) => acc + [...m.channelNameMap.values()].filter(ch => ch.monitor !== false).length, 0)
@@ -322,17 +401,25 @@ export async function runLive(options: LiveOptions): Promise<void> {
       }
     }
 
-    // --- Triage channel @mention commands ---
+    // --- Triage channel commands (! prefix, + prefix, or @mention) ---
     // The triage channel is not a "monitored" channel, so handle commands here before the filter
     const triageCh = triageChannels.get(message.guild.id)
     if (triageCh && message.channelId === triageCh.id) {
+      if (message.author.bot) return
+      const raw = message.content.trim()
       const botId0 = client.user?.id
-      if (botId0 && message.mentions.users.has(botId0) && !message.author.bot) {
-        const stripped = message.content.replace(/<@!?\d+>/g, '').trim().toLowerCase()
-        const userId = message.author.id
-        const username = message.author.username
-        const isCollab = collaborators.some((c: string) => c.toLowerCase() === username.toLowerCase())
-        const isTriage = triageUserIds.includes(userId)
+      const isMentionCmd = botId0 && message.mentions.users.has(botId0)
+      const isPrefixCmd = raw.startsWith('!') || raw.startsWith('+')
+      if (!isMentionCmd && !isPrefixCmd) return // Not a command → drop
+      // Extract command text: strip @mentions and prefix
+      let stripped = raw.replace(/<@!?\d+>/g, '').trim()
+      if (stripped.startsWith('!') || stripped.startsWith('+')) stripped = stripped.slice(1).trim()
+      stripped = stripped.toLowerCase()
+      const userId = message.author.id
+      const username = message.author.username
+      const isCollab = collaborators.some((c: string) => c.toLowerCase() === username.toLowerCase())
+      const isTriage = triageUserIds.includes(userId)
+      {
 
         if (isCollab || isTriage) {
           if (stripped === 'status') {
@@ -386,13 +473,26 @@ export async function runLive(options: LiveOptions): Promise<void> {
             await message.reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } }).catch(() => {})
             return
           }
+          if (stripped === 'sync-data') {
+            await message.reply({ content: 'Syncing data to GitHub...', allowedMentions: { repliedUser: false } }).catch(() => {})
+            try {
+              const result = await syncDataToGitHub()
+              await message.reply({ content: `Data sync: ${result}`, allowedMentions: { repliedUser: false } }).catch(() => {})
+            } catch (err: any) {
+              await message.reply({ content: `Data sync failed: ${err.message ?? err}`, allowedMentions: { repliedUser: false } }).catch(() => {})
+            }
+            return
+          }
           if (stripped === 'help') {
             const lines = [
-              '**Available commands** (triage channel only):',
-              '`@bot status` — Bot uptime, version, dispatch mode',
-              '`@bot channels` — List monitored guilds and channels',
-              '`@bot settings` — Show current configuration',
-              '`@bot help` — This message',
+              '**Available commands** (triage channel, `!` or `+` prefix):',
+              '`!status` — Bot uptime, version, dispatch mode',
+              '`!channels` — List monitored guilds and channels',
+              '`!settings` — Show current configuration',
+              '`!sync-data` — Sync data to private GitHub repo',
+              '`!help` — This message',
+              '',
+              'Also works with `@bot` mention or `+` prefix.',
             ]
             await message.reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } }).catch(() => {})
             return
@@ -580,9 +680,72 @@ export async function runLive(options: LiveOptions): Promise<void> {
     }
   })
 
-  // --- Interaction handler (triage + social buttons) ---
+  // --- Interaction handler (slash commands + triage/social buttons) ---
   client.on(Events.InteractionCreate, async (interaction) => {
     try {
+      // Handle /ask slash command
+      if (interaction.isChatInputCommand() && interaction.commandName === 'ask') {
+        const question = interaction.options.getString('question', true)
+        const guildId = interaction.guildId
+        if (!guildId) {
+          await interaction.reply({ content: 'This command only works in a server.', ephemeral: true })
+          return
+        }
+        const triageChannel = triageChannels.get(guildId)
+        if (!triageChannel) {
+          await interaction.reply({ content: 'No triage channel configured for this server.', ephemeral: true })
+          return
+        }
+        await interaction.reply({ content: 'Your question has been received and is queued for investigation.', ephemeral: true })
+        // Post a triage notification for this slash command
+        const mapping = guildMappings.get(guildId)
+        if (mapping) {
+          const guildName = mapping.guildConfig.name
+          const authorTag = interaction.user.tag ?? interaction.user.username
+          const compactId = discordCompactId(guildName, 'slash-ask', interaction.id)
+          const triageKey = `triage:d:${compactId}`
+          const notification = await postTriageNotification(
+            triageChannel,
+            {
+              sourceType: 'd',
+              title: question.substring(0, 200),
+              content: question,
+              author: authorTag,
+              guildName,
+              guildId,
+              channelName: 'slash-ask',
+              channelId: interaction.channelId,
+              messageId: interaction.id,
+              status: 'pending',
+            },
+            'd',
+            compactId,
+          )
+          if (notification) {
+            await updateState((s) => {
+              setTriageRecord(s, triageKey, {
+                triageKey,
+                triageMessageId: notification.id,
+                triageChannelId: triageChannel.id,
+                sourceType: 'discord',
+                sourceDiscordPath: `${guildName}/slash-ask`,
+                sourceGuildId: guildId,
+                sourceChannelId: interaction.channelId,
+                sourceMessageId: interaction.id,
+                sourceTitle: question.substring(0, 200),
+                sourceContent: question,
+                sourceAuthor: authorTag,
+                status: 'pending',
+                createdAt: new Date().toISOString(),
+                reinvestigationCount: 0,
+              })
+            })
+            console.log(`[${formatTime()}] /ask from @${authorTag}: ${question.substring(0, 80)}`)
+            console.log(`  → Triage notification posted`)
+          }
+        }
+        return
+      }
       await handleTriageInteraction(interaction, client, triageHandlerContext)
       await handleSocialInteraction(interaction, client, socialHandlerContext)
     } catch (err: any) {
