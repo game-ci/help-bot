@@ -37,7 +37,7 @@
       {
         "name": "game-ci",
         "guild_id": "710946343828455455",
-        "triage_channel_id": "1481216813437026424",
+        "triage_channel_id": "1488732220461158554",
         "webhook_url_env": "DISCORD_WEBHOOK_URL",
         "system_prompt": "You are helping users in the GameCI Discord server. Be concise and helpful. Reference relevant documentation at https://game.ci/docs when applicable.",
         "channels": [
