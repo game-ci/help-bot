@@ -34,36 +34,88 @@ jobs:
       - name: Build
         run: yarn build
 
-      - name: Copy config and dist
+      - name: Sync live tree
         shell: powershell
         run: |
-          Copy-Item -Path "config.json" -Destination "C:\game-ci\help-bot\config.json" -Force
-          Copy-Item -Path "dist\*" -Destination "C:\game-ci\help-bot\dist\" -Recurse -Force
+          $ErrorActionPreference = 'Stop'
+          $deployRoot = 'C:\game-ci\help-bot'
 
-      - name: Restart help-bot (kill node so NSSM auto-restarts with new code)
+          New-Item -ItemType Directory -Force -Path $deployRoot | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $deployRoot 'dist') | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $deployRoot 'src') | Out-Null
+
+          robocopy "src" "$deployRoot\src" /MIR /R:2 /W:2 /NFL /NDL /NJH /NJS /NP
+          if ($LASTEXITCODE -gt 7) { throw "robocopy src failed with exit code $LASTEXITCODE" }
+
+          robocopy "dist" "$deployRoot\dist" /MIR /R:2 /W:2 /NFL /NDL /NJH /NJS /NP
+          if ($LASTEXITCODE -gt 7) { throw "robocopy dist failed with exit code $LASTEXITCODE" }
+
+          foreach ($file in @('package.json', 'yarn.lock', 'tsconfig.json', 'config.json', 'startup.ps1')) {
+            Copy-Item -Path $file -Destination (Join-Path $deployRoot $file) -Force
+          }
+
+      - name: Repair live install
         shell: powershell
         run: |
-          # Get the NSSM child PID for our service
-          $nssmPid = (Get-WmiObject Win32_Service -Filter "Name='gameci-help-bot'").ProcessId
-          if ($nssmPid -and $nssmPid -ne 0) {
-            # Find child node.exe processes of the NSSM wrapper
-            $children = Get-WmiObject Win32_Process | Where-Object { $_.ParentProcessId -eq $nssmPid }
-            foreach ($child in $children) {
-              Write-Host "Killing child process $($child.ProcessId) ($($child.Name))"
-              Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
-            }
-            # NSSM will auto-restart the child process
-            Start-Sleep -Seconds 3
+          $ErrorActionPreference = 'Stop'
+          $deployRoot = 'C:\game-ci\help-bot'
+          Push-Location $deployRoot
+          try {
+            yarn install --frozen-lockfile
+            yarn build
+          } finally {
+            Pop-Location
+          }
+
+      - name: Reconcile NSSM service
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $serviceName = 'gameci-help-bot'
+          $deployRoot = 'C:\game-ci\help-bot'
+          $startupScript = Join-Path $deployRoot 'startup.ps1'
+          $powershellPath = (Get-Command powershell).Source
+          $logFile = Join-Path $deployRoot 'logs\service.log'
+
+          New-Item -ItemType Directory -Force -Path (Join-Path $deployRoot 'logs') | Out-Null
+
+          $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+          if (-not $service) {
+            Write-Host "Installing missing NSSM service"
+            nssm install $serviceName $powershellPath "-ExecutionPolicy" "Bypass" "-File" $startupScript
           } else {
-            Write-Host "Service not running or PID not found, attempting service start"
-            try { Start-Service -Name 'gameci-help-bot' -ErrorAction Stop } catch {
-              Write-Host "Cannot start service: $_"
+            Write-Host "Reconfiguring existing NSSM service"
+            try {
+              nssm stop $serviceName
+            } catch {
+              Write-Host "Service stop before reconfigure returned: $_"
             }
+          }
+
+          nssm set $serviceName Application $powershellPath
+          nssm set $serviceName AppParameters "-ExecutionPolicy Bypass -File `"$startupScript`""
+          nssm set $serviceName AppDirectory $deployRoot
+          nssm set $serviceName AppStdout $logFile
+          nssm set $serviceName AppStderr $logFile
+          nssm set $serviceName AppStdoutCreationDisposition 1
+          nssm set $serviceName AppStderrCreationDisposition 1
+          nssm set $serviceName Start SERVICE_AUTO_START
+
+      - name: Restart help-bot
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            nssm restart gameci-help-bot
+          } catch {
+            Write-Host "NSSM restart failed, trying service start: $_"
+            Start-Service -Name 'gameci-help-bot'
           }
 
       - name: Verify service is running
         shell: powershell
         run: |
+          $ErrorActionPreference = 'Stop'
           Start-Sleep -Seconds 8
           $svc = Get-Service -Name 'gameci-help-bot' -ErrorAction SilentlyContinue
           if ($svc.Status -ne 'Running') {
@@ -71,10 +123,16 @@ jobs:
             Get-Content "C:\game-ci\help-bot\logs\service.log" -Tail 30
             exit 1
           }
-          # Verify the node process restarted recently
-          $nodes = Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.StartTime -gt (Get-Date).AddMinutes(-2) }
-          if ($nodes) {
-            Write-Host "Service is running with fresh node process (PID $($nodes[0].Id), started $($nodes[0].StartTime))"
-          } else {
-            Write-Host "WARNING: Service is running but node process may not have restarted"
+          $app = nssm get gameci-help-bot Application
+          $args = nssm get gameci-help-bot AppParameters
+          $dir = nssm get gameci-help-bot AppDirectory
+          if ($app -notmatch 'powershell(\.exe)?$') {
+            Write-Error "Service Application is not PowerShell: $app"
           }
+          if ($args -notmatch 'startup\.ps1') {
+            Write-Error "Service AppParameters do not point at startup.ps1: $args"
+          }
+          if ($dir.Trim() -ne 'C:\game-ci\help-bot') {
+            Write-Error "Service AppDirectory is unexpected: $dir"
+          }
+          Write-Host "Service is running with reconciled NSSM configuration"
