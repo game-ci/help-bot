@@ -1,5 +1,5 @@
-# startup.ps1 — Auto-update wrapper for NSSM service
-# Runs on every service start (including reboot): pulls latest, builds, then starts the bot.
+# startup.ps1 — NSSM startup wrapper for deployed help-bot
+# Starts from the deployed working tree and performs a minimal repair if runtime artifacts are missing.
 $ErrorActionPreference = "Continue"
 $repoDir = "C:\game-ci\help-bot"
 $logFile = "$repoDir\logs\startup.log"
@@ -14,31 +14,30 @@ New-Item -ItemType Directory -Force -Path "$repoDir\logs" | Out-Null
 
 Log "=== Service starting ==="
 
-# Step 1: git pull
-try {
-    Log "Pulling latest from main..."
-    $pullOutput = git pull origin main 2>&1 | Out-String
-    Log "  git pull: $($pullOutput.Trim())"
-} catch {
-    Log "  git pull failed: $_ (continuing with current version)"
-}
+$distCli = Join-Path $repoDir "dist\cli.js"
+$nodeModulesDir = Join-Path $repoDir "node_modules"
+$needsRepair = -not (Test-Path $distCli) -or -not (Test-Path $nodeModulesDir)
 
-# Step 2: npm ci
-try {
-    Log "Installing dependencies..."
-    npm ci 2>&1 | Out-Null
-    Log "  npm ci: done"
-} catch {
-    Log "  npm ci failed: $_ (continuing with current modules)"
-}
+if ($needsRepair) {
+    Log "Runtime artifacts missing; repairing local install..."
 
-# Step 3: Build
-try {
-    Log "Building..."
-    npm run build 2>&1 | Out-Null
-    Log "  Build: done"
-} catch {
-    Log "  Build failed: $_ (continuing with existing dist)"
+    try {
+        Log "Installing dependencies..."
+        yarn install --frozen-lockfile 2>&1 | Out-Null
+        Log "  yarn install: done"
+    } catch {
+        Log "  yarn install failed: $_"
+    }
+
+    try {
+        Log "Building..."
+        yarn build 2>&1 | Out-Null
+        Log "  Build: done"
+    } catch {
+        Log "  Build failed: $_"
+    }
+} else {
+    Log "Runtime artifacts present; skipping repair build"
 }
 
 Log "Starting bot..."
