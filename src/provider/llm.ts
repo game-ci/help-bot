@@ -7,8 +7,9 @@ import glob from 'glob'
 import { getConfig, getValue } from '../config'
 import { REPO_ROOT } from '../utils/paths'
 import { resolveClaude } from '../utils/claude'
+import { runDiscordProvider, initializeDiscordSession, isDiscordProviderAvailable } from './discord'
 
-type Provider = 'claude' | 'lm_studio' | 'continue' | 'codex'
+type Provider = 'claude' | 'lm_studio' | 'continue' | 'codex' | 'discord'
 
 async function readClaudeInstructions(): Promise<string> {
   try {
@@ -168,6 +169,12 @@ export async function runProvider(prompt: string, options: ProviderOptions = {})
   const config = await getConfig()
   const provider = (options.provider as Provider) ?? (getValue(config, ['llm', 'provider'], 'claude') as Provider)
   const instructions = await readClaudeInstructions()
+  
+  // Initialize Discord session if using Discord provider
+  if (provider === 'discord') {
+    await initializeDiscordSession()
+  }
+  
   switch (provider) {
     case 'claude': {
       const model = options.modelOverride
@@ -203,6 +210,15 @@ export async function runProvider(prompt: string, options: ProviderOptions = {})
       }
       const finalPrompt = combinePrompt(instructions, prompt, options.systemPrompt)
       await runCodex(finalPrompt, apiBase, apiKey, model, maxTokens, temperature)
+      break
+    }
+    case 'discord': {
+      const isAvailable = await isDiscordProviderAvailable()
+      if (!isAvailable) {
+        throw new Error('Discord provider is not available. Ensure openclaw is installed and discord provider is enabled in config.')
+      }
+      const modelOverride = options.modelOverride ?? undefined
+      await runDiscordProvider(prompt, instructions, options.systemPrompt, modelOverride)
       break
     }
     default:

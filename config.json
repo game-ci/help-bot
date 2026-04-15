@@ -29,6 +29,13 @@
       "temperature": 0.2,
       "max_tokens": 8192,
       "api_base": "https://api.openai.com/v1"
+    },
+    "discord": {
+      "enabled": false,
+      "session_label": "help-bot-assistant",
+      "model": "claude-sonnet-4-20250514",
+      "timeout_seconds": 300,
+      "workspace_path": null
     }
   },
   "discord": {

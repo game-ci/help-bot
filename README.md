@@ -233,6 +233,7 @@ The default provider is Claude Code, which requires the `claude` CLI to be insta
 | Provider | How it runs | Setup |
 |----------|-------------|-------|
 | **Claude Code** (default) | Spawns `claude -p --model <model>` with filesystem access. | `npm i -g @anthropic-ai/claude-code` + `ANTHROPIC_API_KEY` **or** a local `claude` CLI sign-in |
+| **Discord Agent** | Uses OpenClaw Discord agents via sessions API. Maintains context across requests. | Install OpenClaw + run `openclaw gateway start` + set `"provider": "discord"` in config |
 | **LM Studio** | HTTP to local server. Context injected via prompt. | Run LM Studio with a model loaded |
 | **Continue CLI** | `continue --model <name>`. Interactive sessions. | Install Continue CLI |
 | **Codex / OpenAI** | OpenAI API completions. | Set `LLM_PROVIDER=codex` + `OPENAI_API_KEY` |
