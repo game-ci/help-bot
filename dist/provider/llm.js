@@ -13,7 +13,6 @@ const glob_1 = __importDefault(require("glob"));
 const config_1 = require("../config");
 const paths_1 = require("../utils/paths");
 const claude_1 = require("../utils/claude");
-const discord_1 = require("./discord");
 async function readClaudeInstructions() {
     try {
         return await (0, promises_1.readFile)((0, node_path_1.join)(paths_1.REPO_ROOT, 'CLAUDE.md'), 'utf-8');
@@ -129,10 +128,6 @@ async function runProvider(prompt, options = {}) {
     const config = await (0, config_1.getConfig)();
     const provider = options.provider ?? (0, config_1.getValue)(config, ['llm', 'provider'], 'claude');
     const instructions = await readClaudeInstructions();
-    // Initialize Discord session if using Discord provider
-    if (provider === 'discord') {
-        await (0, discord_1.initializeDiscordSession)();
-    }
     switch (provider) {
         case 'claude': {
             const model = options.modelOverride
@@ -168,15 +163,6 @@ async function runProvider(prompt, options = {}) {
             }
             const finalPrompt = combinePrompt(instructions, prompt, options.systemPrompt);
             await runCodex(finalPrompt, apiBase, apiKey, model, maxTokens, temperature);
-            break;
-        }
-        case 'discord': {
-            const isAvailable = await (0, discord_1.isDiscordProviderAvailable)();
-            if (!isAvailable) {
-                throw new Error('Discord provider is not available. Ensure openclaw is installed and discord provider is enabled in config.');
-            }
-            const modelOverride = options.modelOverride ?? undefined;
-            await (0, discord_1.runDiscordProvider)(prompt, instructions, options.systemPrompt, modelOverride);
             break;
         }
         default:
