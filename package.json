@@ -12,9 +12,7 @@
     "dev": "ts-node src/cli.ts",
     "vector-bake": "npm run build && node dist/cli.js vector-bake"
   },
-  "bin": {
-    "gameci-help-bot": "dist/cli.js"
-  },
+  "bin": "dist/cli.js",
   "license": "MIT",
   "engines": {
     "node": ">=18"
@@ -39,5 +37,11 @@
     "eslint": "^8.57.1",
     "ts-node": "^10.9.1",
     "typescript": "^5.5.6"
+  },
+  "packageManager": "yarn@4.14.1",
+  "dependenciesMeta": {
+    "keytar": {
+      "built": true
+    }
   }
 }
