@@ -1,7 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.syncGitHub = syncGitHub;
-const rest_1 = require("@octokit/rest");
 const node_path_1 = require("node:path");
 const fs_1 = require("../utils/fs");
 const promises_1 = require("node:fs/promises");
@@ -19,6 +18,10 @@ const DEFAULT_REPOS = [
 const ISSUE_HEADERS = {
     accept: 'application/vnd.github.squirrel-girl-preview+json',
 };
+async function getOctokitConstructor() {
+    const module = await import('@octokit/rest');
+    return module.Octokit;
+}
 function slugRepo(repo) {
     return repo.replace(/\//g, '-');
 }
@@ -100,7 +103,8 @@ async function syncGitHub(options = {}) {
         ? options.repos
         : (0, config_1.getValue)(config, ['github', 'repos'], DEFAULT_REPOS);
     const collaboratorList = ((0, config_1.getValue)(config, ['github', 'collaborators'], []).map((entry) => entry.toLowerCase()));
-    const octokit = new rest_1.Octokit({ auth: token, userAgent: 'GameCI Help Bot' });
+    const Octokit = await getOctokitConstructor();
+    const octokit = new Octokit({ auth: token, userAgent: 'GameCI Help Bot' });
     const state = await (0, state_1.loadState)();
     state.github ??= {};
     await (0, fs_1.ensureDir)(paths_1.GITHUB_DATA_DIR);
