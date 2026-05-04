@@ -172,8 +172,8 @@ jobs:
           & $nssm set $serviceName AppDirectory $deployRoot
           & $nssm set $serviceName AppStdout $logFile
           & $nssm set $serviceName AppStderr $logFile
-          & $nssm set $serviceName AppStdoutCreationDisposition 1
-          & $nssm set $serviceName AppStderrCreationDisposition 1
+          & $nssm set $serviceName AppStdoutCreationDisposition 4
+          & $nssm set $serviceName AppStderrCreationDisposition 4
           & $nssm set $serviceName Start SERVICE_AUTO_START
 
       - name: Restart help-bot
