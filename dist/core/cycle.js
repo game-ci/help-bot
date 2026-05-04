@@ -66,6 +66,7 @@ async function runCycle(options = {}) {
         await (0, fs_1.ensureDir)(refDir);
         if (options.repoDir) {
             const repoRefDir = (0, node_path_1.join)(refDir, 'repo');
+            await (0, promises_1.rm)(repoRefDir, { recursive: true, force: true });
             await (0, fs_1.ensureDir)(repoRefDir);
             // Copy key reference files
             const filesToCopy = ['action.yml', 'README.md', 'Dockerfile', 'package.json'];
@@ -81,6 +82,7 @@ async function runCycle(options = {}) {
         }
         if (options.docsDir) {
             const docsRefDir = (0, node_path_1.join)(refDir, 'docs');
+            await (0, promises_1.rm)(docsRefDir, { recursive: true, force: true });
             await copyDirRecursive((0, node_path_1.join)(options.docsDir, 'docs'), docsRefDir);
             console.log(`Copied documentation from ${options.docsDir}/docs to ${docsRefDir}`);
         }

@@ -71,7 +71,10 @@ export async function runContentDraft(
       env,
     })
     proc.stdin.end(prompt)
-    await once(proc, 'exit')
+    const [code] = (await once(proc, 'exit')) as [number | null]
+    if (code !== 0) {
+      throw new Error(`Claude Code CLI exited with code ${code ?? 'unknown'}`)
+    }
   } catch (error: any) {
     console.warn(`  Social draft failed: ${error.message ?? error}`)
     return null

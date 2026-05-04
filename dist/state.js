@@ -8,6 +8,8 @@ exports.setDetections = setDetections;
 exports.getPostedInvestigations = getPostedInvestigations;
 exports.getPostedResponses = getPostedResponses;
 exports.setPostedResponse = setPostedResponse;
+exports.getPostedResponseIds = getPostedResponseIds;
+exports.setPostedResponseId = setPostedResponseId;
 exports.getPostedDiscordResponses = getPostedDiscordResponses;
 exports.setPostedDiscordResponse = setPostedDiscordResponse;
 exports.getLastOnlineAt = getLastOnlineAt;
@@ -78,6 +80,22 @@ function setPostedResponse(state, repo, issueNumber) {
     const posted = getPostedResponses(state);
     posted[`${repo}#${issueNumber}`] = new Date().toISOString();
     state.meta.postedResponses = posted;
+}
+/**
+ * Get the set of response artifacts already posted.
+ * Keys are response_id values, values are ISO timestamps of when the artifact was posted.
+ */
+function getPostedResponseIds(state) {
+    return state.meta?.postedResponseIds ?? {};
+}
+/**
+ * Record that a specific response artifact was posted.
+ */
+function setPostedResponseId(state, responseId, postedAt) {
+    state.meta ??= {};
+    const posted = getPostedResponseIds(state);
+    posted[responseId] = postedAt ?? new Date().toISOString();
+    state.meta.postedResponseIds = posted;
 }
 /**
  * Get the set of Discord messages the bot has already responded to.

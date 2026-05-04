@@ -12,7 +12,20 @@ export function parseFrontMatter(content: string): { meta: Record<string, string
   for (const line of metaRaw.split(/\r?\n/)) {
     const [key, ...rest] = line.split(':')
     if (!key) continue
-    meta[key.trim()] = rest.join(':').trim()
+    meta[key.trim()] = normalizeFrontMatterValue(rest.join(':'))
   }
   return { meta, body }
+}
+
+function normalizeFrontMatterValue(value: string): string {
+  const trimmed = value.trim()
+  if (trimmed.length < 2) return trimmed
+
+  const first = trimmed[0]
+  const last = trimmed[trimmed.length - 1]
+  if ((first === '"' && last === '"') || (first === '\'' && last === '\'')) {
+    return trimmed.slice(1, -1).replace(/\\"/g, '"').replace(/\\'/g, '\'')
+  }
+
+  return trimmed
 }

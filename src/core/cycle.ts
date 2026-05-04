@@ -11,7 +11,7 @@ import { postGitHubResponses } from '../post/github'
 import { postInvestigationIssues } from '../post/investigations'
 import { writeCycleReport, postCycleReport } from '../post/cycle-report'
 import { join } from 'node:path'
-import { readdir, copyFile, readFile, mkdir } from 'node:fs/promises'
+import { readdir, copyFile, readFile, mkdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { getConfig, getValue, resolveGuilds, getSystemPrompt, buildLabelSystemPrompt } from '../config'
 import { resetStats, getStats } from '../metrics'
@@ -84,6 +84,7 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
     await ensureDir(refDir)
     if (options.repoDir) {
       const repoRefDir = join(refDir, 'repo')
+      await rm(repoRefDir, { recursive: true, force: true })
       await ensureDir(repoRefDir)
       // Copy key reference files
       const filesToCopy = ['action.yml', 'README.md', 'Dockerfile', 'package.json']
@@ -99,6 +100,7 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
     }
     if (options.docsDir) {
       const docsRefDir = join(refDir, 'docs')
+      await rm(docsRefDir, { recursive: true, force: true })
       await copyDirRecursive(join(options.docsDir, 'docs'), docsRefDir)
       console.log(`Copied documentation from ${options.docsDir}/docs to ${docsRefDir}`)
     }
