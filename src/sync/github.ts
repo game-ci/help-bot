@@ -1,4 +1,3 @@
-import { Octokit } from '@octokit/rest'
 import { join } from 'node:path'
 import { ensureDir, writeJson } from '../utils/fs'
 import { writeFile } from 'node:fs/promises'
@@ -17,6 +16,13 @@ const DEFAULT_REPOS = [
 
 const ISSUE_HEADERS = {
   accept: 'application/vnd.github.squirrel-girl-preview+json',
+}
+
+type OctokitConstructor = typeof import('@octokit/rest').Octokit
+
+async function getOctokitConstructor(): Promise<OctokitConstructor> {
+  const module = await import('@octokit/rest')
+  return module.Octokit
 }
 
 function slugRepo(repo: string): string {
@@ -109,6 +115,7 @@ export async function syncGitHub(options: GitHubSyncOptions = {}): Promise<void>
     ? options.repos
     : (getValue(config, ['github', 'repos'], DEFAULT_REPOS) as string[])
   const collaboratorList = ((getValue(config, ['github', 'collaborators'], []) as string[]).map((entry) => entry.toLowerCase()))
+  const Octokit = await getOctokitConstructor()
   const octokit = new Octokit({ auth: token, userAgent: 'GameCI Help Bot' })
   const state = await loadState()
   state.github ??= {}
