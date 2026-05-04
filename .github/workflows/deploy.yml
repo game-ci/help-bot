@@ -75,6 +75,7 @@ jobs:
 
           robocopy "dist" "$deployRoot\dist" /MIR /R:2 /W:2 /NFL /NDL /NJH /NJS /NP
           if ($LASTEXITCODE -gt 7) { throw "robocopy dist failed with exit code $LASTEXITCODE" }
+          $global:LASTEXITCODE = 0
 
           foreach ($file in @('package.json', 'yarn.lock', 'tsconfig.json', 'config.json', 'startup.ps1')) {
             Copy-Item -Path $file -Destination (Join-Path $deployRoot $file) -Force
