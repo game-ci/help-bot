@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { guildChannelDir } from '../utils/paths'
+import { guildChannelDir, guildForumDir } from '../utils/paths'
 import { getConfig, getValue, resolveGuilds, GuildConfig, ChannelConfig } from '../config'
 import { loadState } from '../state'
 
@@ -111,100 +111,105 @@ export async function filterDiscordMessages(guildConfig: GuildConfig): Promise<D
   }
 
   for (const channel of guildConfig.channels) {
-    const channelDir = guildChannelDir(guildConfig.name, channel.name)
-
-    let files: string[] = []
-    try {
-      files = await readdir(channelDir)
-    } catch {
-      continue
+    const dataDirs = [guildChannelDir(guildConfig.name, channel.name)]
+    if (channel.channel_type === 'forum') {
+      dataDirs.push(guildForumDir(guildConfig.name, channel.name))
     }
 
-    // Only process recent JSONL files (last 7 days by default)
-    const jsonlFiles = files.filter(f => f.endsWith('.jsonl')).sort().reverse().slice(0, 7)
-
-    for (const file of jsonlFiles) {
-      const fullPath = join(channelDir, file)
-      let content: string
+    for (const channelDir of dataDirs) {
+      let files: string[] = []
       try {
-        content = await readFile(fullPath, 'utf-8')
+        files = await readdir(channelDir)
       } catch {
         continue
       }
 
-      const lines = content.split(/\r?\n/).filter(Boolean)
-      for (const line of lines) {
-        let msg: SyncedMessage
+      // Only process recent JSONL files (last 7 days by default)
+      const jsonlFiles = files.filter(f => f.endsWith('.jsonl')).sort().reverse().slice(0, 7)
+
+      for (const file of jsonlFiles) {
+        const fullPath = join(channelDir, file)
+        let content: string
         try {
-          msg = JSON.parse(line) as SyncedMessage
+          content = await readFile(fullPath, 'utf-8')
         } catch {
           continue
         }
 
-        // SKIP: bot messages
-        if (ignoreBots && msg.is_bot) {
-          skip('bot')
-          continue
-        }
+        const lines = content.split(/\r?\n/).filter(Boolean)
+        for (const line of lines) {
+          let msg: SyncedMessage
+          try {
+            msg = JSON.parse(line) as SyncedMessage
+          } catch {
+            continue
+          }
 
-        // SKIP: too short
-        if (msg.content.trim().length < minLength) {
-          skip('too-short')
-          continue
-        }
+          // SKIP: bot messages
+          if (ignoreBots && msg.is_bot) {
+            skip('bot')
+            continue
+          }
 
-        // SKIP: official user/role already present
-        if (msg.is_official) {
-          skip('official-author')
-          continue
-        }
+          // SKIP: too short
+          if (msg.content.trim().length < minLength) {
+            skip('too-short')
+            continue
+          }
 
-        // SKIP: already responded to
-        const responseKey = `discord:${guildConfig.name}/${channel.name}#${msg.id}`
-        if (postedDiscordResponses[responseKey]) {
-          skip('already-responded')
-          continue
-        }
+          // SKIP: official user/role already present
+          if (msg.is_official) {
+            skip('official-author')
+            continue
+          }
 
-        // SKIP: not a question or help request
-        if (!isLikelyHelpRequest(msg.content)) {
-          skip('not-help-request')
-          continue
-        }
+          // SKIP: already responded to
+          const responseKey = `discord:${guildConfig.name}/${channel.name}#${msg.id}`
+          if (postedDiscordResponses[responseKey]) {
+            skip('already-responded')
+            continue
+          }
 
-        const title = msg.content.split('\n')[0].substring(0, 120) || msg.content.substring(0, 120)
+          // SKIP: not a question or help request
+          if (!isLikelyHelpRequest(msg.content)) {
+            skip('not-help-request')
+            continue
+          }
 
-        eligible.push({
-          messageId: msg.id,
-          title,
-          author: msg.author,
-          authorId: msg.author_id,
-          content: msg.content,
-          timestamp: msg.timestamp,
-          reactions: msg.reactions ?? {},
-          replyContext: msg.referenced_message ? {
-            author: msg.referenced_message.author,
-            content: msg.referenced_message.content,
-            messageId: msg.referenced_message.id,
-          } : undefined,
-          threadMessages: msg.thread_messages?.map(tm => ({
-            author: tm.author,
-            content: tm.content,
-            messageId: tm.id,
-            timestamp: tm.timestamp,
-          })),
-          channelSystemPrompt: channel.system_prompt,
-          discord: {
-            guildName: guildConfig.name,
-            channelName: channel.name,
-            channelId: msg.channel_id,
+          const title = msg.content.split('\n')[0].substring(0, 120) || msg.content.substring(0, 120)
+
+          eligible.push({
             messageId: msg.id,
-            threadId: msg.thread_id,
-            threadName: msg.thread_name,
-            isThread: msg.is_thread ?? false,
-            isForumPost: msg.is_forum_post ?? false,
-          },
-        })
+            title,
+            author: msg.author,
+            authorId: msg.author_id,
+            content: msg.content,
+            timestamp: msg.timestamp,
+            reactions: msg.reactions ?? {},
+            replyContext: msg.referenced_message ? {
+              author: msg.referenced_message.author,
+              content: msg.referenced_message.content,
+              messageId: msg.referenced_message.id,
+            } : undefined,
+            threadMessages: msg.thread_messages?.map(tm => ({
+              author: tm.author,
+              content: tm.content,
+              messageId: tm.id,
+              timestamp: tm.timestamp,
+            })),
+            channelSystemPrompt: channel.system_prompt,
+            discord: {
+              guildName: guildConfig.name,
+              channelName: channel.name,
+              channelId: msg.channel_id,
+              messageId: msg.id,
+              threadId: msg.thread_id,
+              threadName: msg.thread_name,
+              isThread: msg.is_thread ?? false,
+              isForumPost: msg.is_forum_post ?? false,
+            },
+          })
+        }
       }
     }
   }

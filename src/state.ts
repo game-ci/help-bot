@@ -90,6 +90,24 @@ export function setPostedResponse(state: SyncState, repo: string, issueNumber: n
 }
 
 /**
+ * Get the set of response artifacts already posted.
+ * Keys are response_id values, values are ISO timestamps of when the artifact was posted.
+ */
+export function getPostedResponseIds(state: SyncState): Record<string, string> {
+  return (state.meta?.postedResponseIds as Record<string, string>) ?? {}
+}
+
+/**
+ * Record that a specific response artifact was posted.
+ */
+export function setPostedResponseId(state: SyncState, responseId: string, postedAt?: string): void {
+  state.meta ??= {}
+  const posted = getPostedResponseIds(state)
+  posted[responseId] = postedAt ?? new Date().toISOString()
+  state.meta.postedResponseIds = posted
+}
+
+/**
  * Get the set of Discord messages the bot has already responded to.
  * Keys are `discord:{guildName}/{channelName}#{messageId}`, values are ISO timestamps.
  */

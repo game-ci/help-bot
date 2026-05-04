@@ -147,6 +147,9 @@ async function postDiscordResponses(options) {
     catch {
         return;
     }
+    const state = await (0, state_1.loadState)();
+    const postedDiscordResponses = (0, state_1.getPostedDiscordResponses)(state);
+    const postedResponseIds = (0, state_1.getPostedResponseIds)(state);
     for (const file of files.filter((f) => f.endsWith('.md'))) {
         const fullPath = (0, node_path_1.join)(discordDir, file);
         const content = await (0, promises_1.readFile)(fullPath, 'utf-8');
@@ -157,6 +160,25 @@ async function postDiscordResponses(options) {
         const responseChannel = meta.channel_name ?? '';
         const replyToMessageId = meta.reply_to_message_id ?? '';
         const threadId = meta.thread_id ?? '';
+        if (!responseGuild || !responseChannel) {
+            console.warn(`Skipping Discord response ${responseId}: missing guild_name or channel_name metadata`);
+            continue;
+        }
+        if (options.forceReplyId !== responseId) {
+            if (postedResponseIds[responseId]) {
+                console.log(`Skipping Discord response ${responseId}: response artifact already posted.`);
+                (0, metrics_1.recordStat)('discordResponsesSkipped', 1);
+                continue;
+            }
+            const postedAt = replyToMessageId
+                ? postedDiscordResponses[`discord:${responseGuild}/${responseChannel}#${replyToMessageId}`]
+                : undefined;
+            if (postedAt && await isFileOlderThan(fullPath, postedAt)) {
+                console.log(`Skipping Discord response ${responseId}: source message was already answered after this file was written.`);
+                (0, metrics_1.recordStat)('discordResponsesSkipped', 1);
+                continue;
+            }
+        }
         // Determine reply mode
         const channelKey = `${responseGuild}/${responseChannel}`;
         const channelConfig = channelConfigs.get(channelKey);
@@ -217,8 +239,15 @@ async function postDiscordResponses(options) {
             // Track the response
             if (responseGuild && responseChannel && replyToMessageId) {
                 await (0, state_1.updateState)((s) => {
+                    (0, state_1.setPostedResponseId)(s, responseId);
                     (0, state_1.setPostedDiscordResponse)(s, responseGuild, responseChannel, replyToMessageId);
                 });
+                postedResponseIds[responseId] = new Date().toISOString();
+                postedDiscordResponses[`discord:${responseGuild}/${responseChannel}#${replyToMessageId}`] = postedResponseIds[responseId];
+            }
+            else {
+                await (0, state_1.updateState)((s) => (0, state_1.setPostedResponseId)(s, responseId));
+                postedResponseIds[responseId] = new Date().toISOString();
             }
             console.log(`Posted Discord response for ${responseId} via Bot API${replyToMessageId ? ` (reply to ${replyToMessageId})` : ''}`);
         }
@@ -241,8 +270,15 @@ async function postDiscordResponses(options) {
             }
             if (responseGuild && responseChannel && replyToMessageId) {
                 await (0, state_1.updateState)((s) => {
+                    (0, state_1.setPostedResponseId)(s, responseId);
                     (0, state_1.setPostedDiscordResponse)(s, responseGuild, responseChannel, replyToMessageId);
                 });
+                postedResponseIds[responseId] = new Date().toISOString();
+                postedDiscordResponses[`discord:${responseGuild}/${responseChannel}#${replyToMessageId}`] = postedResponseIds[responseId];
+            }
+            else if (result.success) {
+                await (0, state_1.updateState)((s) => (0, state_1.setPostedResponseId)(s, responseId));
+                postedResponseIds[responseId] = new Date().toISOString();
             }
         }
         else {
@@ -254,6 +290,7 @@ async function postDiscordResponses(options) {
                 continue;
             }
             const chunks = splitContent(bodyWithFeedback);
+            let postedAnyChunk = false;
             for (const [index, chunk] of chunks.entries()) {
                 const payload = {
                     content: chunk,
@@ -266,9 +303,28 @@ async function postDiscordResponses(options) {
                 if (!success) {
                     console.warn(`Failed to post Discord chunk ${index + 1}/${chunks.length} for ${file}`);
                 }
+                else {
+                    postedAnyChunk = true;
+                }
                 (0, metrics_1.recordStat)('discordResponsesPosted', 1);
                 await new Promise((resolve) => setTimeout(resolve, 1500));
             }
+            if (postedAnyChunk) {
+                await (0, state_1.updateState)((s) => (0, state_1.setPostedResponseId)(s, responseId));
+                postedResponseIds[responseId] = new Date().toISOString();
+            }
         }
+    }
+}
+async function isFileOlderThan(filePath, isoTimestamp) {
+    const timestamp = new Date(isoTimestamp).getTime();
+    if (!Number.isFinite(timestamp))
+        return false;
+    try {
+        const fileStat = await (0, promises_1.stat)(filePath);
+        return fileStat.mtime.getTime() <= timestamp;
+    }
+    catch {
+        return false;
     }
 }

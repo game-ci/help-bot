@@ -1,11 +1,11 @@
 import { request } from 'undici'
-import { readFile, readdir } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parseFrontMatter } from '../utils/frontmatter'
 import { RESPONSES_DIR } from '../utils/paths'
 import { getConfig, getValue, resolveGuilds, resolveWebhookUrl, GuildConfig, ChannelConfig } from '../config'
 import { recordStat } from '../metrics'
-import { updateState, setPostedDiscordResponse } from '../state'
+import { loadState, updateState, setPostedDiscordResponse, getPostedDiscordResponses, getPostedResponseIds, setPostedResponseId } from '../state'
 
 const DISCORD_API = 'https://discord.com/api/v10'
 const MAX_LENGTH = 2000
@@ -192,6 +192,9 @@ export async function postDiscordResponses(options: PostDiscordOptions): Promise
   } catch {
     return
   }
+  const state = await loadState()
+  const postedDiscordResponses = getPostedDiscordResponses(state)
+  const postedResponseIds = getPostedResponseIds(state)
 
   for (const file of files.filter((f) => f.endsWith('.md'))) {
     const fullPath = join(discordDir, file)
@@ -204,6 +207,28 @@ export async function postDiscordResponses(options: PostDiscordOptions): Promise
     const responseChannel = meta.channel_name ?? ''
     const replyToMessageId = meta.reply_to_message_id ?? ''
     const threadId = meta.thread_id ?? ''
+
+    if (!responseGuild || !responseChannel) {
+      console.warn(`Skipping Discord response ${responseId}: missing guild_name or channel_name metadata`)
+      continue
+    }
+
+    if (options.forceReplyId !== responseId) {
+      if (postedResponseIds[responseId]) {
+        console.log(`Skipping Discord response ${responseId}: response artifact already posted.`)
+        recordStat('discordResponsesSkipped', 1)
+        continue
+      }
+
+      const postedAt = replyToMessageId
+        ? postedDiscordResponses[`discord:${responseGuild}/${responseChannel}#${replyToMessageId}`]
+        : undefined
+      if (postedAt && await isFileOlderThan(fullPath, postedAt)) {
+        console.log(`Skipping Discord response ${responseId}: source message was already answered after this file was written.`)
+        recordStat('discordResponsesSkipped', 1)
+        continue
+      }
+    }
 
     // Determine reply mode
     const channelKey = `${responseGuild}/${responseChannel}`
@@ -276,8 +301,14 @@ export async function postDiscordResponses(options: PostDiscordOptions): Promise
       // Track the response
       if (responseGuild && responseChannel && replyToMessageId) {
         await updateState((s) => {
+          setPostedResponseId(s, responseId)
           setPostedDiscordResponse(s, responseGuild, responseChannel, replyToMessageId)
         })
+        postedResponseIds[responseId] = new Date().toISOString()
+        postedDiscordResponses[`discord:${responseGuild}/${responseChannel}#${replyToMessageId}`] = postedResponseIds[responseId]
+      } else {
+        await updateState((s) => setPostedResponseId(s, responseId))
+        postedResponseIds[responseId] = new Date().toISOString()
       }
 
       console.log(`Posted Discord response for ${responseId} via Bot API${replyToMessageId ? ` (reply to ${replyToMessageId})` : ''}`)
@@ -302,8 +333,14 @@ export async function postDiscordResponses(options: PostDiscordOptions): Promise
 
       if (responseGuild && responseChannel && replyToMessageId) {
         await updateState((s) => {
+          setPostedResponseId(s, responseId)
           setPostedDiscordResponse(s, responseGuild, responseChannel, replyToMessageId)
         })
+        postedResponseIds[responseId] = new Date().toISOString()
+        postedDiscordResponses[`discord:${responseGuild}/${responseChannel}#${replyToMessageId}`] = postedResponseIds[responseId]
+      } else if (result.success) {
+        await updateState((s) => setPostedResponseId(s, responseId))
+        postedResponseIds[responseId] = new Date().toISOString()
       }
     } else {
       // Fallback: webhook posting (legacy)
@@ -317,6 +354,7 @@ export async function postDiscordResponses(options: PostDiscordOptions): Promise
       }
 
       const chunks = splitContent(bodyWithFeedback)
+      let postedAnyChunk = false
       for (const [index, chunk] of chunks.entries()) {
         const payload: Record<string, unknown> = {
           content: chunk,
@@ -328,10 +366,27 @@ export async function postDiscordResponses(options: PostDiscordOptions): Promise
         const success = await postToWebhook(webhook, payload)
         if (!success) {
           console.warn(`Failed to post Discord chunk ${index + 1}/${chunks.length} for ${file}`)
+        } else {
+          postedAnyChunk = true
         }
         recordStat('discordResponsesPosted', 1)
         await new Promise((resolve) => setTimeout(resolve, 1500))
       }
+      if (postedAnyChunk) {
+        await updateState((s) => setPostedResponseId(s, responseId))
+        postedResponseIds[responseId] = new Date().toISOString()
+      }
     }
+  }
+}
+
+async function isFileOlderThan(filePath: string, isoTimestamp: string): Promise<boolean> {
+  const timestamp = new Date(isoTimestamp).getTime()
+  if (!Number.isFinite(timestamp)) return false
+  try {
+    const fileStat = await stat(filePath)
+    return fileStat.mtime.getTime() <= timestamp
+  } catch {
+    return false
   }
 }

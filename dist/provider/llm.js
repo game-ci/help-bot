@@ -13,6 +13,7 @@ const glob_1 = __importDefault(require("glob"));
 const config_1 = require("../config");
 const paths_1 = require("../utils/paths");
 const claude_1 = require("../utils/claude");
+const discord_1 = require("./discord");
 async function readClaudeInstructions() {
     try {
         return await (0, promises_1.readFile)((0, node_path_1.join)(paths_1.REPO_ROOT, 'CLAUDE.md'), 'utf-8');
@@ -51,7 +52,10 @@ async function runClaude(prompt, model, maxTurns) {
         stdio: ['pipe', 'inherit', 'inherit'],
     });
     proc.stdin.end(prompt);
-    await (0, node_events_1.once)(proc, 'exit');
+    const [code] = (await (0, node_events_1.once)(proc, 'exit'));
+    if (code !== 0) {
+        throw new Error(`Claude Code CLI exited with code ${code ?? 'unknown'}`);
+    }
 }
 async function runLMStudio(prompt, instructions, baseUrl, model, apiKey, systemPrompt) {
     console.log(`Provider: LM Studio (url: ${baseUrl}, model: ${model})`);
@@ -82,6 +86,9 @@ Note: You cannot read files directly. Describe which files you need and what res
         }),
     });
     const raw = await response.body.text();
+    if (response.statusCode >= 400) {
+        throw new Error(`LM Studio returned HTTP ${response.statusCode}: ${raw.substring(0, 200)}`);
+    }
     try {
         const data = JSON.parse(raw);
         console.log(data.choices?.[0]?.message?.content ?? raw);
@@ -97,7 +104,10 @@ async function runContinue(prompt, model) {
         stdio: ['pipe', 'inherit', 'inherit'],
     });
     proc.stdin.end(prompt);
-    await (0, node_events_1.once)(proc, 'exit');
+    const [code] = (await (0, node_events_1.once)(proc, 'exit'));
+    if (code !== 0) {
+        throw new Error(`Continue CLI exited with code ${code ?? 'unknown'}`);
+    }
 }
 async function runCodex(prompt, apiBase, apiKey, model, maxTokens, temperature) {
     console.log(`Provider: OpenAI Codex (model: ${model})`);
@@ -116,6 +126,9 @@ async function runCodex(prompt, apiBase, apiKey, model, maxTokens, temperature) 
         }),
     });
     const raw = await response.body.text();
+    if (response.statusCode >= 400) {
+        throw new Error(`OpenAI completions returned HTTP ${response.statusCode}: ${raw.substring(0, 200)}`);
+    }
     try {
         const data = JSON.parse(raw);
         console.log(data.choices?.[0]?.text ?? raw);
@@ -128,6 +141,10 @@ async function runProvider(prompt, options = {}) {
     const config = await (0, config_1.getConfig)();
     const provider = options.provider ?? (0, config_1.getValue)(config, ['llm', 'provider'], 'claude');
     const instructions = await readClaudeInstructions();
+    // Initialize Discord session if using Discord provider
+    if (provider === 'discord') {
+        await (0, discord_1.initializeDiscordSession)();
+    }
     switch (provider) {
         case 'claude': {
             const model = options.modelOverride
@@ -163,6 +180,15 @@ async function runProvider(prompt, options = {}) {
             }
             const finalPrompt = combinePrompt(instructions, prompt, options.systemPrompt);
             await runCodex(finalPrompt, apiBase, apiKey, model, maxTokens, temperature);
+            break;
+        }
+        case 'discord': {
+            const isAvailable = await (0, discord_1.isDiscordProviderAvailable)();
+            if (!isAvailable) {
+                throw new Error('Discord provider is not available. Ensure openclaw is installed and discord provider is enabled in config.');
+            }
+            const modelOverride = options.modelOverride ?? undefined;
+            await (0, discord_1.runDiscordProvider)(prompt, instructions, options.systemPrompt, modelOverride);
             break;
         }
         default:

@@ -20,6 +20,9 @@ async function postGitHubResponses(options) {
     catch {
         return;
     }
+    const state = await (0, state_1.loadState)();
+    const postedResponses = (0, state_1.getPostedResponses)(state);
+    const postedResponseIds = (0, state_1.getPostedResponseIds)(state);
     for (const file of files.filter((f) => f.endsWith('.md') && !f.includes('-investigation'))) {
         const fullPath = (0, node_path_1.join)(repoDir, file);
         const content = await (0, promises_1.readFile)(fullPath, 'utf-8');
@@ -32,6 +35,19 @@ async function postGitHubResponses(options) {
         }
         const responseId = meta.response_id ?? file.replace(/\.md$/, '');
         const isOfficial = String(meta.official_response)?.toLowerCase() === 'true';
+        if (options.forceReplyId !== responseId) {
+            if (postedResponseIds[responseId]) {
+                console.log(`Skipping GitHub response ${responseId}: response artifact already posted.`);
+                (0, metrics_1.recordStat)('githubResponsesSkipped', 1);
+                continue;
+            }
+            const postedAt = postedResponses[`${repo}#${number}`];
+            if (postedAt && await isFileOlderThan(fullPath, postedAt)) {
+                console.log(`Skipping GitHub response ${responseId}: ${repo}#${number} was already answered after this file was written.`);
+                (0, metrics_1.recordStat)('githubResponsesSkipped', 1);
+                continue;
+            }
+        }
         if (isOfficial && !options.allowOfficial && options.forceReplyId !== responseId) {
             console.log(`Skipping GitHub response ${responseId} because an official collaborator already replied.`);
             (0, metrics_1.recordStat)('githubResponsesSkipped', 1);
@@ -61,6 +77,7 @@ async function postGitHubResponses(options) {
             (0, metrics_1.recordStat)('githubResponsesPosted', 1);
             // Track the posted response with comment ID for feedback polling
             await (0, state_1.updateState)((s) => {
+                (0, state_1.setPostedResponseId)(s, responseId);
                 (0, state_1.setPostedResponse)(s, repo, number);
                 if (commentId) {
                     s.meta ??= {};
@@ -74,11 +91,25 @@ async function postGitHubResponses(options) {
                     s.meta.botComments = botComments;
                 }
             });
+            postedResponseIds[responseId] = new Date().toISOString();
+            postedResponses[`${repo}#${number}`] = postedResponseIds[responseId];
             console.log(`Posted GitHub response for ${repo}#${number}${commentId ? ` (comment ${commentId})` : ''}`);
         }
         catch (error) {
             console.warn(`Failed to post GitHub response for ${repo}#${number}: ${error.message ?? error}`);
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+}
+async function isFileOlderThan(filePath, isoTimestamp) {
+    const timestamp = new Date(isoTimestamp).getTime();
+    if (!Number.isFinite(timestamp))
+        return false;
+    try {
+        const fileStat = await (0, promises_1.stat)(filePath);
+        return fileStat.mtime.getTime() <= timestamp;
+    }
+    catch {
+        return false;
     }
 }

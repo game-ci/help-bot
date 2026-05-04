@@ -16,7 +16,7 @@ data/responses/feedback.jsonl
 data/state.json
 data/logs/
 data/vector-store/
-data/reference/repos/
+data/reference/
 data/security/
 
 # Build output

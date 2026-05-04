@@ -64,7 +64,10 @@ async function runClaude(prompt: string, model: string, maxTurns?: number): Prom
     stdio: ['pipe', 'inherit', 'inherit'],
   })
   proc.stdin.end(prompt)
-  await once(proc, 'exit')
+  const [code] = (await once(proc, 'exit')) as [number | null]
+  if (code !== 0) {
+    throw new Error(`Claude Code CLI exited with code ${code ?? 'unknown'}`)
+  }
 }
 
 async function runLMStudio(
@@ -106,6 +109,9 @@ Note: You cannot read files directly. Describe which files you need and what res
   })
 
   const raw = await response.body.text()
+  if (response.statusCode >= 400) {
+    throw new Error(`LM Studio returned HTTP ${response.statusCode}: ${raw.substring(0, 200)}`)
+  }
   try {
     const data = JSON.parse(raw)
     console.log(data.choices?.[0]?.message?.content ?? raw)
@@ -121,7 +127,10 @@ async function runContinue(prompt: string, model: string): Promise<void> {
     stdio: ['pipe', 'inherit', 'inherit'],
   })
   proc.stdin.end(prompt)
-  await once(proc, 'exit')
+  const [code] = (await once(proc, 'exit')) as [number | null]
+  if (code !== 0) {
+    throw new Error(`Continue CLI exited with code ${code ?? 'unknown'}`)
+  }
 }
 
 async function runCodex(
@@ -149,6 +158,9 @@ async function runCodex(
   })
 
   const raw = await response.body.text()
+  if (response.statusCode >= 400) {
+    throw new Error(`OpenAI completions returned HTTP ${response.statusCode}: ${raw.substring(0, 200)}`)
+  }
   try {
     const data = JSON.parse(raw)
     console.log(data.choices?.[0]?.text ?? raw)
