@@ -25,12 +25,19 @@ jobs:
 
       - name: Read Node version from mise.toml
         id: node
-        shell: bash
-        run: echo "version=$(grep -E '^node\\s*=' mise.toml | sed -E 's/.*"([^"]+)".*/\\1/')" >> "$GITHUB_OUTPUT"
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $mise = Get-Content mise.toml -Raw
+          if ($mise -notmatch 'node\s*=\s*"([^"]+)"') {
+            throw 'Could not read node version from mise.toml'
+          }
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$($Matches[1])"
 
       - name: Install package manager (from package.json)
-        shell: bash
+        shell: powershell
         run: |
+          $ErrorActionPreference = 'Stop'
           corepack enable
           corepack install
 
@@ -39,11 +46,15 @@ jobs:
           node-version: ${{ steps.node.outputs.version }}
 
       - name: Install dependencies
-        shell: bash
+        shell: powershell
         env:
           YARN_ENABLE_HARDENED_MODE: "false"
         run: |
-          case "$(yarn --version)" in 1.*) echo 'expected up-to-date yarn version'; exit 1 ;; esac
+          $ErrorActionPreference = 'Stop'
+          $yarnVersion = yarn --version
+          if ($yarnVersion -like '1.*') {
+            throw "expected up-to-date yarn version, got $yarnVersion"
+          }
           yarn install --immutable
 
       - name: Build
