@@ -23,7 +23,13 @@ data/security/
 dist/
 
 # Yarn
-.yarn/
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
 .pnp.*
 
 # Self-hosted runner

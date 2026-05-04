@@ -9,38 +9,38 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Dry run (draft responses but do not post them)'
+        description: "Dry run (draft responses but do not post them)"
         required: false
-        default: 'false'
+        default: "false"
         type: choice
         options:
-          - 'false'
-          - 'true'
+          - "false"
+          - "true"
       sync_hours:
-        description: 'Hours of Discord history to sync'
+        description: "Hours of Discord history to sync"
         required: false
-        default: '6'
+        default: "6"
       sync_days:
-        description: 'Days of GitHub history to sync'
+        description: "Days of GitHub history to sync"
         required: false
-        default: '7'
+        default: "7"
       skip_sync:
-        description: 'Skip data syncing (use cached data)'
+        description: "Skip data syncing (use cached data)"
         required: false
-        default: 'false'
+        default: "false"
         type: choice
         options:
-          - 'false'
-          - 'true'
+          - "false"
+          - "true"
       llm_provider:
-        description: 'LLM provider to use'
+        description: "LLM provider to use"
         required: false
-        default: 'claude'
+        default: "claude"
         type: choice
         options:
-          - 'claude'
-          - 'lm_studio'
-          - 'continue'
+          - "claude"
+          - "lm_studio"
+          - "continue"
 
 jobs:
   help-cycle:

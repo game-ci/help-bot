@@ -13,37 +13,37 @@ on:
     # Allow manual triggering for testing
     inputs:
       dry_run:
-        description: 'Dry run (draft responses but do not post them)'
+        description: "Dry run (draft responses but do not post them)"
         required: false
-        default: 'false'
+        default: "false"
         type: choice
         options:
-          - 'false'
-          - 'true'
+          - "false"
+          - "true"
       sync_hours:
-        description: 'Hours of Discord history to sync'
+        description: "Hours of Discord history to sync"
         required: false
-        default: '6'
+        default: "6"
       sync_days:
-        description: 'Days of GitHub history to sync'
+        description: "Days of GitHub history to sync"
         required: false
-        default: '7'
+        default: "7"
       skip_sync:
-        description: 'Skip data syncing (use cached data)'
+        description: "Skip data syncing (use cached data)"
         required: false
-        default: 'false'
+        default: "false"
         type: choice
         options:
-          - 'false'
-          - 'true'
+          - "false"
+          - "true"
       skip_github_post:
-        description: 'Skip posting GitHub comments (draft only)'
+        description: "Skip posting GitHub comments (draft only)"
         required: false
-        default: 'true'
+        default: "true"
         type: choice
         options:
-          - 'false'
-          - 'true'
+          - "false"
+          - "true"
 
 env:
   DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
@@ -74,7 +74,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Install Claude Code CLI
         run: |
