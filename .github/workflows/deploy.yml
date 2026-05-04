@@ -122,8 +122,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $serviceName = 'gameci-help-bot'
           $deployRoot = 'C:\game-ci\help-bot'
-          $startupScript = Join-Path $deployRoot 'startup.ps1'
-          $powershellPath = (Get-Command powershell).Source
+          $cliScript = Join-Path $deployRoot 'dist\cli.js'
+          $nodePath = (Get-Command node).Source
           $logFile = Join-Path $deployRoot 'logs\service.log'
 
           function Get-NssmPath {
@@ -156,7 +156,7 @@ jobs:
           $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
           if (-not $service) {
             Write-Host "Installing missing NSSM service"
-            & $nssm install $serviceName $powershellPath "-ExecutionPolicy" "Bypass" "-File" $startupScript
+            & $nssm install $serviceName $nodePath $cliScript live --dispatch-mode triage
           } else {
             Write-Host "Reconfiguring existing NSSM service"
             try {
@@ -167,8 +167,8 @@ jobs:
             }
           }
 
-          & $nssm set $serviceName Application $powershellPath
-          & $nssm set $serviceName AppParameters "-ExecutionPolicy Bypass -File `"$startupScript`""
+          & $nssm set $serviceName Application $nodePath
+          & $nssm set $serviceName AppParameters "`"$cliScript`" live --dispatch-mode triage"
           & $nssm set $serviceName AppDirectory $deployRoot
           & $nssm set $serviceName AppStdout $logFile
           & $nssm set $serviceName AppStderr $logFile
@@ -184,7 +184,14 @@ jobs:
             Restart-Service -Name 'gameci-help-bot' -Force
           } catch {
             Write-Host "Service restart failed, trying service start: $_"
-            Start-Service -Name 'gameci-help-bot'
+            try {
+              Start-Service -Name 'gameci-help-bot'
+            } catch {
+              Write-Host "Service start failed: $_"
+              Get-Content "C:\game-ci\help-bot\logs\service.log" -Tail 50 -ErrorAction SilentlyContinue
+              Get-Content "C:\game-ci\help-bot\logs\startup.log" -Tail 50 -ErrorAction SilentlyContinue
+              throw
+            }
           }
 
       - name: Verify service is running
@@ -227,11 +234,11 @@ jobs:
           $app = & $nssm get gameci-help-bot Application
           $args = & $nssm get gameci-help-bot AppParameters
           $dir = & $nssm get gameci-help-bot AppDirectory
-          if ($app -notmatch 'powershell(\.exe)?$') {
-            Write-Error "Service Application is not PowerShell: $app"
+          if ($app -notmatch 'node(\.exe)?$') {
+            Write-Error "Service Application is not Node: $app"
           }
-          if ($args -notmatch 'startup\.ps1') {
-            Write-Error "Service AppParameters do not point at startup.ps1: $args"
+          if ($args -notmatch 'dist\\cli\.js') {
+            Write-Error "Service AppParameters do not point at dist\cli.js: $args"
           }
           if ($dir.Trim() -ne 'C:\game-ci\help-bot') {
             Write-Error "Service AppDirectory is unexpected: $dir"
