@@ -60,6 +60,26 @@ jobs:
       - name: Build
         run: yarn build
 
+      - name: Stop help-bot before updating
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $serviceName = 'gameci-help-bot'
+          $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+          if (-not $service) {
+            Write-Host "Service $serviceName is not installed yet"
+            return
+          }
+          if ($service.Status -eq 'Stopped') {
+            Write-Host "Service $serviceName is already stopped"
+            return
+          }
+
+          Write-Host "Stopping $serviceName before updating live files"
+          nssm stop $serviceName
+          $service.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+          Write-Host "Service $serviceName stopped"
+
       - name: Sync live tree
         shell: powershell
         run: |
