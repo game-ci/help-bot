@@ -76,7 +76,7 @@ jobs:
           }
 
           Write-Host "Stopping $serviceName before updating live files"
-          nssm stop $serviceName
+          Stop-Service -Name $serviceName -Force
           $service.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
           Write-Host "Service $serviceName stopped"
 
@@ -126,38 +126,64 @@ jobs:
           $powershellPath = (Get-Command powershell).Source
           $logFile = Join-Path $deployRoot 'logs\service.log'
 
+          function Get-NssmPath {
+            $cmd = Get-Command nssm -ErrorAction SilentlyContinue
+            if ($cmd) { return $cmd.Source }
+
+            $serviceConfig = Get-CimInstance Win32_Service -Filter "Name='$serviceName'" -ErrorAction SilentlyContinue
+            if ($serviceConfig -and $serviceConfig.PathName) {
+              if ($serviceConfig.PathName -match '^"([^"]*nssm\.exe)"') { return $Matches[1] }
+              if ($serviceConfig.PathName -match '^([^ ]*nssm\.exe)') { return $Matches[1] }
+            }
+
+            $candidates = @('C:\nssm\nssm.exe', 'C:\tools\nssm\nssm.exe')
+            if ($env:ProgramFiles) {
+              $candidates += Join-Path $env:ProgramFiles 'nssm\nssm.exe'
+            }
+            if (${env:ProgramFiles(x86)}) {
+              $candidates += Join-Path ${env:ProgramFiles(x86)} 'nssm\nssm.exe'
+            }
+            foreach ($candidate in $candidates) {
+              if ($candidate -and (Test-Path $candidate)) { return $candidate }
+            }
+
+            throw 'nssm.exe was not found on PATH, in the installed service path, or in common install locations'
+          }
+
+          $nssm = Get-NssmPath
           New-Item -ItemType Directory -Force -Path (Join-Path $deployRoot 'logs') | Out-Null
 
           $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
           if (-not $service) {
             Write-Host "Installing missing NSSM service"
-            nssm install $serviceName $powershellPath "-ExecutionPolicy" "Bypass" "-File" $startupScript
+            & $nssm install $serviceName $powershellPath "-ExecutionPolicy" "Bypass" "-File" $startupScript
           } else {
             Write-Host "Reconfiguring existing NSSM service"
             try {
-              nssm stop $serviceName
+              Stop-Service -Name $serviceName -Force
+              $service.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
             } catch {
               Write-Host "Service stop before reconfigure returned: $_"
             }
           }
 
-          nssm set $serviceName Application $powershellPath
-          nssm set $serviceName AppParameters "-ExecutionPolicy Bypass -File `"$startupScript`""
-          nssm set $serviceName AppDirectory $deployRoot
-          nssm set $serviceName AppStdout $logFile
-          nssm set $serviceName AppStderr $logFile
-          nssm set $serviceName AppStdoutCreationDisposition 1
-          nssm set $serviceName AppStderrCreationDisposition 1
-          nssm set $serviceName Start SERVICE_AUTO_START
+          & $nssm set $serviceName Application $powershellPath
+          & $nssm set $serviceName AppParameters "-ExecutionPolicy Bypass -File `"$startupScript`""
+          & $nssm set $serviceName AppDirectory $deployRoot
+          & $nssm set $serviceName AppStdout $logFile
+          & $nssm set $serviceName AppStderr $logFile
+          & $nssm set $serviceName AppStdoutCreationDisposition 1
+          & $nssm set $serviceName AppStderrCreationDisposition 1
+          & $nssm set $serviceName Start SERVICE_AUTO_START
 
       - name: Restart help-bot
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           try {
-            nssm restart gameci-help-bot
+            Restart-Service -Name 'gameci-help-bot' -Force
           } catch {
-            Write-Host "NSSM restart failed, trying service start: $_"
+            Write-Host "Service restart failed, trying service start: $_"
             Start-Service -Name 'gameci-help-bot'
           }
 
@@ -172,9 +198,35 @@ jobs:
             Get-Content "C:\game-ci\help-bot\logs\service.log" -Tail 30
             exit 1
           }
-          $app = nssm get gameci-help-bot Application
-          $args = nssm get gameci-help-bot AppParameters
-          $dir = nssm get gameci-help-bot AppDirectory
+
+          function Get-NssmPath {
+            $cmd = Get-Command nssm -ErrorAction SilentlyContinue
+            if ($cmd) { return $cmd.Source }
+
+            $serviceConfig = Get-CimInstance Win32_Service -Filter "Name='gameci-help-bot'" -ErrorAction SilentlyContinue
+            if ($serviceConfig -and $serviceConfig.PathName) {
+              if ($serviceConfig.PathName -match '^"([^"]*nssm\.exe)"') { return $Matches[1] }
+              if ($serviceConfig.PathName -match '^([^ ]*nssm\.exe)') { return $Matches[1] }
+            }
+
+            $candidates = @('C:\nssm\nssm.exe', 'C:\tools\nssm\nssm.exe')
+            if ($env:ProgramFiles) {
+              $candidates += Join-Path $env:ProgramFiles 'nssm\nssm.exe'
+            }
+            if (${env:ProgramFiles(x86)}) {
+              $candidates += Join-Path ${env:ProgramFiles(x86)} 'nssm\nssm.exe'
+            }
+            foreach ($candidate in $candidates) {
+              if ($candidate -and (Test-Path $candidate)) { return $candidate }
+            }
+
+            throw 'nssm.exe was not found on PATH, in the installed service path, or in common install locations'
+          }
+
+          $nssm = Get-NssmPath
+          $app = & $nssm get gameci-help-bot Application
+          $args = & $nssm get gameci-help-bot AppParameters
+          $dir = & $nssm get gameci-help-bot AppDirectory
           if ($app -notmatch 'powershell(\.exe)?$') {
             Write-Error "Service Application is not PowerShell: $app"
           }
