@@ -5,10 +5,6 @@ name: Help Cycle
 # Claude Code to draft responses, and posts them back.
 
 on:
-  schedule:
-    # Run every 30 minutes
-    #- cron: '*/30 * * * *'
-
   workflow_dispatch:
     # Allow manual triggering for testing
     inputs:
