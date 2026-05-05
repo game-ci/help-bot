@@ -3,7 +3,11 @@ import { once } from 'node:events'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Client, TextChannel } from 'discord.js'
-import { buildInvestigationPrompt, buildSingleMessagePrompt, type InvestigationSource } from '../core/live-utils'
+import {
+  buildInvestigationPrompt,
+  buildSingleMessagePrompt,
+  type InvestigationSource,
+} from '../core/live-utils'
 import { getSystemPrompt, getValue, type GuildConfig, type ChannelConfig } from '../config'
 import { ensureDir } from '../utils/fs'
 import { REPO_ROOT, RESPONSES_DIR } from '../utils/paths'
@@ -146,18 +150,28 @@ export async function runTriageInvestigation(
   const maxTurns = Number(getValue(options.config, ['llm', 'claude', 'max_turns'], 0)) || 25
   const args = ['-p', '--model', options.model, '--max-turns', String(maxTurns)]
   args.push(
-    '--allowedTools', 'Read',
-    '--allowedTools', 'Glob',
-    '--allowedTools', 'Grep',
-    '--allowedTools', 'Bash',
-    '--allowedTools', 'Write',
+    '--allowedTools',
+    'Read',
+    '--allowedTools',
+    'Glob',
+    '--allowedTools',
+    'Grep',
+    '--allowedTools',
+    'Bash',
+    '--allowedTools',
+    'Write',
   )
   args.push(
-    '--disallowedTools', 'Edit',
-    '--disallowedTools', 'WebFetch',
-    '--disallowedTools', 'WebSearch',
-    '--disallowedTools', 'NotebookEdit',
-    '--disallowedTools', 'Task',
+    '--disallowedTools',
+    'Edit',
+    '--disallowedTools',
+    'WebFetch',
+    '--disallowedTools',
+    'WebSearch',
+    '--disallowedTools',
+    'NotebookEdit',
+    '--disallowedTools',
+    'Task',
   )
 
   const env = { ...process.env }
@@ -190,12 +204,15 @@ export async function runTriageInvestigation(
   // Detect common failure modes from stderr
   const combined = stderrOutput.toLowerCase()
   if (combined.includes('not logged in') || combined.includes('please run /login')) {
-    const msg = 'Claude CLI is not logged in. The service user needs to authenticate: run `claude /login` as the service account user.'
+    const msg =
+      'Claude CLI is not logged in. The service user needs to authenticate: run `claude /login` as the service account user.'
     console.warn(`  ${msg}`)
     return { error: msg }
   }
   if (combined.includes('invalid api key') || combined.includes('authentication')) {
-    return { error: 'Claude CLI authentication failed. Check ANTHROPIC_API_KEY or run `claude /login`.' }
+    return {
+      error: 'Claude CLI authentication failed. Check ANTHROPIC_API_KEY or run `claude /login`.',
+    }
   }
   if (exitCode && exitCode !== 0 && !stderrOutput.trim()) {
     return { error: `Claude CLI exited with code ${exitCode}` }

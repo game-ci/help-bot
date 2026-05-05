@@ -72,12 +72,20 @@ function formatComments(title: string, comments: any[]): string {
     if (reactionLines) {
       section += `> reactions: ${reactionLines}\n\n`
     }
-      section += `${body}\n\n---\n`
+    section += `${body}\n\n---\n`
   }
   return section
 }
 
-function buildMetadata(issue: any, repo: string, repoShort: string, hasOfficial: boolean, reactions: Record<string, number>, commentCount: number, reviewCommentCount: number): string {
+function buildMetadata(
+  issue: any,
+  repo: string,
+  repoShort: string,
+  hasOfficial: boolean,
+  reactions: Record<string, number>,
+  commentCount: number,
+  reviewCommentCount: number,
+): string {
   const labelNames = (issue.labels ?? []).map((label: any) => label.name?.trim()).filter(Boolean)
   const metadata = `---
 title: "${escapeFrontMatter(issue.title ?? '')}"
@@ -114,7 +122,9 @@ export async function syncGitHub(options: GitHubSyncOptions = {}): Promise<void>
   const repoList = options.repos?.length
     ? options.repos
     : (getValue(config, ['github', 'repos'], DEFAULT_REPOS) as string[])
-  const collaboratorList = ((getValue(config, ['github', 'collaborators'], []) as string[]).map((entry) => entry.toLowerCase()))
+  const collaboratorList = (getValue(config, ['github', 'collaborators'], []) as string[]).map(
+    (entry) => entry.toLowerCase(),
+  )
   const Octokit = await getOctokitConstructor()
   const octokit = new Octokit({ auth: token, userAgent: 'GameCI Help Bot' })
   const state = await loadState()
@@ -135,43 +145,34 @@ export async function syncGitHub(options: GitHubSyncOptions = {}): Promise<void>
     // Fall back to sync_days config when no cursor exists (first run / reset)
     const syncDays = Number(getValue(config, ['github', 'sync_days'], 7))
     const sinceFallback = new Date(Date.now() - syncDays * 24 * 60 * 60 * 1000).toISOString()
-    const issues = await octokit.paginate(
-      octokit.rest.issues.listForRepo,
-      {
-        owner,
-        repo: name,
-        state: 'all',
-        since: repoState.issueCursor ?? sinceFallback,
-        per_page: 100,
-        headers: ISSUE_HEADERS,
-      },
-    )
+    const issues = await octokit.paginate(octokit.rest.issues.listForRepo, {
+      owner,
+      repo: name,
+      state: 'all',
+      since: repoState.issueCursor ?? sinceFallback,
+      per_page: 100,
+      headers: ISSUE_HEADERS,
+    })
 
     recordStat('githubIssuesSynced', issues.length)
 
     for (const issue of issues) {
       const description = issue.body ?? ''
-      const comments = await octokit.paginate(
-        octokit.rest.issues.listComments,
-        {
-          owner,
-          repo: name,
-          issue_number: issue.number,
-          since: repoState.commentCursor,
-          per_page: 100,
-        },
-      )
+      const comments = await octokit.paginate(octokit.rest.issues.listComments, {
+        owner,
+        repo: name,
+        issue_number: issue.number,
+        since: repoState.commentCursor,
+        per_page: 100,
+      })
       const reviewComments = issue.pull_request
-        ? await octokit.paginate(
-            octokit.rest.pulls.listReviewComments,
-            {
-              owner,
-              repo: name,
-              pull_number: issue.number,
-              since: repoState.commentCursor,
-              per_page: 100,
-            },
-          )
+        ? await octokit.paginate(octokit.rest.pulls.listReviewComments, {
+            owner,
+            repo: name,
+            pull_number: issue.number,
+            since: repoState.commentCursor,
+            per_page: 100,
+          })
         : []
 
       const allAuthors = new Set<string>()
@@ -206,7 +207,9 @@ export async function syncGitHub(options: GitHubSyncOptions = {}): Promise<void>
         description.trim(),
         formatComments('Issue comments', comments),
         formatComments('Review comments', reviewComments),
-      ].map((section) => section.trim()).filter(Boolean)
+      ]
+        .map((section) => section.trim())
+        .filter(Boolean)
 
       const markdownContent = bodySections.join('\n\n')
       const markdownFile = join(repoDir, `${issue.number}.md`)

@@ -6,11 +6,11 @@ import { getConfig, getValue } from '../config'
 
 export interface DiscordProviderConfig {
   enabled: boolean
-  agent_path?: string  // Path to the Discord agent (default: uses openclaw if available)
-  session_label?: string  // Session label to target
-  model?: string  // Model to use for the Discord agent
-  timeout_seconds?: number  // Timeout for agent responses
-  workspace_path?: string  // Custom workspace path for the agent
+  agent_path?: string // Path to the Discord agent (default: uses openclaw if available)
+  session_label?: string // Session label to target
+  model?: string // Model to use for the Discord agent
+  timeout_seconds?: number // Timeout for agent responses
+  workspace_path?: string // Custom workspace path for the agent
 }
 
 /**
@@ -21,10 +21,14 @@ export async function getDiscordProviderConfig(): Promise<DiscordProviderConfig>
   return {
     enabled: Boolean(getValue(config, ['llm', 'discord', 'enabled'], false)),
     agent_path: getValue(config, ['llm', 'discord', 'agent_path'], undefined) as string | undefined,
-    session_label: getValue(config, ['llm', 'discord', 'session_label'], 'help-bot-assistant') as string | undefined,
+    session_label: getValue(config, ['llm', 'discord', 'session_label'], 'help-bot-assistant') as
+      | string
+      | undefined,
     model: getValue(config, ['llm', 'discord', 'model'], undefined) as string | undefined,
     timeout_seconds: Number(getValue(config, ['llm', 'discord', 'timeout_seconds'], 300)),
-    workspace_path: getValue(config, ['llm', 'discord', 'workspace_path'], undefined) as string | undefined,
+    workspace_path: getValue(config, ['llm', 'discord', 'workspace_path'], undefined) as
+      | string
+      | undefined,
   }
 }
 
@@ -57,8 +61,10 @@ export async function runDiscordProvider(
   modelOverride?: string,
 ): Promise<void> {
   const config = await getDiscordProviderConfig()
-  
-  console.log(`Provider: Discord Agent (session: ${config.session_label}, model: ${modelOverride || config.model || 'default'})`)
+
+  console.log(
+    `Provider: Discord Agent (session: ${config.session_label}, model: ${modelOverride || config.model || 'default'})`,
+  )
 
   // Prepare the full prompt with context
   const fullPrompt = [
@@ -74,14 +80,12 @@ export async function runDiscordProvider(
     '- discord/* - Discord messages and threads',
     '',
     'Note: Use the Read tool to examine files as needed. Focus on providing helpful responses based on the GameCI documentation and codebase.',
-  ].filter(Boolean).join('\n')
+  ]
+    .filter(Boolean)
+    .join('\n')
 
   // Use openclaw sessions to send the message
-  const args = [
-    'sessions', 'send',
-    '--label', config.session_label!,
-    '--message', fullPrompt,
-  ]
+  const args = ['sessions', 'send', '--label', config.session_label!, '--message', fullPrompt]
 
   if (config.timeout_seconds && config.timeout_seconds > 0) {
     args.push('--timeout-seconds', String(config.timeout_seconds))
@@ -94,7 +98,7 @@ export async function runDiscordProvider(
       ...process.env,
       // Pass model override if specified
       ...(modelOverride && { OPENCLAW_MODEL_OVERRIDE: modelOverride }),
-    }
+    },
   })
 
   const [code] = await once(proc, 'exit')
@@ -136,13 +140,18 @@ export async function initializeDiscordSession(): Promise<void> {
 
   // Create new session
   console.log(`Creating Discord agent session '${config.session_label}'...`)
-  
+
   const createArgs = [
-    'sessions', 'spawn',
-    '--runtime', 'subagent',
-    '--mode', 'session',
-    '--label', config.session_label!,
-    '--task', 'You are a GameCI help bot assistant. Your role is to answer questions about GameCI, Unity CI/CD, and related topics using the documentation and codebase available in the help-bot/data directory.',
+    'sessions',
+    'spawn',
+    '--runtime',
+    'subagent',
+    '--mode',
+    'session',
+    '--label',
+    config.session_label!,
+    '--task',
+    'You are a GameCI help bot assistant. Your role is to answer questions about GameCI, Unity CI/CD, and related topics using the documentation and codebase available in the help-bot/data directory.',
   ]
 
   if (config.model) {

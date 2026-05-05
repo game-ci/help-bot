@@ -48,7 +48,7 @@ jobs:
       - name: Install dependencies
         shell: powershell
         env:
-          YARN_ENABLE_HARDENED_MODE: "false"
+          YARN_ENABLE_HARDENED_MODE: 'false'
         run: |
           $ErrorActionPreference = 'Stop'
           $yarnVersion = yarn --version

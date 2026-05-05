@@ -1,6 +1,12 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { loadState, updateState, getDetections, getPostedInvestigations, getPostedDiscordResponses } from '../state'
+import {
+  loadState,
+  updateState,
+  getDetections,
+  getPostedInvestigations,
+  getPostedDiscordResponses,
+} from '../state'
 import { recordStat } from '../metrics'
 import { EligibleIssue } from '../core/filter-issues'
 import { DispatchConfig, DetectionRecord, makeDetectionKey, makeDiscordDetectionKey } from './types'
@@ -29,7 +35,9 @@ export interface CreateDetectionsResult {
  * Create detection issues for eligible source issues that don't already
  * have a detection record in state or an existing investigation.
  */
-export async function createDetections(options: CreateDetectionsOptions): Promise<CreateDetectionsResult> {
+export async function createDetections(
+  options: CreateDetectionsOptions,
+): Promise<CreateDetectionsResult> {
   const state = await loadState()
   const detections = getDetections(state)
   const postedInvestigations = getPostedInvestigations(state)
@@ -92,11 +100,15 @@ export async function createDetections(options: CreateDetectionsOptions): Promis
     try {
       const labelArgs = labels.flatMap((l) => ['--label', l])
       const { stdout } = await execFileAsync('gh', [
-        'issue', 'create',
-        '--repo', options.targetRepo,
-        '--title', title,
+        'issue',
+        'create',
+        '--repo',
+        options.targetRepo,
+        '--title',
+        title,
         ...labelArgs,
-        '--body', body,
+        '--body',
+        body,
       ])
       const createdUrl = stdout.trim()
       const createdNumber = Number(createdUrl.split('/').pop() ?? '0')
@@ -150,7 +162,9 @@ export interface CreateDiscordDetectionsOptions {
  * Detection issues are created in the help-bot repo so maintainers
  * can review and approve via reactions.
  */
-export async function createDiscordDetections(options: CreateDiscordDetectionsOptions): Promise<CreateDetectionsResult> {
+export async function createDiscordDetections(
+  options: CreateDiscordDetectionsOptions,
+): Promise<CreateDetectionsResult> {
   const state = await loadState()
   const detections = getDetections(state)
   const postedResponses = getPostedDiscordResponses(state)
@@ -220,11 +234,15 @@ export async function createDiscordDetections(options: CreateDiscordDetectionsOp
     try {
       const labelArgs = labels.flatMap((l) => ['--label', l])
       const { stdout } = await execFileAsync('gh', [
-        'issue', 'create',
-        '--repo', options.targetRepo,
-        '--title', title,
+        'issue',
+        'create',
+        '--repo',
+        options.targetRepo,
+        '--title',
+        title,
         ...labelArgs,
-        '--body', body,
+        '--body',
+        body,
       ])
       const createdUrl = stdout.trim()
       const createdNumber = Number(createdUrl.split('/').pop() ?? '0')

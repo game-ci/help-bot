@@ -184,7 +184,7 @@ export function getSystemPrompt(
  * These are appended to the LLM prompt when processing issues with matching labels.
  */
 export function getLabelPrompts(config: Record<string, unknown>): LabelPromptConfig[] {
-  return (getValue(config, ['github', 'label_prompts'], []) as LabelPromptConfig[])
+  return getValue(config, ['github', 'label_prompts'], []) as LabelPromptConfig[]
 }
 
 /**
@@ -195,9 +195,9 @@ export function buildLabelSystemPrompt(config: Record<string, unknown>, labels: 
   const labelPrompts = getLabelPrompts(config)
   if (labelPrompts.length === 0 || labels.length === 0) return ''
 
-  const lowerLabels = labels.map(l => l.toLowerCase())
-  const matched = labelPrompts.filter(lp => lowerLabels.includes(lp.label.toLowerCase()))
+  const lowerLabels = labels.map((l) => l.toLowerCase())
+  const matched = labelPrompts.filter((lp) => lowerLabels.includes(lp.label.toLowerCase()))
   if (matched.length === 0) return ''
 
-  return matched.map(lp => lp.system_prompt.trim()).join('\n\n')
+  return matched.map((lp) => lp.system_prompt.trim()).join('\n\n')
 }

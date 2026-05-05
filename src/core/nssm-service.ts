@@ -42,9 +42,13 @@ export async function manageService(action: string, opts: ServiceOptions = {}): 
   const nodePath = process.execPath
   const scriptPath = join(REPO_ROOT, 'dist', 'cli.js')
   const baseArgs = mode === 'incremental' ? ['cycle'] : mode === 'live' ? ['live'] : ['continuous']
-  const scriptArgs = opts.dispatchMode ? [...baseArgs, '--dispatch-mode', opts.dispatchMode] : baseArgs
+  const scriptArgs = opts.dispatchMode
+    ? [...baseArgs, '--dispatch-mode', opts.dispatchMode]
+    : baseArgs
   const envEntries = opts.envVars
-    ? opts.envVars.split(/\r?\n/).filter((l) => l.trim() && !l.trim().startsWith('#') && l.includes('='))
+    ? opts.envVars
+        .split(/\r?\n/)
+        .filter((l) => l.trim() && !l.trim().startsWith('#') && l.includes('='))
     : opts.envFile
       ? await parseEnvFile(opts.envFile)
       : []
@@ -52,7 +56,15 @@ export async function manageService(action: string, opts: ServiceOptions = {}): 
   switch (action) {
     case 'install': {
       const startupScript = join(REPO_ROOT, 'startup.ps1')
-      await runCommand('nssm', ['install', serviceName, 'powershell.exe', '-ExecutionPolicy', 'Bypass', '-File', startupScript])
+      await runCommand('nssm', [
+        'install',
+        serviceName,
+        'powershell.exe',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        startupScript,
+      ])
       await runCommand('nssm', ['set', serviceName, 'AppDirectory', REPO_ROOT])
       await runCommand('nssm', ['set', serviceName, 'AppStdout', logFile])
       await runCommand('nssm', ['set', serviceName, 'AppStderr', logFile])

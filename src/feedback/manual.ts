@@ -12,7 +12,11 @@ export interface FeedbackEntry {
 
 const FEEDBACK_FILE = join(RESPONSES_DIR, 'feedback.jsonl')
 
-export async function markFeedback(responseId: string, verdict: 'good' | 'bad', note?: string): Promise<void> {
+export async function markFeedback(
+  responseId: string,
+  verdict: 'good' | 'bad',
+  note?: string,
+): Promise<void> {
   const entry: FeedbackEntry = {
     responseId,
     verdict,

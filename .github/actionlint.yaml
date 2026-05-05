@@ -1,0 +1,7 @@
+self-hosted-runner:
+  # Custom labels used by `.github/workflows/deploy.yml` and
+  # `help-cycle-self-hosted.yml` to target the self-hosted help-bot
+  # runner.
+  labels:
+    - help-bot
+    - deploy

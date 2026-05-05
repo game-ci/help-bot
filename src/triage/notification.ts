@@ -55,16 +55,16 @@ function truncate(s: string, max: number): string {
  * Build a triage embed for the admin channel.
  */
 export function buildTriageEmbed(options: TriageEmbedOptions): EmbedBuilder {
-  const embed = new EmbedBuilder()
-    .setColor(STATUS_COLORS[options.status])
-    .setTimestamp()
+  const embed = new EmbedBuilder().setColor(STATUS_COLORS[options.status]).setTimestamp()
 
   const statusLabel = options.status.toUpperCase()
 
   if (options.sourceType === 'd') {
     embed.setTitle(`[${statusLabel}] #${options.channelName}: ${truncate(options.title, 200)}`)
     if (options.guildId && options.channelId && options.messageId) {
-      embed.setURL(`https://discord.com/channels/${options.guildId}/${options.channelId}/${options.messageId}`)
+      embed.setURL(
+        `https://discord.com/channels/${options.guildId}/${options.channelId}/${options.messageId}`,
+      )
     }
   } else {
     const title = `[${statusLabel}] ${options.repo}#${options.issueNumber}: ${truncate(options.title, 150)}`

@@ -9,37 +9,37 @@ on:
     # Allow manual triggering for testing
     inputs:
       dry_run:
-        description: "Dry run (draft responses but do not post them)"
+        description: 'Dry run (draft responses but do not post them)'
         required: false
-        default: "false"
+        default: 'false'
         type: choice
         options:
-          - "false"
-          - "true"
+          - 'false'
+          - 'true'
       sync_hours:
-        description: "Hours of Discord history to sync"
+        description: 'Hours of Discord history to sync'
         required: false
-        default: "6"
+        default: '6'
       sync_days:
-        description: "Days of GitHub history to sync"
+        description: 'Days of GitHub history to sync'
         required: false
-        default: "7"
+        default: '7'
       skip_sync:
-        description: "Skip data syncing (use cached data)"
+        description: 'Skip data syncing (use cached data)'
         required: false
-        default: "false"
+        default: 'false'
         type: choice
         options:
-          - "false"
-          - "true"
+          - 'false'
+          - 'true'
       skip_github_post:
-        description: "Skip posting GitHub comments (draft only)"
+        description: 'Skip posting GitHub comments (draft only)'
         required: false
-        default: "true"
+        default: 'true'
         type: choice
         options:
-          - "false"
-          - "true"
+          - 'false'
+          - 'true'
 
 env:
   DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
@@ -70,7 +70,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.12'
 
       - name: Install Claude Code CLI
         run: |
@@ -163,28 +163,31 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "## Help Cycle Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
           DISCORD_COUNT=$(find data/responses/discord -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
           GITHUB_COUNT=$(find data/responses/github -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
 
-          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Discord responses | ${DISCORD_COUNT} |" >> $GITHUB_STEP_SUMMARY
-          echo "| GitHub responses | ${GITHUB_COUNT} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Dry run | ${{ github.event.inputs.dry_run || 'false' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Trigger | ${{ github.event_name }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Help Cycle Results"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| Discord responses | ${DISCORD_COUNT} |"
+            echo "| GitHub responses | ${GITHUB_COUNT} |"
+            echo "| Dry run | ${{ github.event.inputs.dry_run || 'false' }} |"
+            echo "| Trigger | ${{ github.event_name }} |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
 
           if [[ -d data/logs ]]; then
-            LATEST_LOG=$(ls -t data/logs/cycle-*.log 2>/dev/null | head -1)
+            LATEST_LOG=$(find data/logs -maxdepth 1 -name 'cycle-*.log' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
             if [[ -n "$LATEST_LOG" ]]; then
-              echo "<details><summary>Cycle Log (last 50 lines)</summary>" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              tail -50 "$LATEST_LOG" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              echo "</details>" >> $GITHUB_STEP_SUMMARY
+              {
+                echo "<details><summary>Cycle Log (last 50 lines)</summary>"
+                echo ""
+                echo '```'
+                tail -50 "$LATEST_LOG"
+                echo '```'
+                echo "</details>"
+              } >> "$GITHUB_STEP_SUMMARY"
             fi
           fi

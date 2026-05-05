@@ -1,15 +1,59 @@
-import { Client, GatewayIntentBits, Events, Message, ChannelType, ActivityType, Attachment, InteractionType, type TextChannel } from 'discord.js'
+import {
+  Client,
+  GatewayIntentBits,
+  Events,
+  Message,
+  ChannelType,
+  ActivityType,
+  Attachment,
+  InteractionType,
+  type TextChannel,
+} from 'discord.js'
 import { spawn, execSync } from 'node:child_process'
 import { once } from 'node:events'
 import { readFile, writeFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { getConfig, getValue, resolveGuilds, resolveGuildId, getSystemPrompt, GuildConfig, ChannelConfig, reloadConfig, saveConfig } from '../config'
-import { updateState, setPostedDiscordResponse, loadState, getPostedDiscordResponses, getLastOnlineAt, getFirstOnlineAt, setLastOnlineAt, getTriageRecord, setTriageRecord } from '../state'
+import {
+  getConfig,
+  getValue,
+  resolveGuilds,
+  resolveGuildId,
+  getSystemPrompt,
+  GuildConfig,
+  ChannelConfig,
+  reloadConfig,
+  saveConfig,
+} from '../config'
+import {
+  updateState,
+  setPostedDiscordResponse,
+  loadState,
+  getPostedDiscordResponses,
+  getLastOnlineAt,
+  getFirstOnlineAt,
+  setLastOnlineAt,
+  getTriageRecord,
+  setTriageRecord,
+} from '../state'
 import { ensureDir } from '../utils/fs'
 import { REPO_ROOT, RESPONSES_DIR, DATA_DIR } from '../utils/paths'
 import { parseFrontMatter } from '../utils/frontmatter'
-import { isMonitoredChannel, formatMessagePreview, buildSingleMessagePrompt, buildInvestigationPrompt, formatTime, writeContextFile, ReplyChainMessage } from './live-utils'
-import { handleTriageInteraction, postTriageNotification, discordCompactId, githubCompactId, type TriageHandlerContext } from '../triage'
+import {
+  isMonitoredChannel,
+  formatMessagePreview,
+  buildSingleMessagePrompt,
+  buildInvestigationPrompt,
+  formatTime,
+  writeContextFile,
+  ReplyChainMessage,
+} from './live-utils'
+import {
+  handleTriageInteraction,
+  postTriageNotification,
+  discordCompactId,
+  githubCompactId,
+  type TriageHandlerContext,
+} from '../triage'
 import { handleSocialRequest, handleSocialInteraction, type SocialHandlerContext } from '../social'
 import { syncGitHub } from '../sync/github'
 import { filterIssues, type EligibleIssue } from './filter-issues'
@@ -19,7 +63,8 @@ import { syncDataToGitHub } from '../sync/data-backup'
 
 const DISCORD_API = 'https://discord.com/api/v10'
 const MAX_DISCORD_LENGTH = 2000
-const FEEDBACK_PROMPT = '\n\n-# Was this helpful? React :thumbsup: or :thumbsdown: | React :repeat: to request a re-investigation'
+const FEEDBACK_PROMPT =
+  '\n\n-# Was this helpful? React :thumbsup: or :thumbsdown: | React :repeat: to request a re-investigation'
 
 // --- Status management ---
 let idleStatusText = 'help requests'
@@ -28,10 +73,12 @@ let activeInvestigations = 0
 function setIdleStatus(client: Client): void {
   client.user?.setPresence({
     status: 'online',
-    activities: [{
-      name: idleStatusText,
-      type: ActivityType.Watching,
-    }],
+    activities: [
+      {
+        name: idleStatusText,
+        type: ActivityType.Watching,
+      },
+    ],
   })
 }
 
@@ -40,11 +87,13 @@ function setInvestigatingStatus(client: Client, channelName: string, author: str
   const suffix = activeInvestigations > 1 ? ` (+${activeInvestigations - 1} more)` : ''
   client.user?.setPresence({
     status: 'dnd',
-    activities: [{
-      name: `@${author} in #${channelName}${suffix}`,
-      type: ActivityType.Custom,
-      state: `Investigating @${author} in #${channelName}${suffix}`,
-    }],
+    activities: [
+      {
+        name: `@${author} in #${channelName}${suffix}`,
+        type: ActivityType.Custom,
+        state: `Investigating @${author} in #${channelName}${suffix}`,
+      },
+    ],
   })
 }
 
@@ -97,7 +146,10 @@ async function postDeployChangelog(
     let commitList = ''
     if (lastSha) {
       try {
-        const log = execSync(`git log ${lastSha}..HEAD --oneline --no-decorate`, { cwd: REPO_ROOT, encoding: 'utf-8' }).trim()
+        const log = execSync(`git log ${lastSha}..HEAD --oneline --no-decorate`, {
+          cwd: REPO_ROOT,
+          encoding: 'utf-8',
+        }).trim()
         if (log) {
           const commits = log.split('\n').slice(0, 15)
           commitList = commits.map((c) => `- \`${c}\``).join('\n')
@@ -107,17 +159,20 @@ async function postDeployChangelog(
       }
     }
 
-    const lines = [
-      `**${botName} ${version}** deployed (\`${shortSha}\`)`,
-    ]
+    const lines = [`**${botName} ${version}** deployed (\`${shortSha}\`)`]
     if (commitList) {
       lines.push('', commitList)
     }
-    lines.push('', '**Commands:** `!status` `!channels` `!settings` `!channel` `!sync-data` `!help` | `/ask` | `@bot social <topic>`')
+    lines.push(
+      '',
+      '**Commands:** `!status` `!channels` `!settings` `!channel` `!sync-data` `!help` | `/ask` | `@bot social <topic>`',
+    )
 
     const msg = lines.join('\n')
     for (const [, ch] of triageChannels) {
-      await ch.send(msg).catch((e: any) => console.warn(`  Failed to post changelog: ${e.message ?? e}`))
+      await ch
+        .send(msg)
+        .catch((e: any) => console.warn(`  Failed to post changelog: ${e.message ?? e}`))
     }
     console.log(`  Deploy changelog posted (${version}, ${shortSha})`)
   } catch (err: any) {
@@ -130,7 +185,10 @@ async function commitAndPushConfig(description: string): Promise<string> {
   const execOpts = { cwd: REPO_ROOT, encoding: 'utf-8' as const }
   try {
     execSync('git add config.json', execOpts)
-    execSync(`git commit -m "config: ${description}\n\nCo-Authored-By: GameCI Help Bot <help-bot@game.ci>"`, execOpts)
+    execSync(
+      `git commit -m "config: ${description}\n\nCo-Authored-By: GameCI Help Bot <help-bot@game.ci>"`,
+      execOpts,
+    )
     execSync('git pull --rebase origin main', execOpts)
     execSync('git push origin main', execOpts)
     return 'Pushed to main. Deploy will trigger automatically.'
@@ -166,18 +224,26 @@ export async function runLive(options: LiveOptions): Promise<void> {
   initLogger({ logDir: join(REPO_ROOT, 'logs') })
   const config = await getConfig()
   const botConfig = getValue(config, ['bot'], {} as Record<string, unknown>)
-  const botName = (getValue(botConfig, ['name'], 'GameCI Help Bot') as string)
-  const botVersion = (getValue(botConfig, ['version'], '3.0.0') as string)
+  const botName = getValue(botConfig, ['name'], 'GameCI Help Bot') as string
+  const botVersion = getValue(botConfig, ['version'], '3.0.0') as string
   const discordConfig = getValue(config, ['discord'], {} as Record<string, unknown>)
   const guilds = resolveGuilds(discordConfig)
   const dispatchConfig = getValue(config, ['dispatch'], {} as Record<string, unknown>)
-  const dispatchMode = options.dispatchMode ?? (getValue(dispatchConfig, ['discord_mode'], 'auto') as string)
-  const llmModel = options.modelOverride
-    ?? (getValue(config, ['llm', 'claude', 'model'], 'claude-sonnet-4-20250514') as string)
+  const dispatchMode =
+    options.dispatchMode ?? (getValue(dispatchConfig, ['discord_mode'], 'auto') as string)
+  const llmModel =
+    options.modelOverride ??
+    (getValue(config, ['llm', 'claude', 'model'], 'claude-sonnet-4-20250514') as string)
   const ignoreBots = Boolean(getValue(discordConfig, ['ignore_bots'], true))
-  const ignorePrefixes = (getValue(discordConfig, ['ignore_prefixes'], ['!', '/', '$', '.']) as string[])
+  const ignorePrefixes = getValue(
+    discordConfig,
+    ['ignore_prefixes'],
+    ['!', '/', '$', '.'],
+  ) as string[]
   const githubTriage = Boolean(getValue(config, ['dispatch', 'github_triage'], false))
-  const githubPollMinutes = Number(getValue(config, ['dispatch', 'github_poll_interval_minutes'], 10))
+  const githubPollMinutes = Number(
+    getValue(config, ['dispatch', 'github_poll_interval_minutes'], 10),
+  )
   const githubRepos = getValue(config, ['github', 'repos'], [] as string[])
   const minMessageLength = Number(getValue(discordConfig, ['min_message_length'], 15))
 
@@ -255,7 +321,8 @@ export async function runLive(options: LiveOptions): Promise<void> {
     resolveGuildChannel,
     collaborators,
     triageUserIds,
-    setInvestigating: (channelName: string, author: string) => setInvestigatingStatus(client, channelName, author),
+    setInvestigating: (channelName: string, author: string) =>
+      setInvestigatingStatus(client, channelName, author),
     clearInvestigating: () => clearInvestigatingStatus(client),
   }
 
@@ -299,7 +366,9 @@ export async function runLive(options: LiveOptions): Promise<void> {
         const monitoredChannels = [...mapping.channelNameMap.entries()]
           .filter(([, ch]) => ch.monitor !== false)
           .map(([name]) => `#${name}`)
-        console.log(`  ✓ ${mapping.guildConfig.name} — monitoring: ${monitoredChannels.join(', ') || '(none)'}`)
+        console.log(
+          `  ✓ ${mapping.guildConfig.name} — monitoring: ${monitoredChannels.join(', ') || '(none)'}`,
+        )
       } else {
         console.log(`  ⚠ ${mapping.guildConfig.name} — bot not in this server (invite needed)`)
       }
@@ -314,10 +383,13 @@ export async function runLive(options: LiveOptions): Promise<void> {
         triageChannels.set(guildId, triageCh as TextChannel)
         const chName = 'name' in triageCh ? triageCh.name : triageChannelId
         const targetGuild = 'guild' in triageCh ? (triageCh as any).guild?.name : 'unknown'
-        const crossGuild = targetGuild !== mapping.guildConfig.name ? ` (cross-guild → ${targetGuild})` : ''
+        const crossGuild =
+          targetGuild !== mapping.guildConfig.name ? ` (cross-guild → ${targetGuild})` : ''
         console.log(`  ✓ Triage channel: #${chName} for ${mapping.guildConfig.name}${crossGuild}`)
       } else {
-        console.warn(`  ⚠ Triage channel ${triageChannelId} not found for ${mapping.guildConfig.name}`)
+        console.warn(
+          `  ⚠ Triage channel ${triageChannelId} not found for ${mapping.guildConfig.name}`,
+        )
       }
     }
 
@@ -327,18 +399,22 @@ export async function runLive(options: LiveOptions): Promise<void> {
         if (readyClient.application) {
           const existing = await readyClient.application.commands.fetch()
           if (existing.size > 0) {
-            console.log(`  Clearing ${existing.size} stale slash command(s): ${existing.map(c => `/${c.name}`).join(', ')}`)
+            console.log(
+              `  Clearing ${existing.size} stale slash command(s): ${existing.map((c) => `/${c.name}`).join(', ')}`,
+            )
           }
           await readyClient.application.commands.set([
             {
               name: 'ask',
               description: 'Ask the help bot a question (sent to triage for investigation)',
-              options: [{
-                name: 'question',
-                description: 'Your question about GameCI, Unity CI/CD, Docker, etc.',
-                type: 3, // STRING
-                required: true,
-              }],
+              options: [
+                {
+                  name: 'question',
+                  description: 'Your question about GameCI, Unity CI/CD, Docker, etc.',
+                  type: 3, // STRING
+                  required: true,
+                },
+              ],
             },
           ])
           console.log(`  ✓ Registered /ask slash command`)
@@ -353,8 +429,10 @@ export async function runLive(options: LiveOptions): Promise<void> {
     postDeployChangelog(triageChannels, botName).catch(() => {})
 
     // Set bot presence/status
-    const monitoredCount = [...guildMappings.values()]
-      .reduce((acc, m) => acc + [...m.channelNameMap.values()].filter(ch => ch.monitor !== false).length, 0)
+    const monitoredCount = [...guildMappings.values()].reduce(
+      (acc, m) => acc + [...m.channelNameMap.values()].filter((ch) => ch.monitor !== false).length,
+      0,
+    )
     idleStatusText = `${monitoredCount} channels for help requests`
     setIdleStatus(readyClient)
 
@@ -369,29 +447,56 @@ export async function runLive(options: LiveOptions): Promise<void> {
 
       if (!lastOnline) {
         // First-ever run — stamp now, skip catch-up, never answer anything older
-        console.log(`First run — stamping firstOnlineAt. Will never process messages before this point.`)
+        console.log(
+          `First run — stamping firstOnlineAt. Will never process messages before this point.`,
+        )
         await updateState((s) => setLastOnlineAt(s))
       } else if (dispatchMode === 'auto') {
         const cutoff = new Date(lastOnline)
         console.log(`Last online: ${cutoff.toISOString()} — catching up from there.`)
-        await catchUpMissedMessages(readyClient, guildMappings, options, config, llmModel, {
-          ignoreBots, ignorePrefixes, minMessageLength,
-        }, cutoff)
+        await catchUpMissedMessages(
+          readyClient,
+          guildMappings,
+          options,
+          config,
+          llmModel,
+          {
+            ignoreBots,
+            ignorePrefixes,
+            minMessageLength,
+          },
+          cutoff,
+        )
         await updateState((s) => setLastOnlineAt(s))
       } else {
         await updateState((s) => setLastOnlineAt(s))
       }
 
       // Heartbeat: update lastOnlineAt every 5 minutes so restarts know the gap
-      setInterval(async () => {
-        await updateState((s) => setLastOnlineAt(s)).catch(() => {})
-      }, 5 * 60 * 1000)
+      setInterval(
+        async () => {
+          await updateState((s) => setLastOnlineAt(s)).catch(() => {})
+        },
+        5 * 60 * 1000,
+      )
 
       // GitHub triage polling (opt-in)
       if (githubTriage && dispatchMode === 'triage' && triageChannels.size > 0) {
         // Run an initial poll after a short delay, then on interval
-        setTimeout(() => pollGitHubForTriage().catch((e) => console.warn(`  GitHub poll error: ${e.message ?? e}`)), 15_000)
-        setInterval(() => pollGitHubForTriage().catch((e) => console.warn(`  GitHub poll error: ${e.message ?? e}`)), githubPollMinutes * 60 * 1000)
+        setTimeout(
+          () =>
+            pollGitHubForTriage().catch((e) =>
+              console.warn(`  GitHub poll error: ${e.message ?? e}`),
+            ),
+          15_000,
+        )
+        setInterval(
+          () =>
+            pollGitHubForTriage().catch((e) =>
+              console.warn(`  GitHub poll error: ${e.message ?? e}`),
+            ),
+          githubPollMinutes * 60 * 1000,
+        )
         console.log(`  GitHub triage polling started (every ${githubPollMinutes}m)`)
       }
     })().catch((err) => {
@@ -411,8 +516,8 @@ export async function runLive(options: LiveOptions): Promise<void> {
     // Get channel info — resolve parent for threads and forum posts
     let channelName = ('name' in message.channel ? message.channel.name : '') ?? ''
     let resolvedChannelId = message.channelId
-    let channelConfig = mapping.channelMap.get(message.channelId)
-      ?? mapping.channelNameMap.get(channelName)
+    let channelConfig =
+      mapping.channelMap.get(message.channelId) ?? mapping.channelNameMap.get(channelName)
 
     // If not found, check if this is a thread/forum post and resolve the parent
     if (!channelConfig && message.channel.isThread()) {
@@ -456,7 +561,6 @@ export async function runLive(options: LiveOptions): Promise<void> {
       const isCollab = collaborators.some((c: string) => c.toLowerCase() === username.toLowerCase())
       const isTriage = triageUserIds.includes(userId)
       {
-
         if (isCollab || isTriage) {
           if (stripped === 'status') {
             const st = await loadState()
@@ -474,7 +578,9 @@ export async function runLive(options: LiveOptions): Promise<void> {
               `Last heartbeat: ${lastOnline ?? 'unknown'}`,
               `Claude CLI: \`${resolveClaude()}\``,
             ]
-            await message.reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } }).catch(() => {})
+            await message
+              .reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } })
+              .catch(() => {})
             return
           }
           if (stripped === 'channels') {
@@ -489,7 +595,9 @@ export async function runLive(options: LiveOptions): Promise<void> {
                 lines.push(`  \`#${ch.name}\` — ${typ}, ${mon}`)
               }
             }
-            await message.reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } }).catch(() => {})
+            await message
+              .reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } })
+              .catch(() => {})
             return
           }
           if (stripped === 'settings') {
@@ -504,18 +612,32 @@ export async function runLive(options: LiveOptions): Promise<void> {
               `Poll interval: \`${getValue(dc, ['github_poll_interval_minutes'], 10)}\` min`,
               `Model: \`${getValue(lc, ['claude', 'model'], 'claude-sonnet-4-20250514')}\``,
               `Max turns: \`${getValue(lc, ['claude', 'max_turns'], 25)}\``,
-              `Repos: ${(getValue(gc, ['repos'], []) as string[]).map(r => `\`${r}\``).join(', ')}`,
+              `Repos: ${(getValue(gc, ['repos'], []) as string[]).map((r) => `\`${r}\``).join(', ')}`,
             ]
-            await message.reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } }).catch(() => {})
+            await message
+              .reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } })
+              .catch(() => {})
             return
           }
           if (stripped === 'sync-data') {
-            await message.reply({ content: 'Syncing data to GitHub...', allowedMentions: { repliedUser: false } }).catch(() => {})
+            await message
+              .reply({
+                content: 'Syncing data to GitHub...',
+                allowedMentions: { repliedUser: false },
+              })
+              .catch(() => {})
             try {
               const result = await syncDataToGitHub()
-              await message.reply({ content: `Data sync: ${result}`, allowedMentions: { repliedUser: false } }).catch(() => {})
+              await message
+                .reply({ content: `Data sync: ${result}`, allowedMentions: { repliedUser: false } })
+                .catch(() => {})
             } catch (err: any) {
-              await message.reply({ content: `Data sync failed: ${err.message ?? err}`, allowedMentions: { repliedUser: false } }).catch(() => {})
+              await message
+                .reply({
+                  content: `Data sync failed: ${err.message ?? err}`,
+                  allowedMentions: { repliedUser: false },
+                })
+                .catch(() => {})
             }
             return
           }
@@ -551,7 +673,10 @@ export async function runLive(options: LiveOptions): Promise<void> {
                   const dGuild = client.guilds.cache.get(gId)
                   if (dGuild) {
                     for (const [, channel] of dGuild.channels.cache) {
-                      if (channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildForum) {
+                      if (
+                        channel.type === ChannelType.GuildText ||
+                        channel.type === ChannelType.GuildForum
+                      ) {
                         const chCfg = existing.channelNameMap.get(channel.name)
                         if (chCfg) existing.channelMap.set(channel.id, chCfg)
                       }
@@ -565,12 +690,22 @@ export async function runLive(options: LiveOptions): Promise<void> {
             if (sub === 'list') {
               const guildName = parts.slice(1).join(' ')
               if (!guildName) {
-                await message.reply({ content: 'Usage: `!channel list <guild-name>`', allowedMentions: { repliedUser: false } }).catch(() => {})
+                await message
+                  .reply({
+                    content: 'Usage: `!channel list <guild-name>`',
+                    allowedMentions: { repliedUser: false },
+                  })
+                  .catch(() => {})
                 return
               }
               const guild = findGuild(guildName)
               if (!guild) {
-                await message.reply({ content: `Guild "${guildName}" not found in config.`, allowedMentions: { repliedUser: false } }).catch(() => {})
+                await message
+                  .reply({
+                    content: `Guild "${guildName}" not found in config.`,
+                    allowedMentions: { repliedUser: false },
+                  })
+                  .catch(() => {})
                 return
               }
               const lines = [`**Channels for ${guild.name}:**`]
@@ -582,16 +717,27 @@ export async function runLive(options: LiveOptions): Promise<void> {
                   ch.reply_mode ?? 'bot_api',
                 ]
                 lines.push(`\`#${ch.name}\` — ${props.join(', ')}`)
-                if (ch.system_prompt) lines.push(`  *prompt:* ${ch.system_prompt.substring(0, 100)}${ch.system_prompt.length > 100 ? '...' : ''}`)
+                if (ch.system_prompt)
+                  lines.push(
+                    `  *prompt:* ${ch.system_prompt.substring(0, 100)}${ch.system_prompt.length > 100 ? '...' : ''}`,
+                  )
               }
-              await message.reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } }).catch(() => {})
+              await message
+                .reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } })
+                .catch(() => {})
               return
             }
 
             // !channel set <guild> <channel> <key> <value>
             if (sub === 'set') {
               if (parts.length < 5) {
-                await message.reply({ content: 'Usage: `!channel set <guild> <channel> <key> <value>`\nKeys: `monitor`, `read_threads`, `channel_type`, `reply_mode`, `system_prompt`', allowedMentions: { repliedUser: false } }).catch(() => {})
+                await message
+                  .reply({
+                    content:
+                      'Usage: `!channel set <guild> <channel> <key> <value>`\nKeys: `monitor`, `read_threads`, `channel_type`, `reply_mode`, `system_prompt`',
+                    allowedMentions: { repliedUser: false },
+                  })
+                  .catch(() => {})
                 return
               }
               const guildName = parts[1]
@@ -600,17 +746,40 @@ export async function runLive(options: LiveOptions): Promise<void> {
               const value = parts.slice(4).join(' ')
               const guild = findGuild(guildName)
               if (!guild) {
-                await message.reply({ content: `Guild "${guildName}" not found.`, allowedMentions: { repliedUser: false } }).catch(() => {})
+                await message
+                  .reply({
+                    content: `Guild "${guildName}" not found.`,
+                    allowedMentions: { repliedUser: false },
+                  })
+                  .catch(() => {})
                 return
               }
-              const ch = guild.channels.find((c: ChannelConfig) => c.name.toLowerCase() === channelName.toLowerCase())
+              const ch = guild.channels.find(
+                (c: ChannelConfig) => c.name.toLowerCase() === channelName.toLowerCase(),
+              )
               if (!ch) {
-                await message.reply({ content: `Channel "${channelName}" not found in guild "${guild.name}".`, allowedMentions: { repliedUser: false } }).catch(() => {})
+                await message
+                  .reply({
+                    content: `Channel "${channelName}" not found in guild "${guild.name}".`,
+                    allowedMentions: { repliedUser: false },
+                  })
+                  .catch(() => {})
                 return
               }
-              const validKeys = ['monitor', 'read_threads', 'channel_type', 'reply_mode', 'system_prompt']
+              const validKeys = [
+                'monitor',
+                'read_threads',
+                'channel_type',
+                'reply_mode',
+                'system_prompt',
+              ]
               if (!validKeys.includes(key)) {
-                await message.reply({ content: `Invalid key "${key}". Valid keys: ${validKeys.map(k => `\`${k}\``).join(', ')}`, allowedMentions: { repliedUser: false } }).catch(() => {})
+                await message
+                  .reply({
+                    content: `Invalid key "${key}". Valid keys: ${validKeys.map((k) => `\`${k}\``).join(', ')}`,
+                    allowedMentions: { repliedUser: false },
+                  })
+                  .catch(() => {})
                 return
               }
               // Parse booleans
@@ -620,15 +789,27 @@ export async function runLive(options: LiveOptions): Promise<void> {
               ;(ch as any)[key] = parsed
               await saveConfig()
               refreshMappings()
-              const pushResult = await commitAndPushConfig(`${key}=${value} for #${ch.name} in ${guild.name}`)
-              await message.reply({ content: `Updated \`#${ch.name}\` → \`${key}\` = \`${value}\`\n${pushResult}`, allowedMentions: { repliedUser: false } }).catch(() => {})
+              const pushResult = await commitAndPushConfig(
+                `${key}=${value} for #${ch.name} in ${guild.name}`,
+              )
+              await message
+                .reply({
+                  content: `Updated \`#${ch.name}\` → \`${key}\` = \`${value}\`\n${pushResult}`,
+                  allowedMentions: { repliedUser: false },
+                })
+                .catch(() => {})
               return
             }
 
             // !channel add <guild> <channel-name> [channel_type]
             if (sub === 'add') {
               if (parts.length < 3) {
-                await message.reply({ content: 'Usage: `!channel add <guild> <channel-name> [text|forum]`', allowedMentions: { repliedUser: false } }).catch(() => {})
+                await message
+                  .reply({
+                    content: 'Usage: `!channel add <guild> <channel-name> [text|forum]`',
+                    allowedMentions: { repliedUser: false },
+                  })
+                  .catch(() => {})
                 return
               }
               const guildName = parts[1]
@@ -636,11 +817,25 @@ export async function runLive(options: LiveOptions): Promise<void> {
               const channelType = (parts[3] ?? 'text') as 'text' | 'forum'
               const guild = findGuild(guildName)
               if (!guild) {
-                await message.reply({ content: `Guild "${guildName}" not found.`, allowedMentions: { repliedUser: false } }).catch(() => {})
+                await message
+                  .reply({
+                    content: `Guild "${guildName}" not found.`,
+                    allowedMentions: { repliedUser: false },
+                  })
+                  .catch(() => {})
                 return
               }
-              if (guild.channels.find((c: ChannelConfig) => c.name.toLowerCase() === channelName.toLowerCase())) {
-                await message.reply({ content: `Channel "${channelName}" already exists in guild "${guild.name}".`, allowedMentions: { repliedUser: false } }).catch(() => {})
+              if (
+                guild.channels.find(
+                  (c: ChannelConfig) => c.name.toLowerCase() === channelName.toLowerCase(),
+                )
+              ) {
+                await message
+                  .reply({
+                    content: `Channel "${channelName}" already exists in guild "${guild.name}".`,
+                    allowedMentions: { repliedUser: false },
+                  })
+                  .catch(() => {})
                 return
               }
               const newCh: ChannelConfig = {
@@ -654,41 +849,73 @@ export async function runLive(options: LiveOptions): Promise<void> {
               await saveConfig()
               refreshMappings()
               const pushResult = await commitAndPushConfig(`add #${channelName} to ${guild.name}`)
-              await message.reply({ content: `Added \`#${channelName}\` (${channelType}, monitored) to **${guild.name}**\n${pushResult}`, allowedMentions: { repliedUser: false } }).catch(() => {})
+              await message
+                .reply({
+                  content: `Added \`#${channelName}\` (${channelType}, monitored) to **${guild.name}**\n${pushResult}`,
+                  allowedMentions: { repliedUser: false },
+                })
+                .catch(() => {})
               return
             }
 
             // !channel remove <guild> <channel-name>
             if (sub === 'remove') {
               if (parts.length < 3) {
-                await message.reply({ content: 'Usage: `!channel remove <guild> <channel-name>`', allowedMentions: { repliedUser: false } }).catch(() => {})
+                await message
+                  .reply({
+                    content: 'Usage: `!channel remove <guild> <channel-name>`',
+                    allowedMentions: { repliedUser: false },
+                  })
+                  .catch(() => {})
                 return
               }
               const guildName = parts[1]
               const channelName = parts[2]
               const guild = findGuild(guildName)
               if (!guild) {
-                await message.reply({ content: `Guild "${guildName}" not found.`, allowedMentions: { repliedUser: false } }).catch(() => {})
+                await message
+                  .reply({
+                    content: `Guild "${guildName}" not found.`,
+                    allowedMentions: { repliedUser: false },
+                  })
+                  .catch(() => {})
                 return
               }
-              const idx = guild.channels.findIndex((c: ChannelConfig) => c.name.toLowerCase() === channelName.toLowerCase())
+              const idx = guild.channels.findIndex(
+                (c: ChannelConfig) => c.name.toLowerCase() === channelName.toLowerCase(),
+              )
               if (idx === -1) {
-                await message.reply({ content: `Channel "${channelName}" not found in guild "${guild.name}".`, allowedMentions: { repliedUser: false } }).catch(() => {})
+                await message
+                  .reply({
+                    content: `Channel "${channelName}" not found in guild "${guild.name}".`,
+                    allowedMentions: { repliedUser: false },
+                  })
+                  .catch(() => {})
                 return
               }
               guild.channels.splice(idx, 1)
               await saveConfig()
               refreshMappings()
-              const pushResult = await commitAndPushConfig(`remove #${channelName} from ${guild.name}`)
-              await message.reply({ content: `Removed \`#${channelName}\` from **${guild.name}**\n${pushResult}`, allowedMentions: { repliedUser: false } }).catch(() => {})
+              const pushResult = await commitAndPushConfig(
+                `remove #${channelName} from ${guild.name}`,
+              )
+              await message
+                .reply({
+                  content: `Removed \`#${channelName}\` from **${guild.name}**\n${pushResult}`,
+                  allowedMentions: { repliedUser: false },
+                })
+                .catch(() => {})
               return
             }
 
             // Unknown subcommand
-            await message.reply({
-              content: '**Channel commands:**\n`!channel list <guild>` — Show channel details\n`!channel set <guild> <channel> <key> <value>` — Update a channel property\n`!channel add <guild> <channel> [text|forum]` — Add a new channel\n`!channel remove <guild> <channel>` — Remove a channel',
-              allowedMentions: { repliedUser: false },
-            }).catch(() => {})
+            await message
+              .reply({
+                content:
+                  '**Channel commands:**\n`!channel list <guild>` — Show channel details\n`!channel set <guild> <channel> <key> <value>` — Update a channel property\n`!channel add <guild> <channel> [text|forum]` — Add a new channel\n`!channel remove <guild> <channel>` — Remove a channel',
+                allowedMentions: { repliedUser: false },
+              })
+              .catch(() => {})
             return
           }
 
@@ -709,7 +936,9 @@ export async function runLive(options: LiveOptions): Promise<void> {
               '`@bot <question>` — Ask a help question (sent to triage)',
               '`@bot social <topic>` — Draft a LinkedIn post on a topic',
             ]
-            await message.reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } }).catch(() => {})
+            await message
+              .reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } })
+              .catch(() => {})
             return
           }
         }
@@ -733,7 +962,8 @@ export async function runLive(options: LiveOptions): Promise<void> {
     const botId = client.user?.id
     const isMentioned = botId ? message.mentions.users.has(botId) : false
     const isReplyToBot = message.reference?.messageId
-      ? await message.channel.messages.fetch(message.reference.messageId)
+      ? await message.channel.messages
+          .fetch(message.reference.messageId)
           .then((ref) => ref.author.id === botId)
           .catch(() => false)
       : false
@@ -773,7 +1003,12 @@ export async function runLive(options: LiveOptions): Promise<void> {
             console.log(`  → Social content request: "${topic.substring(0, 80)}"`)
             await handleSocialRequest(message, topic, triageCh, socialHandlerContext)
           } else {
-            await message.reply({ content: 'No triage channel configured for social content.', allowedMentions: { repliedUser: false } }).catch(() => {})
+            await message
+              .reply({
+                content: 'No triage channel configured for social content.',
+                allowedMentions: { repliedUser: false },
+              })
+              .catch(() => {})
           }
           return
         }
@@ -807,11 +1042,17 @@ export async function runLive(options: LiveOptions): Promise<void> {
       try {
         await investigateAndRespond(message, mapping, channelConfig, options, config, llmModel)
         // Replace 🔍 with ✅ on success
-        await message.reactions.cache.get('🔍')?.users.remove(client.user!.id).catch(() => {})
+        await message.reactions.cache
+          .get('🔍')
+          ?.users.remove(client.user!.id)
+          .catch(() => {})
         await message.react('✅').catch(() => {})
       } catch (err) {
         // Replace 🔍 with ❌ on failure
-        await message.reactions.cache.get('🔍')?.users.remove(client.user!.id).catch(() => {})
+        await message.reactions.cache
+          .get('🔍')
+          ?.users.remove(client.user!.id)
+          .catch(() => {})
         await message.react('❌').catch(() => {})
         throw err
       } finally {
@@ -877,14 +1118,20 @@ export async function runLive(options: LiveOptions): Promise<void> {
         })
 
         // Let the user know their question was received (configurable)
-        const ackEnabled = getValue(config, ['triage', 'acknowledge_user'], true as boolean) !== false
+        const ackEnabled =
+          getValue(config, ['triage', 'acknowledge_user'], true as boolean) !== false
         if (ackEnabled) {
-          await message.reply({
-            content: 'Your question has been received and is queued for investigation. A maintainer will review it shortly.',
-            allowedMentions: { repliedUser: false },
-          }).catch(() => {})
+          await message
+            .reply({
+              content:
+                'Your question has been received and is queued for investigation. A maintainer will review it shortly.',
+              allowedMentions: { repliedUser: false },
+            })
+            .catch(() => {})
         }
-        console.log(`  → Triage notification posted to #${'name' in triageChannel ? triageChannel.name : 'triage'}`)
+        console.log(
+          `  → Triage notification posted to #${'name' in triageChannel ? triageChannel.name : 'triage'}`,
+        )
       } catch (err: any) {
         console.warn(`  → Failed to post triage notification: ${err.message ?? err}`)
       }
@@ -903,15 +1150,24 @@ export async function runLive(options: LiveOptions): Promise<void> {
         const question = interaction.options.getString('question', true)
         const guildId = interaction.guildId
         if (!guildId) {
-          await interaction.reply({ content: 'This command only works in a server.', ephemeral: true })
+          await interaction.reply({
+            content: 'This command only works in a server.',
+            ephemeral: true,
+          })
           return
         }
         const triageChannel = triageChannels.get(guildId)
         if (!triageChannel) {
-          await interaction.reply({ content: 'No triage channel configured for this server.', ephemeral: true })
+          await interaction.reply({
+            content: 'No triage channel configured for this server.',
+            ephemeral: true,
+          })
           return
         }
-        await interaction.reply({ content: 'Your question has been received and is queued for investigation.', ephemeral: true })
+        await interaction.reply({
+          content: 'Your question has been received and is queued for investigation.',
+          ephemeral: true,
+        })
         // Post a triage notification for this slash command
         const mapping = guildMappings.get(guildId)
         if (mapping) {
@@ -1007,7 +1263,9 @@ export async function runLive(options: LiveOptions): Promise<void> {
             const original = await msg.channel.messages.fetch(msg.reference.messageId)
             originalContent = original.content
             originalAuthor = original.author.tag ?? original.author.username
-          } catch { /* original deleted or inaccessible */ }
+          } catch {
+            /* original deleted or inaccessible */
+          }
         }
 
         const feedbackId = `${Date.now()}-${msg.id}`
@@ -1048,16 +1306,18 @@ export async function runLive(options: LiveOptions): Promise<void> {
       if (!msg.guild) return
       const mapping = guildMappings.get(msg.guild.id)
       if (!mapping) return
-      const channelConfig = mapping.channelMap.get(msg.channelId)
-        ?? mapping.channelNameMap.get(channelName)
+      const channelConfig =
+        mapping.channelMap.get(msg.channelId) ?? mapping.channelNameMap.get(channelName)
       if (!channelConfig) return
 
-      console.log(`[${timestamp}] 🔁 Re-investigate requested in #${channelName} by @${user.tag ?? (user as any).username ?? user.id}`)
+      console.log(
+        `[${timestamp}] 🔁 Re-investigate requested in #${channelName} by @${user.tag ?? (user as any).username ?? user.id}`,
+      )
 
       // Fetch the original user message
       let originalMessage: Message
       try {
-        originalMessage = await msg.channel.messages.fetch(msg.reference.messageId) as Message
+        originalMessage = (await msg.channel.messages.fetch(msg.reference.messageId)) as Message
       } catch {
         console.warn(`  → Could not fetch original message for re-investigation`)
         return
@@ -1066,14 +1326,32 @@ export async function runLive(options: LiveOptions): Promise<void> {
       // Mark as processing
       processingMessages.add(originalMessage.id)
       await originalMessage.react('🔍').catch(() => {})
-      setInvestigatingStatus(client, channelName, originalMessage.author.tag ?? originalMessage.author.username)
+      setInvestigatingStatus(
+        client,
+        channelName,
+        originalMessage.author.tag ?? originalMessage.author.username,
+      )
 
       try {
-        await reinvestigateAndRespond(originalMessage, msg.content ?? '', mapping, channelConfig, options, config, llmModel)
-        await originalMessage.reactions.cache.get('🔍')?.users.remove(client.user!.id).catch(() => {})
+        await reinvestigateAndRespond(
+          originalMessage,
+          msg.content ?? '',
+          mapping,
+          channelConfig,
+          options,
+          config,
+          llmModel,
+        )
+        await originalMessage.reactions.cache
+          .get('🔍')
+          ?.users.remove(client.user!.id)
+          .catch(() => {})
         await originalMessage.react('✅').catch(() => {})
       } catch {
-        await originalMessage.reactions.cache.get('🔍')?.users.remove(client.user!.id).catch(() => {})
+        await originalMessage.reactions.cache
+          .get('🔍')
+          ?.users.remove(client.user!.id)
+          .catch(() => {})
         await originalMessage.react('❌').catch(() => {})
       } finally {
         processingMessages.delete(originalMessage.id)
@@ -1093,7 +1371,9 @@ export async function runLive(options: LiveOptions): Promise<void> {
       // Only in game-ci-develop
       if (mapping.guildConfig.name !== 'game-ci-develop') return
 
-      console.log(`[${timestamp}] 📋 Post investigation requested in #${channelName} by @${user.tag ?? (user as any).username ?? user.id}`)
+      console.log(
+        `[${timestamp}] 📋 Post investigation requested in #${channelName} by @${user.tag ?? (user as any).username ?? user.id}`,
+      )
 
       // Find the response files for this investigation
       const guildName = mapping.guildConfig.name
@@ -1110,8 +1390,18 @@ export async function runLive(options: LiveOptions): Promise<void> {
         const responsePath = join(responseDir, `${responseId}.md`)
 
         let hasArtifacts = false
-        try { await readFile(findingsPath, 'utf-8'); hasArtifacts = true } catch { /* file not found */ }
-        try { await readFile(analysisPath, 'utf-8'); hasArtifacts = true } catch { /* file not found */ }
+        try {
+          await readFile(findingsPath, 'utf-8')
+          hasArtifacts = true
+        } catch {
+          /* file not found */
+        }
+        try {
+          await readFile(analysisPath, 'utf-8')
+          hasArtifacts = true
+        } catch {
+          /* file not found */
+        }
 
         if (!hasArtifacts) {
           console.log(`  → No investigation artifacts found for ${responseId}`)
@@ -1127,7 +1417,10 @@ export async function runLive(options: LiveOptions): Promise<void> {
         })
 
         // Remove the bot's 📋 reaction to show it's been handled
-        await msg.reactions.cache.get('📋')?.users.remove(client.user!.id).catch(() => {})
+        await msg.reactions.cache
+          .get('📋')
+          ?.users.remove(client.user!.id)
+          .catch(() => {})
         await msg.react('✅').catch(() => {})
         console.log(`  ✓ Investigation posted to GitHub`)
       } catch (err: any) {
@@ -1155,7 +1448,7 @@ export async function runLive(options: LiveOptions): Promise<void> {
 
       // Filter eligible issues from each repo
       let totalNew = 0
-      for (const repo of (options.repos ?? githubRepos)) {
+      for (const repo of options.repos ?? githubRepos) {
         const repoSlug = repo.replace(/\//g, '-')
         const result = await filterIssues(repoSlug, repo)
         if (result.eligible.length === 0) continue
@@ -1218,7 +1511,9 @@ export async function runLive(options: LiveOptions): Promise<void> {
             totalNew++
             console.log(`  → Triage: ${repo}#${issue.number} "${issue.title}" by @${issue.author}`)
           } catch (err: any) {
-            console.warn(`  → Failed to post triage for ${repo}#${issue.number}: ${err.message ?? err}`)
+            console.warn(
+              `  → Failed to post triage for ${repo}#${issue.number}: ${err.message ?? err}`,
+            )
           }
         }
       }
@@ -1262,7 +1557,9 @@ export async function runLive(options: LiveOptions): Promise<void> {
     }
     if (error.code === 'DisallowedIntents') {
       console.error('Message Content Intent is not enabled.')
-      console.error('Go to https://discord.com/developers/applications → Bot → enable "Message Content Intent"')
+      console.error(
+        'Go to https://discord.com/developers/applications → Bot → enable "Message Content Intent"',
+      )
     }
     process.exit(1)
   }
@@ -1298,7 +1595,21 @@ async function fetchReplyChain(message: Message, maxDepth = 15): Promise<ReplyCh
 }
 
 /** Allowed text file extensions for attachment downloads. */
-const TEXT_EXTENSIONS = new Set(['.txt', '.log', '.yml', '.yaml', '.json', '.xml', '.csv', '.md', '.ini', '.cfg', '.conf', '.toml', '.env.example'])
+const TEXT_EXTENSIONS = new Set([
+  '.txt',
+  '.log',
+  '.yml',
+  '.yaml',
+  '.json',
+  '.xml',
+  '.csv',
+  '.md',
+  '.ini',
+  '.cfg',
+  '.conf',
+  '.toml',
+  '.env.example',
+])
 
 /** Max attachment size to download (256 KB). */
 const MAX_ATTACHMENT_SIZE = 256 * 1024
@@ -1327,7 +1638,9 @@ async function downloadTextAttachments(
 
     // Size guard
     if (attachment.size > MAX_ATTACHMENT_SIZE) {
-      console.log(`  → Attachment skipped (too large: ${Math.round(attachment.size / 1024)}KB): ${name}`)
+      console.log(
+        `  → Attachment skipped (too large: ${Math.round(attachment.size / 1024)}KB): ${name}`,
+      )
       continue
     }
 
@@ -1411,7 +1724,11 @@ async function investigateAndRespond(
 
   // Write context file if we have reply chain, thread context, or attachments
   let contextFilePath: string | undefined
-  if (replyChain.length > 0 || (threadContext && threadContext.length > 0) || attachments.length > 0) {
+  if (
+    replyChain.length > 0 ||
+    (threadContext && threadContext.length > 0) ||
+    attachments.length > 0
+  ) {
     try {
       contextFilePath = await writeContextFile({
         responseId,
@@ -1460,18 +1777,28 @@ async function investigateAndRespond(
   try {
     const args = ['-p', '--model', model, '--max-turns', String(maxTurns)]
     args.push(
-      '--allowedTools', 'Read',
-      '--allowedTools', 'Glob',
-      '--allowedTools', 'Grep',
-      '--allowedTools', 'Bash',
-      '--allowedTools', 'Write',
+      '--allowedTools',
+      'Read',
+      '--allowedTools',
+      'Glob',
+      '--allowedTools',
+      'Grep',
+      '--allowedTools',
+      'Bash',
+      '--allowedTools',
+      'Write',
     )
     args.push(
-      '--disallowedTools', 'Edit',
-      '--disallowedTools', 'WebFetch',
-      '--disallowedTools', 'WebSearch',
-      '--disallowedTools', 'NotebookEdit',
-      '--disallowedTools', 'Task',
+      '--disallowedTools',
+      'Edit',
+      '--disallowedTools',
+      'WebFetch',
+      '--disallowedTools',
+      'WebSearch',
+      '--disallowedTools',
+      'NotebookEdit',
+      '--disallowedTools',
+      'Task',
     )
 
     // Unset CLAUDECODE to allow nested Claude invocation
@@ -1490,7 +1817,7 @@ async function investigateAndRespond(
     }
   } catch (error: any) {
     console.warn(`  ✗ LLM investigation failed: ${error.message ?? error}`)
-    throw new Error(`LLM investigation failed: ${error.message ?? error}`)
+    throw new Error(`LLM investigation failed: ${error.message ?? error}`, { cause: error })
   }
 
   // Log investigation artifacts
@@ -1499,11 +1826,15 @@ async function investigateAndRespond(
   try {
     await readFile(findingsFile, 'utf-8')
     console.log(`  → Findings captured: ${responseId}-findings.md`)
-  } catch { /* findings file is optional */ }
+  } catch {
+    /* findings file is optional */
+  }
   try {
     await readFile(analysisFile, 'utf-8')
     console.log(`  → Analysis captured: ${responseId}-analysis.md`)
-  } catch { /* analysis file is optional */ }
+  } catch {
+    /* analysis file is optional */
+  }
 
   // Read the response file
   const responseFile = join(responseDir, `${responseId}.md`)
@@ -1542,9 +1873,8 @@ async function investigateAndRespond(
     let lastMessageId: string | undefined
 
     for (const [index, chunk] of chunks.entries()) {
-      const chunkContent = chunks.length > 1
-        ? `(part ${index + 1}/${chunks.length})\n${chunk}`
-        : chunk
+      const chunkContent =
+        chunks.length > 1 ? `(part ${index + 1}/${chunks.length})\n${chunk}` : chunk
 
       const reply = await message.reply({
         content: chunkContent,
@@ -1568,7 +1898,9 @@ async function investigateAndRespond(
       try {
         const botReply = await message.channel.messages.fetch(lastMessageId)
         await botReply.react('📋').catch(() => {})
-      } catch { /* non-critical */ }
+      } catch {
+        /* non-critical */
+      }
     }
 
     console.log(`  ✓ Response posted to #${channelName} (reply to @${authorTag})`)
@@ -1604,7 +1936,9 @@ async function reinvestigateAndRespond(
   let replyChain: ReplyChainMessage[] = []
   try {
     replyChain = await fetchReplyChain(originalMessage)
-  } catch { /* continue without */ }
+  } catch {
+    /* continue without */
+  }
 
   let contextFilePath: string | undefined
   if (replyChain.length > 0) {
@@ -1621,7 +1955,9 @@ async function reinvestigateAndRespond(
         },
       })
       contextFilePath = contextFilePath.replace(/\\/g, '/').replace(/^.*?(data\/)/, '$1')
-    } catch { /* continue without */ }
+    } catch {
+      /* continue without */
+    }
   }
 
   // Build correction-aware prompt
@@ -1656,18 +1992,28 @@ async function reinvestigateAndRespond(
   try {
     const args = ['-p', '--model', model, '--max-turns', '30']
     args.push(
-      '--allowedTools', 'Read',
-      '--allowedTools', 'Glob',
-      '--allowedTools', 'Grep',
-      '--allowedTools', 'Bash',
-      '--allowedTools', 'Write',
+      '--allowedTools',
+      'Read',
+      '--allowedTools',
+      'Glob',
+      '--allowedTools',
+      'Grep',
+      '--allowedTools',
+      'Bash',
+      '--allowedTools',
+      'Write',
     )
     args.push(
-      '--disallowedTools', 'Edit',
-      '--disallowedTools', 'WebFetch',
-      '--disallowedTools', 'WebSearch',
-      '--disallowedTools', 'NotebookEdit',
-      '--disallowedTools', 'Task',
+      '--disallowedTools',
+      'Edit',
+      '--disallowedTools',
+      'WebFetch',
+      '--disallowedTools',
+      'WebSearch',
+      '--disallowedTools',
+      'NotebookEdit',
+      '--disallowedTools',
+      'Task',
     )
 
     const env = { ...process.env }
@@ -1685,7 +2031,7 @@ async function reinvestigateAndRespond(
     }
   } catch (error: any) {
     console.warn(`  ✗ Re-investigation LLM failed: ${error.message ?? error}`)
-    throw new Error(`Re-investigation LLM failed: ${error.message ?? error}`)
+    throw new Error(`Re-investigation LLM failed: ${error.message ?? error}`, { cause: error })
   }
 
   // Read the new response
@@ -1721,9 +2067,8 @@ async function reinvestigateAndRespond(
     const chunks = splitContent(bodyWithFeedback)
 
     for (const [index, chunk] of chunks.entries()) {
-      const chunkContent = chunks.length > 1
-        ? `(part ${index + 1}/${chunks.length})\n${chunk}`
-        : chunk
+      const chunkContent =
+        chunks.length > 1 ? `(part ${index + 1}/${chunks.length})\n${chunk}` : chunk
 
       await originalMessage.reply({
         content: chunkContent,
@@ -1810,7 +2155,8 @@ async function catchUpMissedMessages(
           const botId = client.user?.id
           const isMentioned = botId ? message.mentions.users.has(botId) : false
           const isReplyToBot = message.reference?.messageId
-            ? await channel.messages.fetch(message.reference.messageId)
+            ? await channel.messages
+                .fetch(message.reference.messageId)
                 .then((ref) => ref.author.id === botId)
                 .catch(() => false)
             : false
@@ -1841,10 +2187,16 @@ async function catchUpMissedMessages(
           await message.react('🔍').catch(() => {})
           try {
             await investigateAndRespond(message, mapping, channelConfig, options, config, model)
-            await message.reactions.cache.get('🔍')?.users.remove(client.user!.id).catch(() => {})
+            await message.reactions.cache
+              .get('🔍')
+              ?.users.remove(client.user!.id)
+              .catch(() => {})
             await message.react('✅').catch(() => {})
           } catch {
-            await message.reactions.cache.get('🔍')?.users.remove(client.user!.id).catch(() => {})
+            await message.reactions.cache
+              .get('🔍')
+              ?.users.remove(client.user!.id)
+              .catch(() => {})
             await message.react('❌').catch(() => {})
           } finally {
             processingMessages.delete(message.id)

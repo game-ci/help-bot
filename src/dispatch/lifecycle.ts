@@ -13,21 +13,22 @@ const execFileAsync = promisify(execFile)
  * Reactions: 'eyes' (investigating), 'rocket' (dispatched),
  * '+1' (approved), 'heart' (complete), 'confused' (failed)
  */
-async function addReaction(
-  repo: string,
-  issueNumber: number,
-  reaction: string,
-): Promise<void> {
+async function addReaction(repo: string, issueNumber: number, reaction: string): Promise<void> {
   try {
     await execFileAsync('gh', [
       'api',
       `repos/${repo}/issues/${issueNumber}/reactions`,
-      '--method', 'POST',
-      '--header', 'Accept: application/vnd.github+json',
-      '--field', `content=${reaction}`,
+      '--method',
+      'POST',
+      '--header',
+      'Accept: application/vnd.github+json',
+      '--field',
+      `content=${reaction}`,
     ])
   } catch (error: any) {
-    console.warn(`  Failed to add ${reaction} reaction to #${issueNumber}: ${error.message ?? error}`)
+    console.warn(
+      `  Failed to add ${reaction} reaction to #${issueNumber}: ${error.message ?? error}`,
+    )
   }
 }
 
@@ -158,12 +159,14 @@ export async function closeDispatchedDetections(options: {
     let closeMessage: string
 
     if (investigationNumber) {
-      closeMessage = `Investigation dispatched and completed. See investigation issue #${investigationNumber}.\n\n` +
+      closeMessage =
+        `Investigation dispatched and completed. See investigation issue #${investigationNumber}.\n\n` +
         `Source: https://github.com/${record.sourceRepo}/issues/${record.sourceIssueNumber}\n` +
         `Investigation: https://github.com/${options.targetRepo}/issues/${investigationNumber}\n\n` +
         '*Closed by GameCI Help Bot dispatch system*'
     } else {
-      closeMessage = `Investigation dispatched.\n\n` +
+      closeMessage =
+        `Investigation dispatched.\n\n` +
         `Source: https://github.com/${record.sourceRepo}/issues/${record.sourceIssueNumber}\n\n` +
         '*Closed by GameCI Help Bot dispatch system*'
     }
@@ -175,14 +178,19 @@ export async function closeDispatchedDetections(options: {
 
     try {
       await execFileAsync('gh', [
-        'issue', 'close',
+        'issue',
+        'close',
         String(record.detectionIssueNumber),
-        '--repo', options.targetRepo,
-        '--comment', closeMessage,
+        '--repo',
+        options.targetRepo,
+        '--comment',
+        closeMessage,
       ])
       console.log(`  Closed detection #${record.detectionIssueNumber} for ${key}`)
     } catch (error: any) {
-      console.warn(`  Failed to close detection #${record.detectionIssueNumber}: ${error.message ?? error}`)
+      console.warn(
+        `  Failed to close detection #${record.detectionIssueNumber}: ${error.message ?? error}`,
+      )
     }
 
     await new Promise((resolve) => setTimeout(resolve, 1000))
@@ -215,20 +223,27 @@ export async function cleanupStaleDetections(options: {
     cleaned++
 
     if (options.dryRun) {
-      console.log(`  DRY RUN: would cancel stale detection #${record.detectionIssueNumber} for ${key}`)
+      console.log(
+        `  DRY RUN: would cancel stale detection #${record.detectionIssueNumber} for ${key}`,
+      )
       continue
     }
 
     try {
       await execFileAsync('gh', [
-        'issue', 'close',
+        'issue',
+        'close',
         String(record.detectionIssueNumber),
-        '--repo', options.targetRepo,
-        '--comment', 'Source issue is no longer eligible (closed, collaborator responded, or filtered out). Detection cancelled.\n\n*Closed by GameCI Help Bot dispatch system*',
+        '--repo',
+        options.targetRepo,
+        '--comment',
+        'Source issue is no longer eligible (closed, collaborator responded, or filtered out). Detection cancelled.\n\n*Closed by GameCI Help Bot dispatch system*',
       ])
       console.log(`  Cancelled stale detection #${record.detectionIssueNumber} for ${key}`)
     } catch (error: any) {
-      console.warn(`  Failed to cancel detection #${record.detectionIssueNumber}: ${error.message ?? error}`)
+      console.warn(
+        `  Failed to cancel detection #${record.detectionIssueNumber}: ${error.message ?? error}`,
+      )
     }
 
     await new Promise((resolve) => setTimeout(resolve, 1000))

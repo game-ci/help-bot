@@ -131,12 +131,14 @@ const TEST_CASES: TestCase[] = [
   },
   {
     name: 'safe-log-output',
-    content: 'The process /bin/bash failed with exit code 1\nError: Unity license activation failed',
+    content:
+      'The process /bin/bash failed with exit code 1\nError: Unity license activation failed',
     expectSeverity: null,
   },
   {
     name: 'safe-discussion',
-    content: 'I think we should add support for ARM64 builds. The current system only targets x86_64.',
+    content:
+      'I think we should add support for ARM64 builds. The current system only targets x86_64.',
     expectSeverity: null,
   },
   {
@@ -161,18 +163,22 @@ export function runSecurityTests(): TestResult[] {
 
     if (tc.expectSeverity === null) {
       // Should NOT trigger any findings
-      const hasCriticalOrHigh = findings.some(f => f.severity === 'critical' || f.severity === 'high')
+      const hasCriticalOrHigh = findings.some(
+        (f) => f.severity === 'critical' || f.severity === 'high',
+      )
       results.push({
         name: tc.name,
         passed: !hasCriticalOrHigh,
         expected: 'no critical/high findings',
-        actual: hasCriticalOrHigh ? `found: ${findings.map(f => `${f.severity}:${f.pattern}`).join(', ')}` : 'clean',
+        actual: hasCriticalOrHigh
+          ? `found: ${findings.map((f) => `${f.severity}:${f.pattern}`).join(', ')}`
+          : 'clean',
       })
     } else {
       // Should trigger a finding with the expected severity
-      const matchingFinding = findings.find(f =>
-        f.severity === tc.expectSeverity &&
-        (!tc.expectPattern || f.pattern === tc.expectPattern)
+      const matchingFinding = findings.find(
+        (f) =>
+          f.severity === tc.expectSeverity && (!tc.expectPattern || f.pattern === tc.expectPattern),
       )
       results.push({
         name: tc.name,
@@ -181,7 +187,7 @@ export function runSecurityTests(): TestResult[] {
         actual: matchingFinding
           ? `${matchingFinding.severity}:${matchingFinding.pattern}`
           : findings.length > 0
-            ? `found: ${findings.map(f => `${f.severity}:${f.pattern}`).join(', ')}`
+            ? `found: ${findings.map((f) => `${f.severity}:${f.pattern}`).join(', ')}`
             : 'no findings',
       })
     }

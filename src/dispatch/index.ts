@@ -2,6 +2,19 @@ export { runDispatch, runDiscordDispatch } from './orchestrator'
 export type { DispatchResult, DiscordDispatchResult } from './orchestrator'
 export { createDetections, createDiscordDetections } from './detection'
 export { checkApprovals, checkDiscordApprovals } from './approval'
-export { markDispatched, closeDispatchedDetections, cleanupStaleDetections, reactInvestigationStarted, reactInvestigationComplete, reactInvestigationFailed } from './lifecycle'
-export type { DispatchMode, DispatchConfig, DetectionRecord, DetectionKey, DetectionSourceType } from './types'
+export {
+  markDispatched,
+  closeDispatchedDetections,
+  cleanupStaleDetections,
+  reactInvestigationStarted,
+  reactInvestigationComplete,
+  reactInvestigationFailed,
+} from './lifecycle'
+export type {
+  DispatchMode,
+  DispatchConfig,
+  DetectionRecord,
+  DetectionKey,
+  DetectionSourceType,
+} from './types'
 export { makeDetectionKey, makeDiscordDetectionKey } from './types'

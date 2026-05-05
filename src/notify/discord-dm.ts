@@ -34,7 +34,11 @@ async function getDmConfig(): Promise<DmNotificationConfig> {
   const config = await getConfig()
   return {
     enabled: Boolean(getValue(config, ['notifications', 'discord_dm', 'enabled'], false)),
-    recipients: (getValue(config, ['notifications', 'discord_dm', 'recipients'], []) as DmRecipient[]),
+    recipients: getValue(
+      config,
+      ['notifications', 'discord_dm', 'recipients'],
+      [],
+    ) as DmRecipient[],
   }
 }
 
@@ -60,11 +64,13 @@ async function createDmChannel(userId: string, token: string): Promise<string | 
     })
 
     if (response.statusCode !== 200) {
-      console.warn(`  Failed to create DM channel for user ${userId}: status ${response.statusCode}`)
+      console.warn(
+        `  Failed to create DM channel for user ${userId}: status ${response.statusCode}`,
+      )
       return null
     }
 
-    const data = await response.body.json() as { id: string }
+    const data = (await response.body.json()) as { id: string }
     return data.id
   } catch (error: any) {
     console.warn(`  Failed to create DM channel for user ${userId}: ${error.message ?? error}`)
@@ -101,7 +107,9 @@ async function notifyUser(
   dryRun: boolean,
 ): Promise<void> {
   if (dryRun) {
-    console.log(`  DRY RUN: would DM ${recipient.github_username} (${recipient.discord_user_id}): ${message.substring(0, 80)}...`)
+    console.log(
+      `  DRY RUN: would DM ${recipient.github_username} (${recipient.discord_user_id}): ${message.substring(0, 80)}...`,
+    )
     return
   }
 
@@ -129,9 +137,11 @@ function filterRecipients(recipients: DmRecipient[], filterKey: keyof DmFilters)
 /**
  * Notify maintainers about new detection issues created this cycle.
  */
-export async function notifyNewDetections(options: DmNotifyOptions & {
-  detections: Array<{ repo: string; issueNumber: number; title: string; detectionUrl?: string }>
-}): Promise<void> {
+export async function notifyNewDetections(
+  options: DmNotifyOptions & {
+    detections: Array<{ repo: string; issueNumber: number; title: string; detectionUrl?: string }>
+  },
+): Promise<void> {
   if (options.detections.length === 0) return
 
   const dmConfig = await getDmConfig()
@@ -143,8 +153,9 @@ export async function notifyNewDetections(options: DmNotifyOptions & {
   const recipients = filterRecipients(dmConfig.recipients, 'new_detections')
   if (recipients.length === 0) return
 
-  const lines = options.detections.map((d) =>
-    `- **${d.repo}#${d.issueNumber}**: ${d.title}${d.detectionUrl ? ` ([detection](${d.detectionUrl}))` : ''}`
+  const lines = options.detections.map(
+    (d) =>
+      `- **${d.repo}#${d.issueNumber}**: ${d.title}${d.detectionUrl ? ` ([detection](${d.detectionUrl}))` : ''}`,
   )
   const message = `**GameCI Help Bot** - New detections created:\n${lines.join('\n')}\n\nReact on the detection issues to approve or cancel.`
 
@@ -157,9 +168,11 @@ export async function notifyNewDetections(options: DmNotifyOptions & {
 /**
  * Notify maintainers about countdown warnings posted this cycle.
  */
-export async function notifyCountdownWarnings(options: DmNotifyOptions & {
-  warnings: Array<{ repo: string; issueNumber: number; stage: number; totalStages: number }>
-}): Promise<void> {
+export async function notifyCountdownWarnings(
+  options: DmNotifyOptions & {
+    warnings: Array<{ repo: string; issueNumber: number; stage: number; totalStages: number }>
+  },
+): Promise<void> {
   if (options.warnings.length === 0) return
 
   const dmConfig = await getDmConfig()
@@ -171,8 +184,8 @@ export async function notifyCountdownWarnings(options: DmNotifyOptions & {
   const recipients = filterRecipients(dmConfig.recipients, 'countdown_warnings')
   if (recipients.length === 0) return
 
-  const lines = options.warnings.map((w) =>
-    `- **${w.repo}#${w.issueNumber}**: Warning ${w.stage}/${w.totalStages}`
+  const lines = options.warnings.map(
+    (w) => `- **${w.repo}#${w.issueNumber}**: Warning ${w.stage}/${w.totalStages}`,
   )
   const message = `**GameCI Help Bot** - Countdown warnings:\n${lines.join('\n')}\n\nReact on detection issues to approve or cancel before auto-dispatch.`
 
@@ -185,9 +198,11 @@ export async function notifyCountdownWarnings(options: DmNotifyOptions & {
 /**
  * Notify maintainers about approved/dispatched investigations.
  */
-export async function notifyApprovals(options: DmNotifyOptions & {
-  approved: Array<{ repo: string; issueNumber: number; approvedBy: string }>
-}): Promise<void> {
+export async function notifyApprovals(
+  options: DmNotifyOptions & {
+    approved: Array<{ repo: string; issueNumber: number; approvedBy: string }>
+  },
+): Promise<void> {
   if (options.approved.length === 0) return
 
   const dmConfig = await getDmConfig()
@@ -199,8 +214,8 @@ export async function notifyApprovals(options: DmNotifyOptions & {
   const recipients = filterRecipients(dmConfig.recipients, 'approvals')
   if (recipients.length === 0) return
 
-  const lines = options.approved.map((a) =>
-    `- **${a.repo}#${a.issueNumber}** (approved by ${a.approvedBy})`
+  const lines = options.approved.map(
+    (a) => `- **${a.repo}#${a.issueNumber}** (approved by ${a.approvedBy})`,
   )
   const message = `**GameCI Help Bot** - Issues approved for investigation:\n${lines.join('\n')}`
 
@@ -213,9 +228,16 @@ export async function notifyApprovals(options: DmNotifyOptions & {
 /**
  * Notify maintainers when investigations are complete.
  */
-export async function notifyInvestigationsComplete(options: DmNotifyOptions & {
-  investigations: Array<{ repo: string; issueNumber: number; classification: string; investigationUrl?: string }>
-}): Promise<void> {
+export async function notifyInvestigationsComplete(
+  options: DmNotifyOptions & {
+    investigations: Array<{
+      repo: string
+      issueNumber: number
+      classification: string
+      investigationUrl?: string
+    }>
+  },
+): Promise<void> {
   if (options.investigations.length === 0) return
 
   const dmConfig = await getDmConfig()
@@ -227,12 +249,15 @@ export async function notifyInvestigationsComplete(options: DmNotifyOptions & {
   const recipients = filterRecipients(dmConfig.recipients, 'investigations_complete')
   if (recipients.length === 0) return
 
-  const lines = options.investigations.map((inv) =>
-    `- **${inv.repo}#${inv.issueNumber}** [${inv.classification}]${inv.investigationUrl ? ` — [view](${inv.investigationUrl})` : ''}`
+  const lines = options.investigations.map(
+    (inv) =>
+      `- **${inv.repo}#${inv.issueNumber}** [${inv.classification}]${inv.investigationUrl ? ` — [view](${inv.investigationUrl})` : ''}`,
   )
   const message = `**GameCI Help Bot** - Investigations completed:\n${lines.join('\n')}`
 
-  console.log(`  Sending DM notifications for ${options.investigations.length} completed investigations...`)
+  console.log(
+    `  Sending DM notifications for ${options.investigations.length} completed investigations...`,
+  )
   for (const recipient of recipients) {
     await notifyUser(recipient, message, token, options.dryRun)
   }
@@ -241,10 +266,12 @@ export async function notifyInvestigationsComplete(options: DmNotifyOptions & {
 /**
  * Send a cycle summary DM to opted-in maintainers.
  */
-export async function notifyCycleSummary(options: DmNotifyOptions & {
-  stats: CycleStats
-  repos: string[]
-}): Promise<void> {
+export async function notifyCycleSummary(
+  options: DmNotifyOptions & {
+    stats: CycleStats
+    repos: string[]
+  },
+): Promise<void> {
   const dmConfig = await getDmConfig()
   if (!dmConfig.enabled || dmConfig.recipients.length === 0) return
 
@@ -256,8 +283,12 @@ export async function notifyCycleSummary(options: DmNotifyOptions & {
 
   const s = options.stats
   // Skip if nothing happened
-  const hasActivity = s.githubResponsesPosted > 0 || s.investigationIssuesPosted > 0 ||
-    s.detectionsCreated > 0 || s.detectionsApproved > 0 || s.detectionsExpired > 0 ||
+  const hasActivity =
+    s.githubResponsesPosted > 0 ||
+    s.investigationIssuesPosted > 0 ||
+    s.detectionsCreated > 0 ||
+    s.detectionsApproved > 0 ||
+    s.detectionsExpired > 0 ||
     s.detectionsWarningsPosted > 0
   if (!hasActivity) return
 
@@ -268,7 +299,8 @@ export async function notifyCycleSummary(options: DmNotifyOptions & {
   if (s.detectionsPending > 0) lines.push(`- Pending: ${s.detectionsPending}`)
   if (s.detectionsExpired > 0) lines.push(`- Auto-dispatched: ${s.detectionsExpired}`)
   if (s.detectionsWarningsPosted > 0) lines.push(`- Warnings posted: ${s.detectionsWarningsPosted}`)
-  if (s.investigationIssuesPosted > 0) lines.push(`- Investigations posted: ${s.investigationIssuesPosted}`)
+  if (s.investigationIssuesPosted > 0)
+    lines.push(`- Investigations posted: ${s.investigationIssuesPosted}`)
   if (s.githubResponsesPosted > 0) lines.push(`- Responses posted: ${s.githubResponsesPosted}`)
 
   const message = lines.join('\n')

@@ -25,20 +25,20 @@ The bot never fabricates parameters or features. It verifies every suggestion ag
 
 ## Prerequisites
 
-| Dependency | Purpose | Install |
-|------------|---------|---------|
-| **Node.js >= 18** | Runtime | [nodejs.org](https://nodejs.org) |
-| **Claude Code CLI** | AI investigation engine | `npm install -g @anthropic-ai/claude-code` |
-| **GitHub CLI** (`gh`) | GitHub issue sync and posting | [cli.github.com](https://cli.github.com) |
-| **Discord bot application** | Bot token + gateway access | See [Discord setup](#discord-setup) below |
+| Dependency                  | Purpose                       | Install                                    |
+| --------------------------- | ----------------------------- | ------------------------------------------ |
+| **Node.js >= 18**           | Runtime                       | [nodejs.org](https://nodejs.org)           |
+| **Claude Code CLI**         | AI investigation engine       | `npm install -g @anthropic-ai/claude-code` |
+| **GitHub CLI** (`gh`)       | GitHub issue sync and posting | [cli.github.com](https://cli.github.com)   |
+| **Discord bot application** | Bot token + gateway access    | See [Discord setup](#discord-setup) below  |
 
 Environment variables:
 
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `DISCORD_BOT_TOKEN` | Yes | Discord bot token (or use the built-in [keytar helper](docs/windows-secrets.md)) |
-| `ANTHROPIC_API_KEY` | No | Claude API key for investigations. Not needed if you are signed in to the Claude Code CLI locally (`claude` uses your authenticated session automatically). |
-| `GITHUB_TOKEN` | For GitHub sync | `gh auth login` sets this automatically |
+| Variable            | Required        | Purpose                                                                                                                                                     |
+| ------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DISCORD_BOT_TOKEN` | Yes             | Discord bot token (or use the built-in [keytar helper](docs/windows-secrets.md))                                                                            |
+| `ANTHROPIC_API_KEY` | No              | Claude API key for investigations. Not needed if you are signed in to the Claude Code CLI locally (`claude` uses your authenticated session automatically). |
+| `GITHUB_TOKEN`      | For GitHub sync | `gh auth login` sets this automatically                                                                                                                     |
 
 ## Quick start
 
@@ -111,11 +111,11 @@ To find your Discord user ID: enable Developer Mode in Discord settings (App Set
 
 ## Modes of operation
 
-| Mode | Command | Description |
-|------|---------|-------------|
-| **Live** | `gameci-help-bot live` | Persistent Discord WebSocket. Responds in real-time. **Recommended.** |
-| **Incremental** | `gameci-help-bot cycle` | One-shot: sync, investigate, post. For scheduled runs or CI. |
-| **Continuous** | `gameci-help-bot continuous` | Loops every N minutes. For persistent deployments without WebSocket. |
+| Mode            | Command                      | Description                                                           |
+| --------------- | ---------------------------- | --------------------------------------------------------------------- |
+| **Live**        | `gameci-help-bot live`       | Persistent Discord WebSocket. Responds in real-time. **Recommended.** |
+| **Incremental** | `gameci-help-bot cycle`      | One-shot: sync, investigate, post. For scheduled runs or CI.          |
+| **Continuous**  | `gameci-help-bot continuous` | Loops every N minutes. For persistent deployments without WebSocket.  |
 
 ### Live mode
 
@@ -131,12 +131,12 @@ gameci-help-bot live --dry-run                 # investigate but don't post
 
 The dispatch system controls how help requests flow from detection to response. Four modes are available:
 
-| Mode | Behavior |
-|------|----------|
-| **auto** | Investigate and respond immediately. Best for testing. |
-| **approval** | Create detection issues in GitHub; wait for maintainer approval emoji. |
-| **countdown** | Staged warnings, auto-dispatch after timeout (default: 72h). |
-| **triage** | Interactive Discord buttons in a private admin channel. **Recommended for production.** |
+| Mode          | Behavior                                                                                |
+| ------------- | --------------------------------------------------------------------------------------- |
+| **auto**      | Investigate and respond immediately. Best for testing.                                  |
+| **approval**  | Create detection issues in GitHub; wait for maintainer approval emoji.                  |
+| **countdown** | Staged warnings, auto-dispatch after timeout (default: 72h).                            |
+| **triage**    | Interactive Discord buttons in a private admin channel. **Recommended for production.** |
 
 ### Triage mode
 
@@ -174,50 +174,51 @@ Full details: [docs/security.md](docs/security.md)
 
 All commands can be run as `gameci-help-bot <command>` (if globally installed) or `node dist/cli.js <command>`.
 
-| Command | Purpose |
-|---------|---------|
-| `live` | Persistent Discord Gateway bot. |
-| `cycle` | Single sync + investigate + post run. |
-| `continuous` | Loop indefinitely with configurable interval. |
-| `sync-discord` | Refresh Discord data only. |
-| `sync-github` | Refresh GitHub issues/PRs/discussions only. |
-| `sync-docs` | Refresh documentation pages only. |
-| `vector-bake` | Manage the optional LlamaIndex vector store. |
-| `feedback mark-good\|mark-bad` | Tag a bot response for quality tracking. |
-| `report summary` | Show cycle stats, feedback totals. |
-| `security-test` | Run prompt injection test suite. |
-| `security-scan <repo>` | Scan synced issues for injection patterns. |
-| `review-quality` | Interactive LLM review of recent responses. |
-| `review-security` | Interactive LLM security audit. |
-| `nssm install\|start\|stop\|...` | Windows NSSM service management. |
+| Command                          | Purpose                                       |
+| -------------------------------- | --------------------------------------------- |
+| `live`                           | Persistent Discord Gateway bot.               |
+| `cycle`                          | Single sync + investigate + post run.         |
+| `continuous`                     | Loop indefinitely with configurable interval. |
+| `sync-discord`                   | Refresh Discord data only.                    |
+| `sync-github`                    | Refresh GitHub issues/PRs/discussions only.   |
+| `sync-docs`                      | Refresh documentation pages only.             |
+| `vector-bake`                    | Manage the optional LlamaIndex vector store.  |
+| `feedback mark-good\|mark-bad`   | Tag a bot response for quality tracking.      |
+| `report summary`                 | Show cycle stats, feedback totals.            |
+| `security-test`                  | Run prompt injection test suite.              |
+| `security-scan <repo>`           | Scan synced issues for injection patterns.    |
+| `review-quality`                 | Interactive LLM review of recent responses.   |
+| `review-security`                | Interactive LLM security audit.               |
+| `nssm install\|start\|stop\|...` | Windows NSSM service management.              |
 
 ### Common flags
 
-| Flag | Description |
-|------|-------------|
-| `--dry-run` | Investigate but do not post responses. |
-| `--repo-dir <path>` | Path to local repo clone for source verification during investigation. |
-| `--docs-dir <path>` | Path to local documentation clone. |
-| `--model <model>` | Override LLM model (e.g., `claude-opus-4-20250514`). |
-| `--dispatch-mode <mode>` | Override dispatch mode (auto, approval, countdown, triage). |
-| `--skip-sync` | Skip data sync, use existing files. |
-| `--investigation-issues` | Create investigation issues in target repo. |
+| Flag                     | Description                                                            |
+| ------------------------ | ---------------------------------------------------------------------- |
+| `--dry-run`              | Investigate but do not post responses.                                 |
+| `--repo-dir <path>`      | Path to local repo clone for source verification during investigation. |
+| `--docs-dir <path>`      | Path to local documentation clone.                                     |
+| `--model <model>`        | Override LLM model (e.g., `claude-opus-4-20250514`).                   |
+| `--dispatch-mode <mode>` | Override dispatch mode (auto, approval, countdown, triage).            |
+| `--skip-sync`            | Skip data sync, use existing files.                                    |
+| `--investigation-issues` | Create investigation issues in target repo.                            |
 
 ## Configuration
 
 All configuration lives in `config.json`. The included config is set up for GameCI's servers -- you will need to customize it for your own Discord server and GitHub repos.
 
-| Section | Controls |
-|---------|----------|
-| **bot** | Name, version, max responses per cycle, cooldown, interval. |
-| **llm** | Provider selection, model, endpoint settings. |
-| **discord** | Guilds, channels (type, reply mode, monitoring), system prompts, triage user IDs. |
-| **github** | Repos to monitor, sync window, collaborators, per-label system prompts. |
-| **dispatch** | Mode, warning intervals, approval/cancel emojis. |
-| **investigations** | Investigation issue creation toggle, target repo, labels. |
-| **notifications** | Discord DM notifications to maintainers. |
+| Section            | Controls                                                                          |
+| ------------------ | --------------------------------------------------------------------------------- |
+| **bot**            | Name, version, max responses per cycle, cooldown, interval.                       |
+| **llm**            | Provider selection, model, endpoint settings.                                     |
+| **discord**        | Guilds, channels (type, reply mode, monitoring), system prompts, triage user IDs. |
+| **github**         | Repos to monitor, sync window, collaborators, per-label system prompts.           |
+| **dispatch**       | Mode, warning intervals, approval/cancel emojis.                                  |
+| **investigations** | Investigation issue creation toggle, target repo, labels.                         |
+| **notifications**  | Discord DM notifications to maintainers.                                          |
 
 Key things to customize:
+
 - `discord.guilds` -- Replace with your guild IDs, channel names, and triage channel ID
 - `discord.triage_user_ids` -- Your Discord user IDs (snowflakes) for triage button access
 - `github.repos` -- Your repos to monitor
@@ -230,13 +231,13 @@ System prompts are layered: base -> guild -> channel. GitHub issues also get per
 
 The default provider is Claude Code, which requires the `claude` CLI to be installed globally.
 
-| Provider | How it runs | Setup |
-|----------|-------------|-------|
-| **Claude Code** (default) | Spawns `claude -p --model <model>` with filesystem access. | `npm i -g @anthropic-ai/claude-code` + `ANTHROPIC_API_KEY` **or** a local `claude` CLI sign-in |
-| **Discord Agent** | Uses OpenClaw Discord agents via sessions API. Maintains context across requests. | Install OpenClaw + run `openclaw gateway start` + set `"provider": "discord"` in config |
-| **LM Studio** | HTTP to local server. Context injected via prompt. | Run LM Studio with a model loaded |
-| **Continue CLI** | `continue --model <name>`. Interactive sessions. | Install Continue CLI |
-| **Codex / OpenAI** | OpenAI API completions. | Set `LLM_PROVIDER=codex` + `OPENAI_API_KEY` |
+| Provider                  | How it runs                                                                       | Setup                                                                                          |
+| ------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **Claude Code** (default) | Spawns `claude -p --model <model>` with filesystem access.                        | `npm i -g @anthropic-ai/claude-code` + `ANTHROPIC_API_KEY` **or** a local `claude` CLI sign-in |
+| **Discord Agent**         | Uses OpenClaw Discord agents via sessions API. Maintains context across requests. | Install OpenClaw + run `openclaw gateway start` + set `"provider": "discord"` in config        |
+| **LM Studio**             | HTTP to local server. Context injected via prompt.                                | Run LM Studio with a model loaded                                                              |
+| **Continue CLI**          | `continue --model <name>`. Interactive sessions.                                  | Install Continue CLI                                                                           |
+| **Codex / OpenAI**        | OpenAI API completions.                                                           | Set `LLM_PROVIDER=codex` + `OPENAI_API_KEY`                                                    |
 
 ## Deployment
 
@@ -306,15 +307,15 @@ data/                  Runtime data directory (auto-created, gitignored)
 
 ## Documentation
 
-| Document | Topic |
-|----------|-------|
-| [docs/dispatch.md](docs/dispatch.md) | Dispatch system, triage mode, detection issues, approval workflows |
-| [docs/security.md](docs/security.md) | Security layers, injection scanning, source verification |
-| [docs/sync-and-state.md](docs/sync-and-state.md) | Sync coverage, cursor files, overrides, contributor filters |
-| [docs/vector-knowledge.md](docs/vector-knowledge.md) | LlamaIndex bake/query/clean, vector search |
-| [docs/feedback-reporting.md](docs/feedback-reporting.md) | Feedback workflow, report output fields |
-| [docs/windows-secrets.md](docs/windows-secrets.md) | Secure Discord token helper (keytar, DPAPI/keychain) |
-| [CLAUDE.md](CLAUDE.md) | Bot behavior rules, tone, security constraints, response quality standards |
+| Document                                                 | Topic                                                                      |
+| -------------------------------------------------------- | -------------------------------------------------------------------------- |
+| [docs/dispatch.md](docs/dispatch.md)                     | Dispatch system, triage mode, detection issues, approval workflows         |
+| [docs/security.md](docs/security.md)                     | Security layers, injection scanning, source verification                   |
+| [docs/sync-and-state.md](docs/sync-and-state.md)         | Sync coverage, cursor files, overrides, contributor filters                |
+| [docs/vector-knowledge.md](docs/vector-knowledge.md)     | LlamaIndex bake/query/clean, vector search                                 |
+| [docs/feedback-reporting.md](docs/feedback-reporting.md) | Feedback workflow, report output fields                                    |
+| [docs/windows-secrets.md](docs/windows-secrets.md)       | Secure Discord token helper (keytar, DPAPI/keychain)                       |
+| [CLAUDE.md](CLAUDE.md)                                   | Bot behavior rules, tone, security constraints, response quality standards |
 
 ## Contributing
 

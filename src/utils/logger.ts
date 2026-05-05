@@ -6,7 +6,12 @@ type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 type LogCategory = 'system' | 'triage' | 'discord' | 'github' | 'social' | 'sync' | 'llm'
 
 const LEVEL_ORDER: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 }
-const LEVEL_LABELS: Record<LogLevel, string> = { debug: 'DBG', info: 'INF', warn: 'WRN', error: 'ERR' }
+const LEVEL_LABELS: Record<LogLevel, string> = {
+  debug: 'DBG',
+  info: 'INF',
+  warn: 'WRN',
+  error: 'ERR',
+}
 
 let logDir = ''
 let currentLogDate = ''
@@ -33,7 +38,8 @@ export function log(
 
   // Console output (formatted)
   const prefix = `[${timestamp.substring(11, 19)}] [${label}] [${category}]`
-  const consoleMethod = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log
+  const consoleMethod =
+    level === 'error' ? console.error : level === 'warn' ? console.warn : console.log
   consoleMethod(`${prefix} ${message}`)
 
   // File output (JSON lines) — fire and forget

@@ -18,6 +18,7 @@ export async function runContinuous(options: ContinuousOptions = {}): Promise<vo
   process.on('SIGINT', shutdown)
   process.on('SIGTERM', shutdown)
 
+  // eslint-disable-next-line no-unmodified-loop-condition -- updated by the SIGINT/SIGTERM handler
   while (running) {
     await runCycle(options)
     if (!running) break

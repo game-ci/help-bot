@@ -4,12 +4,12 @@ The dispatch system gates which issues and messages the bot investigates. Instea
 
 ## Dispatch modes
 
-| Mode | Behavior |
-|------|----------|
-| **auto** (default) | All eligible issues are processed immediately. No approval gate. |
-| **approval** | Detection issues are created in the target repo. A maintainer must react with an approval emoji before the bot investigates. |
-| **countdown** | Like approval, but with staged warnings. Auto-dispatches after all warning stages elapse (default: 3 stages, 24h apart = 72-hour minimum). |
-| **triage** | Interactive Discord-based triage. Help requests are posted to a private admin channel with action buttons. Maintainers control the entire lifecycle from Discord. See [Triage mode](#triage-mode) below. |
+| Mode               | Behavior                                                                                                                                                                                                 |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **auto** (default) | All eligible issues are processed immediately. No approval gate.                                                                                                                                         |
+| **approval**       | Detection issues are created in the target repo. A maintainer must react with an approval emoji before the bot investigates.                                                                             |
+| **countdown**      | Like approval, but with staged warnings. Auto-dispatches after all warning stages elapse (default: 3 stages, 24h apart = 72-hour minimum).                                                               |
+| **triage**         | Interactive Discord-based triage. Help requests are posted to a private admin channel with action buttons. Maintainers control the entire lifecycle from Discord. See [Triage mode](#triage-mode) below. |
 
 Set the mode via CLI (`--dispatch-mode <mode>`) or in `config.json`:
 
@@ -33,6 +33,7 @@ Set the mode via CLI (`--dispatch-mode <mode>`) or in `config.json`:
 In `approval` and `countdown` modes, detection issues are created in the target repo (default: `game-ci/help-bot`) with labels `help-bot`, `detection`, and the source repo name.
 
 Maintainer actions on detection issues:
+
 - React with approval emoji (thumbs up or rocket) to approve immediately
 - React with cancel emoji (thumbs down) to cancel
 - Post any comment to approve (bot-generated warning comments are excluded)
@@ -141,17 +142,18 @@ Add a `triage_channel_id` to your guild config and list Discord user IDs for tri
 }
 ```
 
-| Config key | Description |
-|------------|-------------|
-| `discord.triage_user_ids` | Array of Discord user IDs (snowflakes) allowed to use triage buttons. Checked alongside `github.collaborators`. |
-| `guild.triage_channel_id` | Discord channel ID of the private admin channel where triage notifications are posted. |
-| `dispatch.discord_mode` | Set to `"triage"` to enable triage mode, or pass `--dispatch-mode triage` on the CLI. |
-| `dispatch.github_triage` | Enable GitHub issue polling in triage mode (default: `false`). |
-| `dispatch.github_poll_interval_minutes` | How often to poll GitHub repos for new issues (default: `10`). |
+| Config key                              | Description                                                                                                     |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `discord.triage_user_ids`               | Array of Discord user IDs (snowflakes) allowed to use triage buttons. Checked alongside `github.collaborators`. |
+| `guild.triage_channel_id`               | Discord channel ID of the private admin channel where triage notifications are posted.                          |
+| `dispatch.discord_mode`                 | Set to `"triage"` to enable triage mode, or pass `--dispatch-mode triage` on the CLI.                           |
+| `dispatch.github_triage`                | Enable GitHub issue polling in triage mode (default: `false`).                                                  |
+| `dispatch.github_poll_interval_minutes` | How often to poll GitHub repos for new issues (default: `10`).                                                  |
 
 ### Access control
 
 Button clicks are verified against two lists:
+
 - `github.collaborators` -- GitHub usernames (matched against Discord username)
 - `discord.triage_user_ids` -- Discord user IDs (exact snowflake match)
 
@@ -175,6 +177,7 @@ When enabled, the bot polls GitHub repos periodically (default: every 10 minutes
 ### Supported source types
 
 Triage mode handles messages from:
+
 - **Text channels** -- Regular channel messages
 - **Threads** -- Messages inside threads (resolved to parent channel config)
 - **Forum posts** -- Forum channel posts (resolved to parent forum channel config)
@@ -192,16 +195,16 @@ The dispatch gate runs after issue filtering and security scanning, before LLM i
 
 ## Source files
 
-| File | Purpose |
-|------|---------|
-| `src/dispatch/types.ts` | Type definitions: `DispatchMode`, `DetectionRecord`, `DispatchConfig` |
-| `src/dispatch/orchestrator.ts` | Main entry point: `runDispatch()`, `runDiscordDispatch()` |
-| `src/dispatch/detection.ts` | Creates detection issues (GitHub + Discord) |
-| `src/dispatch/approval.ts` | Checks reactions/comments, advances countdown stages |
-| `src/dispatch/lifecycle.ts` | Post-dispatch cleanup: mark dispatched, close detections |
-| `src/dispatch/sanitize.ts` | Security helpers for untrusted content |
-| `src/triage/types.ts` | `TriageRecord`, button ID helpers, guild shortname mapping |
-| `src/triage/notification.ts` | Embed builder, button rows, post/update triage messages |
-| `src/triage/handler.ts` | InteractionCreate handler, button routing, thread posting |
-| `src/triage/investigation.ts` | Claude investigation wrapper, maintainer instruction fetching |
-| `src/triage/send.ts` | Post approved responses to original source |
+| File                           | Purpose                                                               |
+| ------------------------------ | --------------------------------------------------------------------- |
+| `src/dispatch/types.ts`        | Type definitions: `DispatchMode`, `DetectionRecord`, `DispatchConfig` |
+| `src/dispatch/orchestrator.ts` | Main entry point: `runDispatch()`, `runDiscordDispatch()`             |
+| `src/dispatch/detection.ts`    | Creates detection issues (GitHub + Discord)                           |
+| `src/dispatch/approval.ts`     | Checks reactions/comments, advances countdown stages                  |
+| `src/dispatch/lifecycle.ts`    | Post-dispatch cleanup: mark dispatched, close detections              |
+| `src/dispatch/sanitize.ts`     | Security helpers for untrusted content                                |
+| `src/triage/types.ts`          | `TriageRecord`, button ID helpers, guild shortname mapping            |
+| `src/triage/notification.ts`   | Embed builder, button rows, post/update triage messages               |
+| `src/triage/handler.ts`        | InteractionCreate handler, button routing, thread posting             |
+| `src/triage/investigation.ts`  | Claude investigation wrapper, maintainer instruction fetching         |
+| `src/triage/send.ts`           | Post approved responses to original source                            |

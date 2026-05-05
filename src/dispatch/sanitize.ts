@@ -43,12 +43,12 @@ export function sanitizeLabel(label: string): string {
 const REACTION_EMOJI: Record<string, string> = {
   '+1': '👍',
   '-1': '👎',
-  'rocket': '🚀',
-  'eyes': '👀',
-  'heart': '❤️',
-  'hooray': '🎉',
-  'laugh': '😄',
-  'confused': '😕',
+  rocket: '🚀',
+  eyes: '👀',
+  heart: '❤️',
+  hooray: '🎉',
+  laugh: '😄',
+  confused: '😕',
 }
 
 export function reactionToEmoji(content: string): string {
@@ -113,17 +113,23 @@ export function buildDiscordDetectionBody(params: DiscordDetectionBodyParams): s
 
   if (params.dispatchMode === 'countdown') {
     const totalHours = (params.warningsRequired ?? 3) * (params.warningIntervalHours ?? 24)
-    const totalDays = Math.round(totalHours / 24 * 10) / 10
+    const totalDays = Math.round((totalHours / 24) * 10) / 10
     sections.push('')
-    sections.push(`**Auto-dispatch:** This detection will progress through ${params.warningsRequired ?? 3} warning stages (${params.warningIntervalHours ?? 24}h apart). ` +
-      `If no maintainer action is taken, response auto-dispatches after ~${totalDays} day(s).`)
+    sections.push(
+      `**Auto-dispatch:** This detection will progress through ${params.warningsRequired ?? 3} warning stages (${params.warningIntervalHours ?? 24}h apart). ` +
+        `If no maintainer action is taken, response auto-dispatches after ~${totalDays} day(s).`,
+    )
     sections.push('')
-    sections.push(`Each warning stage must elapse individually — the bot cannot skip stages even if it hasn't run for a while.`)
+    sections.push(
+      `Each warning stage must elapse individually — the bot cannot skip stages even if it hasn't run for a while.`,
+    )
   }
 
   sections.push('')
   sections.push('---')
-  sections.push('*Created by [GameCI Help Bot](https://github.com/game-ci/help-bot) dispatch system*')
+  sections.push(
+    '*Created by [GameCI Help Bot](https://github.com/game-ci/help-bot) dispatch system*',
+  )
 
   return sections.join('\n')
 }
@@ -176,17 +182,23 @@ export function buildDetectionBody(params: DetectionBodyParams): string {
 
   if (params.dispatchMode === 'countdown') {
     const totalHours = (params.warningsRequired ?? 3) * (params.warningIntervalHours ?? 24)
-    const totalDays = Math.round(totalHours / 24 * 10) / 10
+    const totalDays = Math.round((totalHours / 24) * 10) / 10
     sections.push('')
-    sections.push(`**Auto-dispatch:** This detection will progress through ${params.warningsRequired ?? 3} warning stages (${params.warningIntervalHours ?? 24}h apart). ` +
-      `If no maintainer action is taken, investigation auto-dispatches after ~${totalDays} day(s).`)
+    sections.push(
+      `**Auto-dispatch:** This detection will progress through ${params.warningsRequired ?? 3} warning stages (${params.warningIntervalHours ?? 24}h apart). ` +
+        `If no maintainer action is taken, investigation auto-dispatches after ~${totalDays} day(s).`,
+    )
     sections.push('')
-    sections.push(`Each warning stage must elapse individually — the bot cannot skip stages even if it hasn't run for a while.`)
+    sections.push(
+      `Each warning stage must elapse individually — the bot cannot skip stages even if it hasn't run for a while.`,
+    )
   }
 
   sections.push('')
   sections.push('---')
-  sections.push('*Created by [GameCI Help Bot](https://github.com/game-ci/help-bot) dispatch system*')
+  sections.push(
+    '*Created by [GameCI Help Bot](https://github.com/game-ci/help-bot) dispatch system*',
+  )
 
   return sections.join('\n')
 }
@@ -209,12 +221,14 @@ export function buildWarningComment(params: {
   const cancelEmoji = params.cancelReactions.map(reactionToEmoji).join(' or ')
   const sourceUrl = `https://github.com/${params.sourceRepo}/issues/${params.sourceNumber}`
   const earliestDispatchHours = remaining * params.intervalHours
-  const earliestDispatchDays = Math.round(earliestDispatchHours / 24 * 10) / 10
+  const earliestDispatchDays = Math.round((earliestDispatchHours / 24) * 10) / 10
 
   const lines: string[] = []
   lines.push(`### Stage ${params.stage}/${params.totalStages} — Countdown Warning`)
   lines.push('')
-  lines.push(`Investigation will auto-dispatch after **${remaining}** more stage(s) (~${earliestDispatchDays} day(s)).`)
+  lines.push(
+    `Investigation will auto-dispatch after **${remaining}** more stage(s) (~${earliestDispatchDays} day(s)).`,
+  )
   lines.push('')
   lines.push(`- React ${approveEmoji} to **approve now**`)
   lines.push(`- React ${cancelEmoji} to **cancel**`)

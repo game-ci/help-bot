@@ -28,28 +28,33 @@ When consulted with a question or topic:
 The GameCI documentation site (https://game.ci/docs) is organized into these sections. Synced files follow the naming pattern `data/docs/{section}--{page-slug}.md`:
 
 ### Getting Started
+
 - `github--getting-started.md` -- https://game.ci/docs/github/getting-started
   - Overview, prerequisites, quick start workflow example
 - `github--activation.md` -- https://game.ci/docs/github/activation
   - Unity license activation in CI: Personal (manual .alf/.ulf flow), Professional (serial), return step
 
 ### Builder
+
 - `github--builder.md` -- https://game.ci/docs/github/builder
   - unity-builder action reference, all input parameters
   - Target platforms, custom build methods, IL2CPP settings, versioning
   - Android (keystore), iOS (Xcode export), WebGL (memory, compression)
 
 ### Test Runner
+
 - `github--test-runner.md` -- https://game.ci/docs/github/test-runner
   - unity-test-runner action reference
   - EditMode tests, PlayMode tests, code coverage, custom assemblies
   - Test result artifacts, JUnit output
 
 ### License Management
+
 - `github--returning-a-license.md` -- https://game.ci/docs/github/returning-a-license
   - Returning Unity Pro/Plus licenses after CI runs to free up seats
 
 ### Docker
+
 - `docker--docker-images.md` -- https://game.ci/docs/docker/docker-images
   - Docker image architecture: base, hub, editor images
   - Image tag format, custom images, multi-stage builds
@@ -58,6 +63,7 @@ The GameCI documentation site (https://game.ci/docs) is organized into these sec
   - How to find available tags
 
 ### Deployment
+
 - `github--deployment--steam.md` -- https://game.ci/docs/github/deployment/steam
   - Steam deployment via steam-deploy action
   - SteamCMD setup, app/depot configuration, VDF files
@@ -67,7 +73,9 @@ The GameCI documentation site (https://game.ci/docs) is organized into these sec
 When searching for relevant docs, use these strategies in order:
 
 ### 1. Keyword Match
+
 Search `data/docs/` files for key terms from the question using Grep:
+
 - Error messages (exact match first, then partial)
 - Action names (`unity-builder`, `unity-test-runner`, `steam-deploy`)
 - Configuration keys (`targetPlatform`, `unityVersion`, `buildMethod`)
@@ -75,7 +83,9 @@ Search `data/docs/` files for key terms from the question using Grep:
 - Technology terms (`IL2CPP`, `Mono`, `Docker`, `activation`, `license`)
 
 ### 2. Section Match
+
 Based on the topic, go directly to the appropriate file:
+
 - Building questions -> `github--builder.md`
 - Testing questions -> `github--test-runner.md`
 - Docker/image questions -> `docker--docker-images.md` and `docker--versions.md`
@@ -84,13 +94,17 @@ Based on the topic, go directly to the appropriate file:
 - Getting started -> `github--getting-started.md`
 
 ### 3. Error Match
+
 If the question includes an error message:
+
 - Search for the exact error string first
 - Then search for key terms from the error (e.g., "No valid Unity Editor" -> search "Editor", "valid")
 - Check if the error relates to a known limitation
 
 ### 4. Platform Match
+
 If a specific platform is mentioned:
+
 - Search for the platform name across all docs files
 - Check builder docs for platform-specific parameters
 - Check Docker docs for platform-specific image tags
@@ -116,12 +130,14 @@ When returning results, provide structured output:
 ## Relevant Documentation
 
 ### [Page Title](https://game.ci/docs/path/to/page)
+
 **File:** `data/docs/filename.md`
 **Relevance:** High/Medium/Low
 
 > Relevant excerpt from the documentation page, quoted exactly as it appears in the synced file.
 
 ### [Another Page](https://game.ci/docs/path/to/other)
+
 **File:** `data/docs/other-filename.md`
 **Relevance:** Medium
 

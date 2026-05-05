@@ -54,10 +54,14 @@ function buildInvestigationIssueBody(options: {
 
   // Source link
   if (source === 'discord') {
-    sections.push(`> **Source:** Discord message from **@${author}** in **#${channelName}** (${guildName})`)
+    sections.push(
+      `> **Source:** Discord message from **@${author}** in **#${channelName}** (${guildName})`,
+    )
   } else if (repo && issueNumber) {
     const sourceUrl = `https://github.com/${repo}/issues/${issueNumber}`
-    sections.push(`> **Source:** [${repo}#${issueNumber}](${sourceUrl})${title ? ` — ${title}` : ''}`)
+    sections.push(
+      `> **Source:** [${repo}#${issueNumber}](${sourceUrl})${title ? ` — ${title}` : ''}`,
+    )
   }
   sections.push('')
 
@@ -71,7 +75,10 @@ function buildInvestigationIssueBody(options: {
     metaRows.push(`| **Guild** | ${guildName} |`)
   } else {
     if (repo) metaRows.push(`| **Repository** | [${repo}](https://github.com/${repo}) |`)
-    if (issueNumber) metaRows.push(`| **Issue/PR** | [#${issueNumber}](https://github.com/${repo}/issues/${issueNumber}) |`)
+    if (issueNumber)
+      metaRows.push(
+        `| **Issue/PR** | [#${issueNumber}](https://github.com/${repo}/issues/${issueNumber}) |`,
+      )
   }
   if (classification) metaRows.push(`| **Classification** | \`${classification}\` |`)
   if (severity) metaRows.push(`| **Severity** | \`${severity}\` |`)
@@ -153,7 +160,9 @@ function buildInvestigationIssueBody(options: {
   if (source === 'discord') {
     sections.push(`Source: Discord #${channelName}`)
   } else if (repo && issueNumber) {
-    sections.push(`Source: [${repo}#${issueNumber}](https://github.com/${repo}/issues/${issueNumber})`)
+    sections.push(
+      `Source: [${repo}#${issueNumber}](https://github.com/${repo}/issues/${issueNumber})`,
+    )
   }
   sections.push(`</sub>`)
 
@@ -168,7 +177,8 @@ function buildInvestigationIssueBody(options: {
  */
 export async function postInvestigationIssues(options: PostInvestigationOptions): Promise<void> {
   const state = await loadState()
-  const postedInvestigations: Record<string, string> = (state.meta?.postedInvestigations as Record<string, string>) ?? {}
+  const postedInvestigations: Record<string, string> =
+    (state.meta?.postedInvestigations as Record<string, string>) ?? {}
 
   // Scan both github and discord response directories
   for (const subdir of ['github', 'discord']) {
@@ -181,12 +191,13 @@ export async function postInvestigationIssues(options: PostInvestigationOptions)
     }
 
     // Find response files (not -findings, -analysis, -context, -investigation)
-    const responseFiles = files.filter((f) =>
-      f.endsWith('.md')
-      && !f.includes('-findings')
-      && !f.includes('-analysis')
-      && !f.includes('-context')
-      && !f.includes('-investigation')
+    const responseFiles = files.filter(
+      (f) =>
+        f.endsWith('.md') &&
+        !f.includes('-findings') &&
+        !f.includes('-analysis') &&
+        !f.includes('-context') &&
+        !f.includes('-investigation'),
     )
 
     for (const file of responseFiles) {
@@ -204,7 +215,9 @@ export async function postInvestigationIssues(options: PostInvestigationOptions)
       const { meta, body: responseBody } = parseFrontMatter(responseRaw)
       const { body: findingsBody } = findingsRaw ? parseFrontMatter(findingsRaw) : { body: '' }
       const { body: analysisBody } = analysisRaw ? parseFrontMatter(analysisRaw) : { body: '' }
-      const { body: legacyInvestigationBody } = legacyInvestigationRaw ? parseFrontMatter(legacyInvestigationRaw) : { body: '' }
+      const { body: legacyInvestigationBody } = legacyInvestigationRaw
+        ? parseFrontMatter(legacyInvestigationRaw)
+        : { body: '' }
 
       // Build investigation key for dedup
       const source = String(meta.source ?? (subdir === 'discord' ? 'discord' : 'github_issue'))
@@ -274,11 +287,15 @@ export async function postInvestigationIssues(options: PostInvestigationOptions)
       try {
         const labelArgs = labels.flatMap((l) => ['--label', l])
         const { stdout } = await execFileAsync('gh', [
-          'issue', 'create',
-          '--repo', options.targetRepo,
-          '--title', title,
+          'issue',
+          'create',
+          '--repo',
+          options.targetRepo,
+          '--title',
+          title,
           ...labelArgs,
-          '--body', body,
+          '--body',
+          body,
         ])
         const createdUrl = stdout.trim()
         const createdNumber = createdUrl.split('/').pop() ?? ''
@@ -287,7 +304,9 @@ export async function postInvestigationIssues(options: PostInvestigationOptions)
         postedInvestigations[investigationKey] = createdNumber
         recordStat('investigationIssuesPosted', 1)
       } catch (error: any) {
-        console.warn(`Failed to create investigation issue for ${investigationKey}: ${error.message ?? error}`)
+        console.warn(
+          `Failed to create investigation issue for ${investigationKey}: ${error.message ?? error}`,
+        )
       }
 
       await new Promise((resolve) => setTimeout(resolve, 2000))

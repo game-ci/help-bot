@@ -65,12 +65,16 @@ export function resetStats(): void {
  * Record a stat increment. When guildName is provided and the key is a Discord-related
  * stat, per-guild tracking is also updated.
  */
-export function recordStat<K extends keyof CycleStats>(key: K, amount = 1, guildName?: string): void {
+export function recordStat<K extends keyof CycleStats>(
+  key: K,
+  amount = 1,
+  guildName?: string,
+): void {
   if (key === 'discordGuildStats') {
     // This key is an object, not a number -- don't increment directly
     return
   }
-  (currentStats[key] as number) += amount
+  ;(currentStats[key] as number) += amount
 
   // Per-guild tracking for Discord messages
   if (guildName && key === 'discordMessagesSynced') {
