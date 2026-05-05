@@ -79,7 +79,11 @@ export interface TriageButtonId {
   compactId: string // guild:channel:msgId or repo:issueNum
 }
 
-export function buildButtonId(action: TriageAction, sourceType: 'd' | 'g', compactId: string): string {
+export function buildButtonId(
+  action: TriageAction,
+  sourceType: 'd' | 'g',
+  compactId: string,
+): string {
   const id = `triage|${action}|${sourceType}|${compactId}`
   if (id.length > MAX_CUSTOM_ID) {
     throw new Error(`Button custom_id exceeds ${MAX_CUSTOM_ID} chars: ${id.length}`)
@@ -99,12 +103,18 @@ export function parseButtonId(customId: string): TriageButtonId | null {
 }
 
 /** Build compact ID for a Discord source */
-export function discordCompactId(guildName: string, channelName: string, messageId: string): string {
+export function discordCompactId(
+  guildName: string,
+  channelName: string,
+  messageId: string,
+): string {
   return `${guildToShort(guildName)}:${channelName}:${messageId}`
 }
 
 /** Parse a Discord compact ID back to components */
-export function parseDiscordCompactId(compactId: string): { guildName: string; channelName: string; messageId: string } | null {
+export function parseDiscordCompactId(
+  compactId: string,
+): { guildName: string; channelName: string; messageId: string } | null {
   const [guildShort, channelName, ...messageIdParts] = compactId.split(':')
   if (!guildShort || !channelName || messageIdParts.length === 0) return null
   return {
@@ -120,7 +130,9 @@ export function githubCompactId(repo: string, issueNumber: number): string {
 }
 
 /** Parse a GitHub compact ID */
-export function parseGithubCompactId(compactId: string): { repo: string; issueNumber: number } | null {
+export function parseGithubCompactId(
+  compactId: string,
+): { repo: string; issueNumber: number } | null {
   const lastColon = compactId.lastIndexOf(':')
   if (lastColon < 0) return null
   const num = Number(compactId.substring(lastColon + 1))

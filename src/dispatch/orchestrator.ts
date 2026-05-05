@@ -67,7 +67,9 @@ export async function runDispatch(options: DispatchOptions): Promise<DispatchRes
     config: options.config,
     dryRun: options.dryRun,
   })
-  console.log(`  Detections created: ${createResult.created} (${createResult.skippedExisting} existing, ${createResult.skippedInvestigated} investigated, ${createResult.skippedLimit} over limit)`)
+  console.log(
+    `  Detections created: ${createResult.created} (${createResult.skippedExisting} existing, ${createResult.skippedInvestigated} investigated, ${createResult.skippedLimit} over limit)`,
+  )
 
   // Step 2: Clean up stale detections
   const staleCount = await cleanupStaleDetections({
@@ -133,7 +135,9 @@ export interface DiscordDispatchResult {
  * Creates detection issues for Discord messages and checks approvals.
  * Discord dispatch NEVER uses 'auto' mode — always requires approval.
  */
-export async function runDiscordDispatch(options: DiscordDispatchOptions): Promise<DiscordDispatchResult> {
+export async function runDiscordDispatch(
+  options: DiscordDispatchOptions,
+): Promise<DiscordDispatchResult> {
   const config = { ...options.config }
   // Discord dispatch is NEVER auto — force to approval or countdown
   if (config.mode === 'auto') {
@@ -149,7 +153,9 @@ export async function runDiscordDispatch(options: DiscordDispatchOptions): Promi
     config,
     dryRun: options.dryRun,
   })
-  console.log(`  Discord detections created: ${createResult.created} (${createResult.skippedExisting} existing)`)
+  console.log(
+    `  Discord detections created: ${createResult.created} (${createResult.skippedExisting} existing)`,
+  )
 
   // Step 2: Check approvals on existing Discord detections
   // We reuse the GitHub approval checking since detection issues

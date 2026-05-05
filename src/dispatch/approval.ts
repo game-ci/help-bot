@@ -44,7 +44,8 @@ async function fetchReactions(repo: string, issueNumber: number): Promise<GitHub
     const { stdout } = await execFileAsync('gh', [
       'api',
       `repos/${repo}/issues/${issueNumber}/reactions`,
-      '--header', 'Accept: application/vnd.github+json',
+      '--header',
+      'Accept: application/vnd.github+json',
     ])
     return JSON.parse(stdout)
   } catch {
@@ -60,7 +61,8 @@ async function fetchComments(repo: string, issueNumber: number): Promise<GitHubC
     const { stdout } = await execFileAsync('gh', [
       'api',
       `repos/${repo}/issues/${issueNumber}/comments`,
-      '--header', 'Accept: application/vnd.github+json',
+      '--header',
+      'Accept: application/vnd.github+json',
     ])
     return JSON.parse(stdout)
   } catch {
@@ -73,10 +75,13 @@ async function fetchComments(repo: string, issueNumber: number): Promise<GitHubC
  */
 async function postComment(repo: string, issueNumber: number, body: string): Promise<void> {
   await execFileAsync('gh', [
-    'issue', 'comment',
+    'issue',
+    'comment',
     String(issueNumber),
-    '--repo', repo,
-    '--body', body,
+    '--repo',
+    repo,
+    '--body',
+    body,
   ])
 }
 
@@ -93,7 +98,12 @@ async function processDetection(
     collaborators: string[]
     dryRun: boolean
   },
-): Promise<{ result: 'approved' | 'cancelled' | 'pending' | 'expired'; approvedBy?: string; cancelledBy?: string; warningPosted: boolean }> {
+): Promise<{
+  result: 'approved' | 'cancelled' | 'pending' | 'expired'
+  approvedBy?: string
+  cancelledBy?: string
+  warningPosted: boolean
+}> {
   const collaboratorsLower = options.collaborators.map((c) => c.toLowerCase())
 
   // Check reactions from collaborators
@@ -166,12 +176,16 @@ async function processDetection(
               cancelReactions: options.config.cancel_reactions,
             })
             await postComment(options.targetRepo, record.detectionIssueNumber, warningBody)
-            console.log(`  Detection ${key}: posted warning ${nextStage}/${record.warningsRequired}`)
+            console.log(
+              `  Detection ${key}: posted warning ${nextStage}/${record.warningsRequired}`,
+            )
           } catch (error: any) {
             console.warn(`  Failed to post warning for ${key}: ${error.message ?? error}`)
           }
         } else {
-          console.log(`  DRY RUN: would post warning ${nextStage}/${record.warningsRequired} for ${key}`)
+          console.log(
+            `  DRY RUN: would post warning ${nextStage}/${record.warningsRequired} for ${key}`,
+          )
         }
 
         record.currentStage = nextStage
@@ -192,7 +206,9 @@ async function processDetection(
  * For countdown mode, advance stages and post warnings.
  * Returns the subset of eligible issues that have been approved.
  */
-export async function checkApprovals(options: CheckApprovalsOptions): Promise<CheckApprovalsResult> {
+export async function checkApprovals(
+  options: CheckApprovalsOptions,
+): Promise<CheckApprovalsResult> {
   const state = await loadState()
   const detections = getDetections(state)
 
@@ -245,7 +261,9 @@ export async function checkApprovals(options: CheckApprovalsOptions): Promise<Ch
         result.approved.push(issue)
         result.expired++
         recordStat('detectionsExpired')
-        console.log(`  Detection ${key}: auto-dispatched (all ${record.warningsRequired} stages elapsed)`)
+        console.log(
+          `  Detection ${key}: auto-dispatched (all ${record.warningsRequired} stages elapsed)`,
+        )
         break
 
       case 'pending':
@@ -293,7 +311,9 @@ export interface CheckDiscordApprovalsResult {
  * Check Discord detection issues for approval.
  * Same mechanics as GitHub but uses Discord detection keys.
  */
-export async function checkDiscordApprovals(options: CheckDiscordApprovalsOptions): Promise<CheckDiscordApprovalsResult> {
+export async function checkDiscordApprovals(
+  options: CheckDiscordApprovalsOptions,
+): Promise<CheckDiscordApprovalsResult> {
   const state = await loadState()
   const detections = getDetections(state)
 

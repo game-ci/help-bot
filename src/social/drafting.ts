@@ -30,10 +30,22 @@ export async function runContentDraft(
   const contentId = record.contentKey.replace('content:', '').replace(/[:/]/g, '-')
   const responseId = `social-${contentId}${revSuffix}`
 
-  const linkedinConfig = getValue(options.config, ['social', 'linkedin'], {} as Record<string, unknown>)
+  const linkedinConfig = getValue(
+    options.config,
+    ['social', 'linkedin'],
+    {} as Record<string, unknown>,
+  )
   const maxLength = Number(getValue(linkedinConfig, ['max_length'], 3000))
-  const defaultHashtags = getValue(linkedinConfig, ['default_hashtags'], ['#GameCI', '#Unity', '#CICD', '#GameDev']) as string[]
-  const tone = getValue(linkedinConfig, ['tone'], 'professional, technically credible, community-focused') as string
+  const defaultHashtags = getValue(
+    linkedinConfig,
+    ['default_hashtags'],
+    ['#GameCI', '#Unity', '#CICD', '#GameDev'],
+  ) as string[]
+  const tone = getValue(
+    linkedinConfig,
+    ['tone'],
+    'professional, technically credible, community-focused',
+  ) as string
 
   const prompt = buildPrompt(record, responseId, {
     maxLength,
@@ -47,18 +59,28 @@ export async function runContentDraft(
   const maxTurns = 15
   const args = ['-p', '--model', options.model, '--max-turns', String(maxTurns)]
   args.push(
-    '--allowedTools', 'Read',
-    '--allowedTools', 'Glob',
-    '--allowedTools', 'Grep',
-    '--allowedTools', 'Bash',
-    '--allowedTools', 'Write',
+    '--allowedTools',
+    'Read',
+    '--allowedTools',
+    'Glob',
+    '--allowedTools',
+    'Grep',
+    '--allowedTools',
+    'Bash',
+    '--allowedTools',
+    'Write',
   )
   args.push(
-    '--disallowedTools', 'Edit',
-    '--disallowedTools', 'WebFetch',
-    '--disallowedTools', 'WebSearch',
-    '--disallowedTools', 'NotebookEdit',
-    '--disallowedTools', 'Task',
+    '--disallowedTools',
+    'Edit',
+    '--disallowedTools',
+    'WebFetch',
+    '--disallowedTools',
+    'WebSearch',
+    '--disallowedTools',
+    'NotebookEdit',
+    '--disallowedTools',
+    'Task',
   )
 
   const env = { ...process.env }
@@ -105,9 +127,7 @@ export async function runContentDraft(
 
 /** Read the body of a draft file */
 export async function readDraftBody(draftFile: string): Promise<string | undefined> {
-  const filePath = draftFile.startsWith('data/')
-    ? join(REPO_ROOT, draftFile)
-    : draftFile
+  const filePath = draftFile.startsWith('data/') ? join(REPO_ROOT, draftFile) : draftFile
   try {
     const content = await readFile(filePath, 'utf-8')
     const { body } = parseFrontMatter(content)

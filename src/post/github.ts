@@ -5,7 +5,14 @@ import { join } from 'node:path'
 import { parseFrontMatter } from '../utils/frontmatter'
 import { RESPONSES_DIR } from '../utils/paths'
 import { recordStat } from '../metrics'
-import { loadState, updateState, setPostedResponse, getPostedResponses, getPostedResponseIds, setPostedResponseId } from '../state'
+import {
+  loadState,
+  updateState,
+  setPostedResponse,
+  getPostedResponses,
+  getPostedResponseIds,
+  setPostedResponseId,
+} from '../state'
 
 const execFileAsync = promisify(execFile)
 
@@ -15,7 +22,8 @@ export interface PostGitHubOptions {
   forceReplyId?: string
 }
 
-const FEEDBACK_PROMPT = '\n\n---\n<sub>Was this helpful? React with :+1: or :-1: to help improve future responses.</sub>'
+const FEEDBACK_PROMPT =
+  '\n\n---\n<sub>Was this helpful? React with :+1: or :-1: to help improve future responses.</sub>'
 
 export async function postGitHubResponses(options: PostGitHubOptions): Promise<void> {
   const repoDir = join(RESPONSES_DIR, 'github')
@@ -50,15 +58,19 @@ export async function postGitHubResponses(options: PostGitHubOptions): Promise<v
       }
 
       const postedAt = postedResponses[`${repo}#${number}`]
-      if (postedAt && await isFileOlderThan(fullPath, postedAt)) {
-        console.log(`Skipping GitHub response ${responseId}: ${repo}#${number} was already answered after this file was written.`)
+      if (postedAt && (await isFileOlderThan(fullPath, postedAt))) {
+        console.log(
+          `Skipping GitHub response ${responseId}: ${repo}#${number} was already answered after this file was written.`,
+        )
         recordStat('githubResponsesSkipped', 1)
         continue
       }
     }
 
     if (isOfficial && !options.allowOfficial && options.forceReplyId !== responseId) {
-      console.log(`Skipping GitHub response ${responseId} because an official collaborator already replied.`)
+      console.log(
+        `Skipping GitHub response ${responseId} because an official collaborator already replied.`,
+      )
       recordStat('githubResponsesSkipped', 1)
       continue
     }
@@ -77,9 +89,13 @@ export async function postGitHubResponses(options: PostGitHubOptions): Promise<v
     try {
       // Post comment and capture the comment URL (contains comment ID)
       const { stdout } = await execFileAsync('gh', [
-        'issue', 'comment', String(number),
-        '--repo', repo,
-        '--body', bodyWithFeedback,
+        'issue',
+        'comment',
+        String(number),
+        '--repo',
+        repo,
+        '--body',
+        bodyWithFeedback,
       ])
       const commentUrl = stdout.trim()
       // Extract comment ID from URL like https://github.com/.../issues/N#issuecomment-XXXXX
@@ -93,7 +109,11 @@ export async function postGitHubResponses(options: PostGitHubOptions): Promise<v
         setPostedResponse(s, repo, number)
         if (commentId) {
           s.meta ??= {}
-          const botComments = (s.meta.botComments as Record<string, { commentId: string; repo: string; issueNumber: number; postedAt: string }>) ?? {}
+          const botComments =
+            (s.meta.botComments as Record<
+              string,
+              { commentId: string; repo: string; issueNumber: number; postedAt: string }
+            >) ?? {}
           botComments[`${repo}#${number}`] = {
             commentId,
             repo,
@@ -105,9 +125,13 @@ export async function postGitHubResponses(options: PostGitHubOptions): Promise<v
       })
       postedResponseIds[responseId] = new Date().toISOString()
       postedResponses[`${repo}#${number}`] = postedResponseIds[responseId]
-      console.log(`Posted GitHub response for ${repo}#${number}${commentId ? ` (comment ${commentId})` : ''}`)
+      console.log(
+        `Posted GitHub response for ${repo}#${number}${commentId ? ` (comment ${commentId})` : ''}`,
+      )
     } catch (error: any) {
-      console.warn(`Failed to post GitHub response for ${repo}#${number}: ${error.message ?? error}`)
+      console.warn(
+        `Failed to post GitHub response for ${repo}#${number}: ${error.message ?? error}`,
+      )
     }
     await new Promise((resolve) => setTimeout(resolve, 1000))
   }

@@ -27,6 +27,7 @@ gameci-help-bot report summary
 ```
 
 Prints:
+
 - Discord messages synced, responses posted/skipped
 - GitHub issues/releases/tags synced, responses posted/skipped
 - Feedback totals (good vs. bad) plus the timestamp of the last cycle

@@ -1,4 +1,11 @@
-export type ContentStatus = 'topic_received' | 'drafting' | 'draft_ready' | 'revising' | 'approved' | 'committed' | 'discarded'
+export type ContentStatus =
+  | 'topic_received'
+  | 'drafting'
+  | 'draft_ready'
+  | 'revising'
+  | 'approved'
+  | 'committed'
+  | 'discarded'
 
 export type ContentPlatform = 'linkedin'
 
@@ -59,7 +66,9 @@ export function buildSocialButtonId(action: SocialAction, contentId: string): st
   return id
 }
 
-export function parseSocialButtonId(customId: string): { action: SocialAction; contentId: string } | null {
+export function parseSocialButtonId(
+  customId: string,
+): { action: SocialAction; contentId: string } | null {
   if (!customId.startsWith('social|')) return null
   const parts = customId.split('|')
   if (parts.length !== 3) return null

@@ -18,13 +18,13 @@ Add the Discord provider configuration to your `config.json`:
 ```json
 {
   "llm": {
-    "provider": "discord",  // Set this to use Discord as the default provider
+    "provider": "discord", // Set this to use Discord as the default provider
     "discord": {
       "enabled": true,
       "session_label": "help-bot-assistant",
       "model": "claude-sonnet-4-20250514",
       "timeout_seconds": 300,
-      "workspace_path": null  // Uses REPO_ROOT by default
+      "workspace_path": null // Uses REPO_ROOT by default
     }
   }
 }
@@ -86,7 +86,7 @@ You can override the provider for specific requests programmatically:
 await runProvider(prompt, {
   provider: 'discord',
   systemPrompt: 'Additional context...',
-  modelOverride: 'claude-opus-4-20250514'
+  modelOverride: 'claude-opus-4-20250514',
 })
 ```
 
@@ -156,14 +156,15 @@ If responses timeout:
 1. User asks in #help channel: "How do I fix IL2CPP build errors?"
 
 2. Help bot receives the message and prepares prompt:
+
    ```
    System: You are the GameCI help bot...
    Guild: You are helping users in the GameCI Discord server...
    Channel: Focus on troubleshooting Unity build issues...
-   
+
    Help Bot Request:
    How do I fix IL2CPP build errors?
-   
+
    Available data files in help-bot/data:
    - reference/repo/* - GameCI repository structure and code
    - issues/* - GitHub issues data

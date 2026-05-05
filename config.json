@@ -146,12 +146,7 @@
     "triage_user_ids": ["274202899347800074"],
     "sync_hours": 6,
     "ignore_bots": true,
-    "ignore_prefixes": [
-      "!",
-      "/",
-      "$",
-      "."
-    ],
+    "ignore_prefixes": ["!", "/", "$", "."],
     "min_message_length": 15,
     "official_roles": [],
     "official_users": [],
@@ -169,16 +164,8 @@
     "sync_days": 7,
     "max_issues_per_repo": 200,
     "max_discussions_per_repo": 50,
-    "skip_labels": [
-      "wontfix",
-      "invalid",
-      "duplicate"
-    ],
-    "priority_labels": [
-      "bug",
-      "help wanted",
-      "good first issue"
-    ],
+    "skip_labels": ["wontfix", "invalid", "duplicate"],
+    "priority_labels": ["bug", "help wanted", "good first issue"],
     "collaborators": ["frostebite", "webbertakken", "davidmfinol", "GabLeRoux"],
     "label_prompts": [
       {
@@ -281,9 +268,7 @@
     "restart_policy": "unless-stopped"
   },
   "runner": {
-    "labels": [
-      "help-bot"
-    ],
+    "labels": ["help-bot"],
     "work_directory": "_work"
   },
   "data_backup": {

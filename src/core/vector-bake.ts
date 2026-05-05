@@ -156,14 +156,17 @@ async function ensureLlamaIndex(python: string): Promise<void> {
   const installer = spawn(python, ['-m', 'pip', 'install', 'llama-index'], { stdio: 'inherit' })
   const [installCode] = (await once(installer, 'exit')) as [number, string | null]
   if (installCode !== 0) {
-    throw new Error('Failed to install llama-index. Please run `python -m pip install llama-index` manually.')
+    throw new Error(
+      'Failed to install llama-index. Please run `python -m pip install llama-index` manually.',
+    )
   }
 }
 
 export async function vectorBake(options: VectorBakeOptions = {}): Promise<void> {
   const config = await getConfig()
-  const vectorConfig = (getValue(config, ['vector_search'], {}) as Record<string, unknown>)
-  const embeddingModel = (vectorConfig['embedding_model'] as string) ?? 'local:BAAI/bge-small-en-v1.5'
+  const vectorConfig = getValue(config, ['vector_search'], {}) as Record<string, unknown>
+  const embeddingModel =
+    (vectorConfig['embedding_model'] as string) ?? 'local:BAAI/bge-small-en-v1.5'
   const collectionName = (vectorConfig['collection_name'] as string) ?? 'gameci-docs'
   const persistDirValue = (vectorConfig['persist_directory'] as string) ?? 'data/vector-store'
   const persistDir = join(REPO_ROOT, persistDirValue)

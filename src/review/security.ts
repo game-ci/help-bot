@@ -15,8 +15,9 @@ export interface ReviewOptions {
  */
 export async function runSecurityReview(options: ReviewOptions = {}): Promise<void> {
   const config = await getConfig()
-  const model = options.modelOverride
-    ?? (getValue(config, ['llm', 'claude', 'model'], 'claude-sonnet-4-20250514') as string)
+  const model =
+    options.modelOverride ??
+    (getValue(config, ['llm', 'claude', 'model'], 'claude-sonnet-4-20250514') as string)
 
   const prompt = `You are performing a security audit of recent GameCI Help Bot output.
 
@@ -90,18 +91,28 @@ Write the full audit to data/reviews/security-audit-${new Date().toISOString().s
 
   const args = ['-p', '--model', model]
   args.push(
-    '--allowedTools', 'Read',
-    '--allowedTools', 'Glob',
-    '--allowedTools', 'Grep',
-    '--allowedTools', 'Bash',
-    '--allowedTools', 'Write',
+    '--allowedTools',
+    'Read',
+    '--allowedTools',
+    'Glob',
+    '--allowedTools',
+    'Grep',
+    '--allowedTools',
+    'Bash',
+    '--allowedTools',
+    'Write',
   )
   args.push(
-    '--disallowedTools', 'Edit',
-    '--disallowedTools', 'WebFetch',
-    '--disallowedTools', 'WebSearch',
-    '--disallowedTools', 'NotebookEdit',
-    '--disallowedTools', 'Task',
+    '--disallowedTools',
+    'Edit',
+    '--disallowedTools',
+    'WebFetch',
+    '--disallowedTools',
+    'WebSearch',
+    '--disallowedTools',
+    'NotebookEdit',
+    '--disallowedTools',
+    'Task',
   )
 
   console.log(`Security Audit: launching Claude (model: ${model})...`)

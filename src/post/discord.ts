@@ -3,14 +3,29 @@ import { readFile, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parseFrontMatter } from '../utils/frontmatter'
 import { RESPONSES_DIR } from '../utils/paths'
-import { getConfig, getValue, resolveGuilds, resolveWebhookUrl, GuildConfig, ChannelConfig } from '../config'
+import {
+  getConfig,
+  getValue,
+  resolveGuilds,
+  resolveWebhookUrl,
+  GuildConfig,
+  ChannelConfig,
+} from '../config'
 import { recordStat } from '../metrics'
-import { loadState, updateState, setPostedDiscordResponse, getPostedDiscordResponses, getPostedResponseIds, setPostedResponseId } from '../state'
+import {
+  loadState,
+  updateState,
+  setPostedDiscordResponse,
+  getPostedDiscordResponses,
+  getPostedResponseIds,
+  setPostedResponseId,
+} from '../state'
 
 const DISCORD_API = 'https://discord.com/api/v10'
 const MAX_LENGTH = 2000
 
-const FEEDBACK_PROMPT = '\n\n-# Was this helpful? React with :thumbsup: or :thumbsdown: to help improve future responses.'
+const FEEDBACK_PROMPT =
+  '\n\n-# Was this helpful? React with :thumbsup: or :thumbsdown: to help improve future responses.'
 
 function splitContent(content: string): string[] {
   const chunks: string[] = []
@@ -91,7 +106,7 @@ async function postViaBotApi(
     })
 
     if (response.statusCode === 200) {
-      const data = await response.body.json() as { id: string }
+      const data = (await response.body.json()) as { id: string }
       return { success: true, messageId: data.id }
     }
 
@@ -130,11 +145,13 @@ async function createThreadWithMessage(
 
     if (response.statusCode !== 201) {
       const errorText = await response.body.text()
-      console.warn(`  Failed to create thread: ${response.statusCode}: ${errorText.substring(0, 200)}`)
+      console.warn(
+        `  Failed to create thread: ${response.statusCode}: ${errorText.substring(0, 200)}`,
+      )
       return { success: false }
     }
 
-    const thread = await response.body.json() as { id: string }
+    const thread = (await response.body.json()) as { id: string }
 
     // Post the message in the thread
     const msgResult = await postViaBotApi(thread.id, content, token)
@@ -209,7 +226,9 @@ export async function postDiscordResponses(options: PostDiscordOptions): Promise
     const threadId = meta.thread_id ?? ''
 
     if (!responseGuild || !responseChannel) {
-      console.warn(`Skipping Discord response ${responseId}: missing guild_name or channel_name metadata`)
+      console.warn(
+        `Skipping Discord response ${responseId}: missing guild_name or channel_name metadata`,
+      )
       continue
     }
 
@@ -223,8 +242,10 @@ export async function postDiscordResponses(options: PostDiscordOptions): Promise
       const postedAt = replyToMessageId
         ? postedDiscordResponses[`discord:${responseGuild}/${responseChannel}#${replyToMessageId}`]
         : undefined
-      if (postedAt && await isFileOlderThan(fullPath, postedAt)) {
-        console.log(`Skipping Discord response ${responseId}: source message was already answered after this file was written.`)
+      if (postedAt && (await isFileOlderThan(fullPath, postedAt))) {
+        console.log(
+          `Skipping Discord response ${responseId}: source message was already answered after this file was written.`,
+        )
         recordStat('discordResponsesSkipped', 1)
         continue
       }
@@ -237,7 +258,9 @@ export async function postDiscordResponses(options: PostDiscordOptions): Promise
 
     // Check official skip
     if (isOfficial && !options.allowOfficial && options.forceReplyId !== responseId) {
-      console.log(`Skipping Discord response ${responseId} because an official contributor already replied.`)
+      console.log(
+        `Skipping Discord response ${responseId} because an official contributor already replied.`,
+      )
       recordStat('discordResponsesSkipped', 1)
       const webhook = guildWebhooks.get(responseGuild) ?? globalWebhook
       if (!options.dryRun && options.seenYouMessage && webhook) {
@@ -277,9 +300,8 @@ export async function postDiscordResponses(options: PostDiscordOptions): Promise
       const firstReplyTo = replyToMessageId || undefined
 
       for (const [index, chunk] of chunks.entries()) {
-        const chunkContent = chunks.length > 1
-          ? `(part ${index + 1}/${chunks.length})\n${chunk}`
-          : chunk
+        const chunkContent =
+          chunks.length > 1 ? `(part ${index + 1}/${chunks.length})\n${chunk}` : chunk
 
         const result = await postViaBotApi(channelId, chunkContent, token, {
           replyToMessageId: index === 0 ? firstReplyTo : lastMessageId,
@@ -305,13 +327,16 @@ export async function postDiscordResponses(options: PostDiscordOptions): Promise
           setPostedDiscordResponse(s, responseGuild, responseChannel, replyToMessageId)
         })
         postedResponseIds[responseId] = new Date().toISOString()
-        postedDiscordResponses[`discord:${responseGuild}/${responseChannel}#${replyToMessageId}`] = postedResponseIds[responseId]
+        postedDiscordResponses[`discord:${responseGuild}/${responseChannel}#${replyToMessageId}`] =
+          postedResponseIds[responseId]
       } else {
         await updateState((s) => setPostedResponseId(s, responseId))
         postedResponseIds[responseId] = new Date().toISOString()
       }
 
-      console.log(`Posted Discord response for ${responseId} via Bot API${replyToMessageId ? ` (reply to ${replyToMessageId})` : ''}`)
+      console.log(
+        `Posted Discord response for ${responseId} via Bot API${replyToMessageId ? ` (reply to ${replyToMessageId})` : ''}`,
+      )
     } else if (replyMode === 'thread' && token) {
       // Create or reply in a thread
       const channelId = meta.channel_id ?? ''
@@ -326,7 +351,9 @@ export async function postDiscordResponses(options: PostDiscordOptions): Promise
       if (result.success) {
         recordStat('discordBotRepliesPosted', 1)
         recordStat('discordResponsesPosted', 1)
-        console.log(`Posted Discord response for ${responseId} in new thread${result.threadId ? ` (thread ${result.threadId})` : ''}`)
+        console.log(
+          `Posted Discord response for ${responseId} in new thread${result.threadId ? ` (thread ${result.threadId})` : ''}`,
+        )
       } else {
         console.warn(`Failed to create thread for ${responseId}`)
       }
@@ -337,7 +364,8 @@ export async function postDiscordResponses(options: PostDiscordOptions): Promise
           setPostedDiscordResponse(s, responseGuild, responseChannel, replyToMessageId)
         })
         postedResponseIds[responseId] = new Date().toISOString()
-        postedDiscordResponses[`discord:${responseGuild}/${responseChannel}#${replyToMessageId}`] = postedResponseIds[responseId]
+        postedDiscordResponses[`discord:${responseGuild}/${responseChannel}#${replyToMessageId}`] =
+          postedResponseIds[responseId]
       } else if (result.success) {
         await updateState((s) => setPostedResponseId(s, responseId))
         postedResponseIds[responseId] = new Date().toISOString()

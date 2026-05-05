@@ -4,7 +4,11 @@ import { join } from 'node:path'
 import { parseButtonId, parseDiscordCompactId, parseGithubCompactId } from './types'
 import type { TriageRecord } from './types'
 import { updateTriageNotification, type TriageEmbedOptions } from './notification'
-import { runTriageInvestigation, fetchMaintainerInstructions, type TriageInvestigationOptions } from './investigation'
+import {
+  runTriageInvestigation,
+  fetchMaintainerInstructions,
+  type TriageInvestigationOptions,
+} from './investigation'
 import { sendTriageResponse } from './send'
 import { loadState, updateState, getTriageRecord, setTriageRecord } from '../state'
 import { getValue, type GuildConfig, type ChannelConfig } from '../config'
@@ -17,10 +21,15 @@ export interface TriageHandlerContext {
   repoDir?: string
   docsDir?: string
   /** Resolve guild/channel config from guild name and channel name */
-  resolveGuildChannel: (guildName: string, channelName: string) => {
-    guildConfig: GuildConfig
-    channelConfig: ChannelConfig
-  } | undefined
+  resolveGuildChannel: (
+    guildName: string,
+    channelName: string,
+  ) =>
+    | {
+        guildConfig: GuildConfig
+        channelConfig: ChannelConfig
+      }
+    | undefined
   /** GitHub collaborator usernames (also checked for triage access) */
   collaborators: string[]
   /** Discord user IDs allowed to use triage controls */
@@ -56,7 +65,10 @@ export async function handleTriageInteraction(
 
   if (!record) {
     // Stale button -- record was cleaned up
-    await interaction.reply({ content: 'This triage request is no longer active.', ephemeral: true })
+    await interaction.reply({
+      content: 'This triage request is no longer active.',
+      ephemeral: true,
+    })
     return
   }
 
@@ -64,7 +76,9 @@ export async function handleTriageInteraction(
   const userId = interaction.user.id
   const username = interaction.user.username
   const displayName = interaction.user.tag ?? username
-  const isCollaborator = context.collaborators.some((c) => c.toLowerCase() === username.toLowerCase())
+  const isCollaborator = context.collaborators.some(
+    (c) => c.toLowerCase() === username.toLowerCase(),
+  )
   const isTriageUser = context.triageUserIds.includes(userId)
 
   if (!isCollaborator && !isTriageUser) {
@@ -94,7 +108,13 @@ export async function handleTriageInteraction(
       await handleReinvestigate(record, triageKey, triageChannel, client, context, displayName)
       break
     case 'view':
-      await handleView(record, triageKey, triageChannel, displayName, interaction as ButtonInteraction)
+      await handleView(
+        record,
+        triageKey,
+        triageChannel,
+        displayName,
+        interaction as ButtonInteraction,
+      )
       break
   }
 }
@@ -129,7 +149,13 @@ async function handleInvestigate(
 
   const embedOptions = buildEmbedOptions(record)
   const [sourceType, compactId] = extractSourceInfo(triageKey)
-  await updateTriageNotification(triageChannel, record.triageMessageId, embedOptions, sourceType, compactId)
+  await updateTriageNotification(
+    triageChannel,
+    record.triageMessageId,
+    embedOptions,
+    sourceType,
+    compactId,
+  )
 
   // Set bot status
   context.setInvestigating(channelName, author)
@@ -148,12 +174,20 @@ async function handleInvestigate(
     await updateState((s) => setTriageRecord(s, triageKey, record))
 
     const readyEmbed = buildEmbedOptions(record, result.responsePreview)
-    await updateTriageNotification(triageChannel, record.triageMessageId, readyEmbed, sourceType, compactId)
+    await updateTriageNotification(
+      triageChannel,
+      record.triageMessageId,
+      readyEmbed,
+      sourceType,
+      compactId,
+    )
 
     // Auto-post full response to thread so maintainers can review before sending
     await postFullResponseToThread(triageChannel, record, triageKey)
 
-    console.log(`  Triage: Investigation complete for ${triageKey} (${result.responsePreview.length} char preview)`)
+    console.log(
+      `  Triage: Investigation complete for ${triageKey} (${result.responsePreview.length} char preview)`,
+    )
   } else {
     // Investigation failed -- revert to pending
     record.status = 'pending'
@@ -161,7 +195,13 @@ async function handleInvestigate(
     await updateState((s) => setTriageRecord(s, triageKey, record))
 
     const failedEmbed = buildEmbedOptions(record)
-    await updateTriageNotification(triageChannel, record.triageMessageId, failedEmbed, sourceType, compactId)
+    await updateTriageNotification(
+      triageChannel,
+      record.triageMessageId,
+      failedEmbed,
+      sourceType,
+      compactId,
+    )
 
     const errorMsg = result && 'error' in result ? result.error : 'Unknown error'
     console.warn(`  Triage: Investigation failed for ${triageKey}: ${errorMsg}`)
@@ -189,7 +229,13 @@ async function handleIgnore(
   await updateState((s) => setTriageRecord(s, triageKey, record))
 
   const embedOptions = buildEmbedOptions(record)
-  await updateTriageNotification(triageChannel, record.triageMessageId, embedOptions, sourceType, compactId)
+  await updateTriageNotification(
+    triageChannel,
+    record.triageMessageId,
+    embedOptions,
+    sourceType,
+    compactId,
+  )
 }
 
 /**
@@ -220,7 +266,13 @@ async function handleSend(
     await updateState((s) => setTriageRecord(s, triageKey, record))
 
     const embedOptions = buildEmbedOptions(record)
-    await updateTriageNotification(triageChannel, record.triageMessageId, embedOptions, sourceType, compactId)
+    await updateTriageNotification(
+      triageChannel,
+      record.triageMessageId,
+      embedOptions,
+      sourceType,
+      compactId,
+    )
     console.log(`  Triage: Response sent for ${triageKey}`)
   } else {
     console.warn(`  Triage: Failed to send response for ${triageKey}`)
@@ -282,7 +334,13 @@ async function handleReinvestigate(
 
   const [sourceType, compactId] = extractSourceInfo(triageKey)
   const investigatingEmbed = buildEmbedOptions(record)
-  await updateTriageNotification(triageChannel, record.triageMessageId, investigatingEmbed, sourceType, compactId)
+  await updateTriageNotification(
+    triageChannel,
+    record.triageMessageId,
+    investigatingEmbed,
+    sourceType,
+    compactId,
+  )
 
   // Set bot status
   const channelName = record.sourceDiscordPath?.split('/')[1] ?? record.sourceRepo ?? 'triage'
@@ -290,7 +348,13 @@ async function handleReinvestigate(
   context.setInvestigating(channelName, author)
 
   // Run re-investigation
-  const investigationOptions = buildInvestigationOptions(record, client, context, previousResponse, maintainerInstructions)
+  const investigationOptions = buildInvestigationOptions(
+    record,
+    client,
+    context,
+    previousResponse,
+    maintainerInstructions,
+  )
   const result = await runTriageInvestigation(record, investigationOptions)
 
   // Clear bot status
@@ -303,7 +367,13 @@ async function handleReinvestigate(
     await updateState((s) => setTriageRecord(s, triageKey, record))
 
     const readyEmbed = buildEmbedOptions(record, result.responsePreview)
-    await updateTriageNotification(triageChannel, record.triageMessageId, readyEmbed, sourceType, compactId)
+    await updateTriageNotification(
+      triageChannel,
+      record.triageMessageId,
+      readyEmbed,
+      sourceType,
+      compactId,
+    )
 
     // Auto-post full response to thread so maintainers can review before sending
     await postFullResponseToThread(triageChannel, record, triageKey)
@@ -315,7 +385,13 @@ async function handleReinvestigate(
     await updateState((s) => setTriageRecord(s, triageKey, record))
 
     const failedEmbed = buildEmbedOptions(record)
-    await updateTriageNotification(triageChannel, record.triageMessageId, failedEmbed, sourceType, compactId)
+    await updateTriageNotification(
+      triageChannel,
+      record.triageMessageId,
+      failedEmbed,
+      sourceType,
+      compactId,
+    )
 
     const errorMsg = result && 'error' in result ? result.error : 'Unknown error'
     console.warn(`  Triage: Re-investigation failed for ${triageKey}: ${errorMsg}`)
@@ -422,12 +498,15 @@ async function postFullResponseToThread(
     }
 
     // Post the full response in chunks
-    const header = record.reinvestigationCount > 0
-      ? `**Re-investigation #${record.reinvestigationCount} — Full Response:**\n\n`
-      : `**Full Response:**\n\n`
+    const header =
+      record.reinvestigationCount > 0
+        ? `**Re-investigation #${record.reinvestigationCount} — Full Response:**\n\n`
+        : `**Full Response:**\n\n`
     const fullText = header + cleaned
     const chunks = splitForDiscord(fullText)
-    console.log(`    Thread post: sending ${chunks.length} chunk(s), total ${fullText.length} chars`)
+    console.log(
+      `    Thread post: sending ${chunks.length} chunk(s), total ${fullText.length} chars`,
+    )
 
     for (const [i, chunk] of chunks.entries()) {
       await thread.send(chunk)
@@ -472,9 +551,7 @@ async function postInvestigationToThread(
     { label: 'Analysis', relPath: analysisSuffix },
     { label: 'Findings', relPath: findingsSuffix },
   ]) {
-    const filePath = relPath.startsWith('data/')
-      ? join(REPO_ROOT, relPath)
-      : relPath
+    const filePath = relPath.startsWith('data/') ? join(REPO_ROOT, relPath) : relPath
     try {
       const raw = await readFile(filePath, 'utf-8')
       const text = raw.trim()

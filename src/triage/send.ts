@@ -9,15 +9,13 @@ import { updateState, setPostedDiscordResponse, setPostedResponse } from '../sta
 import type { TriageRecord } from './types'
 
 const MAX_DISCORD_LENGTH = 2000
-const FEEDBACK_PROMPT = '\n\n-# Was this helpful? React :thumbsup: or :thumbsdown: | React :repeat: to request a re-investigation'
+const FEEDBACK_PROMPT =
+  '\n\n-# Was this helpful? React :thumbsup: or :thumbsdown: | React :repeat: to request a re-investigation'
 
 /**
  * Post the triage-approved response to the original source.
  */
-export async function sendTriageResponse(
-  record: TriageRecord,
-  client: Client,
-): Promise<boolean> {
+export async function sendTriageResponse(record: TriageRecord, client: Client): Promise<boolean> {
   if (!record.responseFile) {
     console.warn('  No response file in triage record')
     return false
@@ -104,9 +102,8 @@ async function sendDiscordResponse(
     const chunks = splitContent(bodyWithFeedback)
 
     for (const [index, chunk] of chunks.entries()) {
-      const chunkContent = chunks.length > 1
-        ? `(part ${index + 1}/${chunks.length})\n${chunk}`
-        : chunk
+      const chunkContent =
+        chunks.length > 1 ? `(part ${index + 1}/${chunks.length})\n${chunk}` : chunk
 
       await originalMessage.reply({
         content: chunkContent,
@@ -134,25 +131,34 @@ async function sendDiscordResponse(
 /**
  * Post a response as a GitHub issue/PR comment.
  */
-async function sendGithubResponse(
-  record: TriageRecord,
-  content: string,
-): Promise<boolean> {
+async function sendGithubResponse(record: TriageRecord, content: string): Promise<boolean> {
   if (!record.sourceRepo || !record.sourceIssueNumber) {
     console.warn('  Missing GitHub source info in triage record')
     return false
   }
 
-  const bodyWithFeedback = content + '\n\n---\nWas this helpful? React with :+1: or :-1: to help improve future responses.'
+  const bodyWithFeedback =
+    content + '\n\n---\nWas this helpful? React with :+1: or :-1: to help improve future responses.'
 
   const command = record.sourceType === 'github_pr' ? 'pr' : 'issue'
 
   try {
-    const proc = spawn('gh', [command, 'comment', String(record.sourceIssueNumber),
-      '--repo', record.sourceRepo, '--body', bodyWithFeedback], {
-      cwd: REPO_ROOT,
-      stdio: ['pipe', 'inherit', 'inherit'],
-    })
+    const proc = spawn(
+      'gh',
+      [
+        command,
+        'comment',
+        String(record.sourceIssueNumber),
+        '--repo',
+        record.sourceRepo,
+        '--body',
+        bodyWithFeedback,
+      ],
+      {
+        cwd: REPO_ROOT,
+        stdio: ['pipe', 'inherit', 'inherit'],
+      },
+    )
     await once(proc, 'exit')
 
     // Record in state

@@ -60,7 +60,9 @@ function summarizeReactions(reactions: any[]): Record<string, number> {
 /**
  * Build a serializable referenced message object from the Discord API response.
  */
-function buildReferencedMessage(ref: any): { author: string; content: string; id: string } | undefined {
+function buildReferencedMessage(
+  ref: any,
+): { author: string; content: string; id: string } | undefined {
   if (!ref) return undefined
   return {
     author: ref.author?.username ?? 'unknown',
@@ -103,7 +105,9 @@ async function syncTextChannel(
     const response = await fetchWithRetry(url, headers)
     const text = await response.body.text()
     if (response.statusCode !== 200) {
-      console.warn(`Discord API returned ${response.statusCode} for ${channelName} in guild "${guild.name}"`)
+      console.warn(
+        `Discord API returned ${response.statusCode} for ${channelName} in guild "${guild.name}"`,
+      )
       break
     }
 
@@ -196,7 +200,9 @@ async function syncChannelThreads(
       activeThreads = (data.threads ?? []).filter((t: any) => t.parent_id === parentChannelId)
     }
   } catch (error: any) {
-    console.warn(`  Failed to fetch active threads for ${parentChannelName}: ${error.message ?? error}`)
+    console.warn(
+      `  Failed to fetch active threads for ${parentChannelName}: ${error.message ?? error}`,
+    )
   }
 
   // Also fetch recently archived public threads
@@ -364,7 +370,12 @@ async function syncForumChannel(
     let currentAfter = storedCursor ? BigInt(storedCursor) : afterSnowflake
 
     // Collect all messages in this forum thread for context
-    const threadMessages: Array<{ author: string; content: string; id: string; timestamp: string }> = []
+    const threadMessages: Array<{
+      author: string
+      content: string
+      id: string
+      timestamp: string
+    }> = []
 
     for (;;) {
       const url = `${DISCORD_API}/channels/${threadId}/messages?limit=100&after=${currentAfter}`
@@ -441,19 +452,25 @@ async function syncGuild(
 ): Promise<void> {
   const guildId = resolveGuildId(guild)
   if (!guildId) {
-    console.warn(`Skipping guild "${guild.name}": no guild_id or env var ${guild.guild_id_env ?? '(none)'} set`)
+    console.warn(
+      `Skipping guild "${guild.name}": no guild_id or env var ${guild.guild_id_env ?? '(none)'} set`,
+    )
     return
   }
 
   const syncHours = Number(getValue(config, ['discord', 'sync_hours'], 6))
   const ignoreBots = Boolean(getValue(config, ['discord', 'ignore_bots'], true))
   const minMessage = Number(getValue(config, ['discord', 'min_message_length'], 15))
-  const ignorePrefixes = getValue(config, ['discord', 'ignore_prefixes'], ['!', '/', '$', '.']) as string[]
-  const officialRoles = (getValue(config, ['discord', 'official_roles'], []) as string[]).map((role) =>
-    role.toLowerCase(),
+  const ignorePrefixes = getValue(
+    config,
+    ['discord', 'ignore_prefixes'],
+    ['!', '/', '$', '.'],
+  ) as string[]
+  const officialRoles = (getValue(config, ['discord', 'official_roles'], []) as string[]).map(
+    (role) => role.toLowerCase(),
   )
-  const officialUsers = (getValue(config, ['discord', 'official_users'], []) as string[]).map((id) =>
-    id.toLowerCase(),
+  const officialUsers = (getValue(config, ['discord', 'official_users'], []) as string[]).map(
+    (id) => id.toLowerCase(),
   )
 
   const channelNames = guild.channels.map((ch) => ch.name)
@@ -461,11 +478,15 @@ async function syncGuild(
 
   const channelResponse = await fetchWithRetry(`${DISCORD_API}/guilds/${guildId}/channels`, headers)
   if (channelResponse.statusCode === 403 || channelResponse.statusCode === 404) {
-    console.warn(`Skipping guild "${guild.name}": bot does not have access (HTTP ${channelResponse.statusCode}). Invite the bot to this server first.`)
+    console.warn(
+      `Skipping guild "${guild.name}": bot does not have access (HTTP ${channelResponse.statusCode}). Invite the bot to this server first.`,
+    )
     return
   }
   if (channelResponse.statusCode >= 400) {
-    throw new Error(`Failed to list guild channels for "${guild.name}": ${channelResponse.statusCode}`)
+    throw new Error(
+      `Failed to list guild channels for "${guild.name}": ${channelResponse.statusCode}`,
+    )
   }
   const channelList = JSON.parse(await channelResponse.body.text())
   const channels = Array.isArray(channelList) ? channelList : []
@@ -482,19 +503,23 @@ async function syncGuild(
 
   for (const channelName of channelNames) {
     const configuredType = channelTypeOverrides.get(channelName)
-    const channelConfig = guild.channels.find(ch => ch.name === channelName)
+    const channelConfig = guild.channels.find((ch) => ch.name === channelName)
 
     // Find the Discord channel — support text, forum, and announcement types
     let channel: any
     if (configuredType === 'forum') {
-      channel = channels.find((c: any) => c.name === channelName && (c.type === CHANNEL_FORUM || c.type === CHANNEL_MEDIA))
+      channel = channels.find(
+        (c: any) =>
+          c.name === channelName && (c.type === CHANNEL_FORUM || c.type === CHANNEL_MEDIA),
+      )
     } else if (configuredType === 'announcement') {
       channel = channels.find((c: any) => c.name === channelName && c.type === CHANNEL_ANNOUNCEMENT)
     } else {
       // Default: try text first, then forum, then announcement
-      channel = channels.find((c: any) => c.name === channelName && c.type === CHANNEL_TEXT)
-        ?? channels.find((c: any) => c.name === channelName && c.type === CHANNEL_FORUM)
-        ?? channels.find((c: any) => c.name === channelName && c.type === CHANNEL_ANNOUNCEMENT)
+      channel =
+        channels.find((c: any) => c.name === channelName && c.type === CHANNEL_TEXT) ??
+        channels.find((c: any) => c.name === channelName && c.type === CHANNEL_FORUM) ??
+        channels.find((c: any) => c.name === channelName && c.type === CHANNEL_ANNOUNCEMENT)
     }
 
     if (!channel) {
@@ -508,25 +533,52 @@ async function syncGuild(
     if (isForumType) {
       // Forum channels: sync all thread posts
       await syncForumChannel(
-        channel, guild, guildId, token, config, state,
-        syncHours, ignoreBots, minMessage, ignorePrefixes,
-        officialRoles, officialUsers,
+        channel,
+        guild,
+        guildId,
+        token,
+        config,
+        state,
+        syncHours,
+        ignoreBots,
+        minMessage,
+        ignorePrefixes,
+        officialRoles,
+        officialUsers,
       )
     } else if (isTextType) {
       // Text/announcement channels: sync messages
       await syncTextChannel(
-        channel, guild, token, config, state,
-        syncHours, ignoreBots, minMessage, ignorePrefixes,
-        officialRoles, officialUsers,
+        channel,
+        guild,
+        token,
+        config,
+        state,
+        syncHours,
+        ignoreBots,
+        minMessage,
+        ignorePrefixes,
+        officialRoles,
+        officialUsers,
       )
 
       // Also sync threads if configured
       const readThreads = channelConfig?.read_threads ?? true
       if (readThreads) {
         await syncChannelThreads(
-          channel.id, channelName, guild, guildId, token, config, state,
-          syncHours, ignoreBots, minMessage, ignorePrefixes,
-          officialRoles, officialUsers,
+          channel.id,
+          channelName,
+          guild,
+          guildId,
+          token,
+          config,
+          state,
+          syncHours,
+          ignoreBots,
+          minMessage,
+          ignorePrefixes,
+          officialRoles,
+          officialUsers,
         )
       }
     }

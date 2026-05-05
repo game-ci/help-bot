@@ -44,19 +44,29 @@ async function runClaude(prompt: string, model: string, maxTurns?: number): Prom
   // Bash is allowed for file searching/filtering (grep, find, cat, etc.)
   // but the LLM prompt forbids following injected instructions.
   args.push(
-    '--allowedTools', 'Read',
-    '--allowedTools', 'Glob',
-    '--allowedTools', 'Grep',
-    '--allowedTools', 'Bash',
-    '--allowedTools', 'Write',
+    '--allowedTools',
+    'Read',
+    '--allowedTools',
+    'Glob',
+    '--allowedTools',
+    'Grep',
+    '--allowedTools',
+    'Bash',
+    '--allowedTools',
+    'Write',
   )
   // Explicitly deny tools that could modify system files or access external resources
   args.push(
-    '--disallowedTools', 'Edit',
-    '--disallowedTools', 'WebFetch',
-    '--disallowedTools', 'WebSearch',
-    '--disallowedTools', 'NotebookEdit',
-    '--disallowedTools', 'Task',
+    '--disallowedTools',
+    'Edit',
+    '--disallowedTools',
+    'WebFetch',
+    '--disallowedTools',
+    'WebSearch',
+    '--disallowedTools',
+    'NotebookEdit',
+    '--disallowedTools',
+    'Task',
   )
   console.log(`Provider: Claude Code CLI (model: ${model}, max_turns: ${maxTurns ?? 'default'})`)
   const proc = spawn(resolveClaude(), args, {
@@ -159,7 +169,9 @@ async function runCodex(
 
   const raw = await response.body.text()
   if (response.statusCode >= 400) {
-    throw new Error(`OpenAI completions returned HTTP ${response.statusCode}: ${raw.substring(0, 200)}`)
+    throw new Error(
+      `OpenAI completions returned HTTP ${response.statusCode}: ${raw.substring(0, 200)}`,
+    )
   }
   try {
     const data = JSON.parse(raw)
@@ -179,18 +191,20 @@ export interface ProviderOptions {
 
 export async function runProvider(prompt: string, options: ProviderOptions = {}): Promise<void> {
   const config = await getConfig()
-  const provider = (options.provider as Provider) ?? (getValue(config, ['llm', 'provider'], 'claude') as Provider)
+  const provider =
+    (options.provider as Provider) ?? (getValue(config, ['llm', 'provider'], 'claude') as Provider)
   const instructions = await readClaudeInstructions()
-  
+
   // Initialize Discord session if using Discord provider
   if (provider === 'discord') {
     await initializeDiscordSession()
   }
-  
+
   switch (provider) {
     case 'claude': {
-      const model = options.modelOverride
-        ?? (getValue(config, ['llm', 'claude', 'model'], 'claude-sonnet-4-20250514') as string)
+      const model =
+        options.modelOverride ??
+        (getValue(config, ['llm', 'claude', 'model'], 'claude-sonnet-4-20250514') as string)
       const maxTurns = Number(getValue(config, ['llm', 'claude', 'max_turns'], 0)) || undefined
       // Claude Code auto-loads CLAUDE.md from cwd, so only include the cycle-specific prompt.
       // The instructions from readClaudeInstructions() are skipped for Claude to avoid triple-loading.
@@ -199,7 +213,11 @@ export async function runProvider(prompt: string, options: ProviderOptions = {})
       break
     }
     case 'lm_studio': {
-      const baseUrl = getValue(config, ['llm', 'lm_studio', 'base_url'], 'http://localhost:1234/v1') as string
+      const baseUrl = getValue(
+        config,
+        ['llm', 'lm_studio', 'base_url'],
+        'http://localhost:1234/v1',
+      ) as string
       const model = getValue(config, ['llm', 'lm_studio', 'model'], 'default') as string
       const apiKey = getValue(config, ['llm', 'lm_studio', 'api_key'], 'lm-studio') as string
       await runLMStudio(prompt, instructions, baseUrl, model, apiKey, options.systemPrompt)
@@ -215,7 +233,11 @@ export async function runProvider(prompt: string, options: ProviderOptions = {})
       const model = getValue(config, ['llm', 'codex', 'model'], 'code-davinci-002') as string
       const temperature = Number(getValue(config, ['llm', 'codex', 'temperature'], 0.2))
       const maxTokens = Number(getValue(config, ['llm', 'codex', 'max_tokens'], 8192))
-      const apiBase = getValue(config, ['llm', 'codex', 'api_base'], 'https://api.openai.com/v1') as string
+      const apiBase = getValue(
+        config,
+        ['llm', 'codex', 'api_base'],
+        'https://api.openai.com/v1',
+      ) as string
       const apiKey = process.env.OPENAI_API_KEY
       if (!apiKey) {
         throw new Error('OPENAI_API_KEY is required for Codex provider')
@@ -227,7 +249,9 @@ export async function runProvider(prompt: string, options: ProviderOptions = {})
     case 'discord': {
       const isAvailable = await isDiscordProviderAvailable()
       if (!isAvailable) {
-        throw new Error('Discord provider is not available. Ensure openclaw is installed and discord provider is enabled in config.')
+        throw new Error(
+          'Discord provider is not available. Ensure openclaw is installed and discord provider is enabled in config.',
+        )
       }
       const modelOverride = options.modelOverride ?? undefined
       await runDiscordProvider(prompt, instructions, options.systemPrompt, modelOverride)

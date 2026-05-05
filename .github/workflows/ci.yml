@@ -44,13 +44,22 @@ jobs:
 
       - name: Install dependencies
         env:
-          YARN_ENABLE_HARDENED_MODE: "false"
+          YARN_ENABLE_HARDENED_MODE: 'false'
         run: |
           case "$(yarn --version)" in 1.*) echo 'expected up-to-date yarn version'; exit 1 ;; esac
           yarn install --immutable
 
-      - name: Run lint
+      - name: Format
+        run: yarn format:check
+
+      - name: Lint
         run: yarn lint
+
+      - name: Typecheck
+        run: yarn typecheck
+
+      - name: Test
+        run: yarn coverage
 
       - name: Build
         run: yarn build

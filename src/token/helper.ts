@@ -24,10 +24,10 @@ async function saveToStore(token: string): Promise<void> {
 async function validateToken(token: string): Promise<boolean> {
   try {
     const response = await request('https://discord.com/api/v10/users/@me', {
-    headers: {
-      Authorization: `Bot ${token}`,
-      'Content-Type': 'application/json',
-    },
+      headers: {
+        Authorization: `Bot ${token}`,
+        'Content-Type': 'application/json',
+      },
       method: 'GET',
     })
     return response.statusCode === 200
@@ -72,7 +72,7 @@ export async function ensureDiscordToken(): Promise<string> {
     throw new Error('Discord bot token is required')
   }
 
-  if (!await validateToken(response.token)) {
+  if (!(await validateToken(response.token))) {
     throw new Error('Discord bot token validation failed')
   }
 

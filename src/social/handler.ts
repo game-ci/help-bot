@@ -3,7 +3,11 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parseSocialButtonId, buildContentId } from './types'
 import type { ContentRecord, ContentStatus } from './types'
-import { updateContentNotification, postContentNotification, type ContentEmbedOptions } from './notification'
+import {
+  updateContentNotification,
+  postContentNotification,
+  type ContentEmbedOptions,
+} from './notification'
 import { runContentDraft, readDraftBody } from './drafting'
 import { commitAndPushContent } from './commit'
 import { loadState, updateState } from '../state'
@@ -34,10 +38,17 @@ export async function handleSocialRequest(
   const userId = message.author.id
 
   // Permission check
-  const isCollaborator = context.collaborators.some((c) => c.toLowerCase() === authorTag.toLowerCase())
+  const isCollaborator = context.collaborators.some(
+    (c) => c.toLowerCase() === authorTag.toLowerCase(),
+  )
   const isTriageUser = context.triageUserIds.includes(userId)
   if (!isCollaborator && !isTriageUser) {
-    await message.reply({ content: 'Only maintainers can create social content.', allowedMentions: { repliedUser: false } }).catch(() => {})
+    await message
+      .reply({
+        content: 'Only maintainers can create social content.',
+        allowedMentions: { repliedUser: false },
+      })
+      .catch(() => {})
     return
   }
 
@@ -72,10 +83,12 @@ export async function handleSocialRequest(
 
   await updateState((s) => setContentRecord(s, contentKey, record))
 
-  await message.reply({
-    content: `Social content request received. Check the triage channel for drafting controls.`,
-    allowedMentions: { repliedUser: false },
-  }).catch(() => {})
+  await message
+    .reply({
+      content: `Social content request received. Check the triage channel for drafting controls.`,
+      allowedMentions: { repliedUser: false },
+    })
+    .catch(() => {})
 
   console.log(`  Social: content request from ${authorTag} — topic: ${topic.substring(0, 80)}`)
 }
@@ -100,7 +113,10 @@ export async function handleSocialInteraction(
   const allRecords = getContentRecords(state)
   const entry = Object.entries(allRecords).find(([key]) => key.endsWith(contentId))
   if (!entry) {
-    await interaction.reply({ content: 'This content request is no longer active.', ephemeral: true })
+    await interaction.reply({
+      content: 'This content request is no longer active.',
+      ephemeral: true,
+    })
     return
   }
 
@@ -109,10 +125,15 @@ export async function handleSocialInteraction(
   // Permission check
   const userId = interaction.user.id
   const username = interaction.user.tag ?? interaction.user.username
-  const isCollaborator = context.collaborators.some((c) => c.toLowerCase() === username.toLowerCase())
+  const isCollaborator = context.collaborators.some(
+    (c) => c.toLowerCase() === username.toLowerCase(),
+  )
   const isTriageUser = context.triageUserIds.includes(userId)
   if (!isCollaborator && !isTriageUser) {
-    await interaction.reply({ content: 'Only maintainers can use social content controls.', ephemeral: true })
+    await interaction.reply({
+      content: 'Only maintainers can use social content controls.',
+      ephemeral: true,
+    })
     return
   }
 
@@ -158,7 +179,12 @@ async function handleDraft(
   record.status = 'drafting'
   record.draftStartedAt = new Date().toISOString()
   await updateState((s) => setContentRecord(s, contentKey, record))
-  await updateContentNotification(channel, record.notificationMessageId, buildEmbedOpts(record), contentId)
+  await updateContentNotification(
+    channel,
+    record.notificationMessageId,
+    buildEmbedOpts(record),
+    contentId,
+  )
 
   const result = await runContentDraft(record, {
     config: context.config,
@@ -170,14 +196,24 @@ async function handleDraft(
     record.draftFile = result.draftFile
     record.draftCompletedAt = new Date().toISOString()
     await updateState((s) => setContentRecord(s, contentKey, record))
-    await updateContentNotification(channel, record.notificationMessageId, buildEmbedOpts(record, result.draftPreview), contentId)
+    await updateContentNotification(
+      channel,
+      record.notificationMessageId,
+      buildEmbedOpts(record, result.draftPreview),
+      contentId,
+    )
     await postDraftToThread(channel, record, contentKey)
     console.log(`  Social: draft ready for ${contentKey}`)
   } else {
     record.status = 'topic_received'
     record.draftStartedAt = undefined
     await updateState((s) => setContentRecord(s, contentKey, record))
-    await updateContentNotification(channel, record.notificationMessageId, buildEmbedOpts(record), contentId)
+    await updateContentNotification(
+      channel,
+      record.notificationMessageId,
+      buildEmbedOpts(record),
+      contentId,
+    )
     console.warn(`  Social: draft failed for ${contentKey}`)
   }
 }
@@ -207,7 +243,12 @@ async function handleRevise(
   record.revisionCount++
   record.draftStartedAt = new Date().toISOString()
   await updateState((s) => setContentRecord(s, contentKey, record))
-  await updateContentNotification(channel, record.notificationMessageId, buildEmbedOpts(record), contentId)
+  await updateContentNotification(
+    channel,
+    record.notificationMessageId,
+    buildEmbedOpts(record),
+    contentId,
+  )
 
   const result = await runContentDraft(record, {
     config: context.config,
@@ -221,14 +262,24 @@ async function handleRevise(
     record.draftFile = result.draftFile
     record.draftCompletedAt = new Date().toISOString()
     await updateState((s) => setContentRecord(s, contentKey, record))
-    await updateContentNotification(channel, record.notificationMessageId, buildEmbedOpts(record, result.draftPreview), contentId)
+    await updateContentNotification(
+      channel,
+      record.notificationMessageId,
+      buildEmbedOpts(record, result.draftPreview),
+      contentId,
+    )
     await postDraftToThread(channel, record, contentKey)
     console.log(`  Social: revision complete for ${contentKey}`)
   } else {
     record.status = 'draft_ready'
     record.revisionCount--
     await updateState((s) => setContentRecord(s, contentKey, record))
-    await updateContentNotification(channel, record.notificationMessageId, buildEmbedOpts(record), contentId)
+    await updateContentNotification(
+      channel,
+      record.notificationMessageId,
+      buildEmbedOpts(record),
+      contentId,
+    )
     console.warn(`  Social: revision failed for ${contentKey}`)
   }
 }
@@ -246,7 +297,12 @@ async function handleApprove(
   record.approvedBy = username
   record.approvedAt = new Date().toISOString()
   await updateState((s) => setContentRecord(s, contentKey, record))
-  await updateContentNotification(channel, record.notificationMessageId, buildEmbedOpts(record), contentId)
+  await updateContentNotification(
+    channel,
+    record.notificationMessageId,
+    buildEmbedOpts(record),
+    contentId,
+  )
   console.log(`  Social: approved by ${username} for ${contentKey}`)
 }
 
@@ -272,17 +328,24 @@ async function handleCommit(
     record.commitSha = commitSha
     record.committedAt = new Date().toISOString()
     await updateState((s) => setContentRecord(s, contentKey, record))
-    await updateContentNotification(channel, record.notificationMessageId, buildEmbedOpts(record), contentId)
+    await updateContentNotification(
+      channel,
+      record.notificationMessageId,
+      buildEmbedOpts(record),
+      contentId,
+    )
 
     // Post commit info to thread
     if (record.draftThreadId) {
       try {
-        const thread = await channel.client.channels.fetch(record.draftThreadId) as ThreadChannel
+        const thread = (await channel.client.channels.fetch(record.draftThreadId)) as ThreadChannel
         if (thread?.isThread()) {
           if (thread.archived) await thread.setArchived(false)
           await thread.send(`Committed and pushed: \`${commitSha}\` — \`${committedFile}\``)
         }
-      } catch { /* thread post is best-effort */ }
+      } catch {
+        /* thread post is best-effort */
+      }
     }
 
     console.log(`  Social: committed ${commitSha} — ${committedFile}`)
@@ -291,11 +354,13 @@ async function handleCommit(
     // Post error to thread
     if (record.draftThreadId) {
       try {
-        const thread = await channel.client.channels.fetch(record.draftThreadId) as ThreadChannel
+        const thread = (await channel.client.channels.fetch(record.draftThreadId)) as ThreadChannel
         if (thread?.isThread()) {
           await thread.send(`Commit failed: ${err.message ?? err}`)
         }
-      } catch { /* best-effort */ }
+      } catch {
+        /* best-effort */
+      }
     }
   }
 }
@@ -318,7 +383,12 @@ async function handleDiscard(
 ): Promise<void> {
   record.status = 'discarded'
   await updateState((s) => setContentRecord(s, contentKey, record))
-  await updateContentNotification(channel, record.notificationMessageId, buildEmbedOpts(record), contentId)
+  await updateContentNotification(
+    channel,
+    record.notificationMessageId,
+    buildEmbedOpts(record),
+    contentId,
+  )
   console.log(`  Social: discarded by ${username} for ${contentKey}`)
 }
 
@@ -360,9 +430,8 @@ async function postDraftToThread(
       })
     }
 
-    const header = record.revisionCount > 0
-      ? `**Revision #${record.revisionCount}:**\n\n`
-      : `**Draft:**\n\n`
+    const header =
+      record.revisionCount > 0 ? `**Revision #${record.revisionCount}:**\n\n` : `**Draft:**\n\n`
 
     const chunks = splitForDiscord(header + body)
     for (const chunk of chunks) {

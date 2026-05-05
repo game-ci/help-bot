@@ -46,6 +46,10 @@ export function makeDetectionKey(repo: string, issueNumber: number): DetectionKe
 }
 
 /** Create a detection key for a Discord message */
-export function makeDiscordDetectionKey(guildName: string, channelName: string, messageId: string): DetectionKey {
+export function makeDiscordDetectionKey(
+  guildName: string,
+  channelName: string,
+  messageId: string,
+): DetectionKey {
   return `discord:${guildName}/${channelName}#${messageId}`
 }

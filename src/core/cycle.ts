@@ -3,7 +3,12 @@ import { RESPONSES_DIR, LOGS_DIR, REPO_ROOT, DATA_DIR } from '../utils/paths'
 import { syncDiscord } from '../sync/discord'
 import { syncGitHub } from '../sync/github'
 import { syncDocs } from '../sync/docs'
-import { filterIssues, writeFilteredManifest, deduplicateAutomatedPRs, FilterResult } from './filter-issues'
+import {
+  filterIssues,
+  writeFilteredManifest,
+  deduplicateAutomatedPRs,
+  FilterResult,
+} from './filter-issues'
 import { filterDiscordMessages, writeDiscordManifest } from './filter-discord'
 import { runProvider, ProviderOptions } from '../provider/llm'
 import { postDiscordResponses } from '../post/discord'
@@ -13,11 +18,27 @@ import { writeCycleReport, postCycleReport } from '../post/cycle-report'
 import { join } from 'node:path'
 import { readdir, copyFile, readFile, mkdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { getConfig, getValue, resolveGuilds, getSystemPrompt, buildLabelSystemPrompt } from '../config'
+import {
+  getConfig,
+  getValue,
+  resolveGuilds,
+  getSystemPrompt,
+  buildLabelSystemPrompt,
+} from '../config'
 import { resetStats, getStats } from '../metrics'
 import { updateState } from '../state'
 import { scanSyncedIssues, writeSecurityReport } from '../security'
-import { runDispatch, runDiscordDispatch, markDispatched, closeDispatchedDetections, reactInvestigationStarted, reactInvestigationComplete, reactInvestigationFailed, DispatchConfig, DispatchMode } from '../dispatch'
+import {
+  runDispatch,
+  runDiscordDispatch,
+  markDispatched,
+  closeDispatchedDetections,
+  reactInvestigationStarted,
+  reactInvestigationComplete,
+  reactInvestigationFailed,
+  DispatchConfig,
+  DispatchMode,
+} from '../dispatch'
 import { notifyCycleSummary } from '../notify'
 import { syncFeedback } from '../feedback'
 
@@ -34,7 +55,10 @@ async function copyDirRecursive(src: string, dest: string): Promise<void> {
       await copyDirRecursive(srcPath, destPath)
     } else {
       // Only copy text files the LLM can read
-      if (/\.(ts|js|md|yml|yaml|json|sh|dockerfile|txt|css|html)$/i.test(entry.name) || entry.name === 'Dockerfile') {
+      if (
+        /\.(ts|js|md|yml|yaml|json|sh|dockerfile|txt|css|html)$/i.test(entry.name) ||
+        entry.name === 'Dockerfile'
+      ) {
         await copyFile(srcPath, join(destPath))
       }
     }
@@ -111,7 +135,11 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
       console.log('Syncing Discord...')
       await syncDiscord()
     } else {
-      console.log(githubOnly ? 'GitHub-only mode. Skipping Discord sync.' : 'No Discord guilds configured. Skipping Discord sync.')
+      console.log(
+        githubOnly
+          ? 'GitHub-only mode. Skipping Discord sync.'
+          : 'No Discord guilds configured. Skipping Discord sync.',
+      )
     }
     console.log('Syncing GitHub issues...')
     await syncGitHub({ repos: options.repos })
@@ -128,8 +156,8 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
       const feedbackRecords = await syncFeedback()
       if (feedbackRecords.length > 0) {
         console.log(`  Synced feedback for ${feedbackRecords.length} responses`)
-        const positive = feedbackRecords.filter(r => r.netSentiment === 'positive').length
-        const negative = feedbackRecords.filter(r => r.netSentiment === 'negative').length
+        const positive = feedbackRecords.filter((r) => r.netSentiment === 'positive').length
+        const negative = feedbackRecords.filter((r) => r.netSentiment === 'negative').length
         if (positive > 0 || negative > 0) {
           console.log(`  Sentiment: ${positive} positive, ${negative} negative`)
         }
@@ -150,7 +178,9 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
     const repoSlug = options.repos[0].replace(/\//g, '-')
     console.log(`Filtering issues for ${repoSlug}...`)
     cachedFilterResult = await filterIssues(repoSlug, options.repos![0])
-    console.log(`  Eligible: ${cachedFilterResult.eligible.length}, Skipped: ${cachedFilterResult.skippedCount}`)
+    console.log(
+      `  Eligible: ${cachedFilterResult.eligible.length}, Skipped: ${cachedFilterResult.skippedCount}`,
+    )
     for (const [reason, count] of Object.entries(cachedFilterResult.skipReasons)) {
       console.log(`    ${reason}: ${count}`)
     }
@@ -163,7 +193,9 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
     }
     const dedupCount = beforeDedup - cachedFilterResult.eligible.length
     if (dedupCount > 0) {
-      console.log(`  Deduped ${dedupCount} automated PRs (${beforeDedup} → ${cachedFilterResult.eligible.length})`)
+      console.log(
+        `  Deduped ${dedupCount} automated PRs (${beforeDedup} → ${cachedFilterResult.eligible.length})`,
+      )
     }
 
     filteredManifestPath = await writeFilteredManifest(repoSlug, cachedFilterResult)
@@ -172,9 +204,11 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
     // Security scan: check synced issues for prompt injection
     console.log(`Running security scan on ${repoSlug}...`)
     const securityFindings = await scanSyncedIssues(repoSlug)
-    const criticalFindings = securityFindings.filter(f => f.severity === 'critical')
-    const highFindings = securityFindings.filter(f => f.severity === 'high')
-    console.log(`  Security findings: ${securityFindings.length} total (${criticalFindings.length} critical, ${highFindings.length} high)`)
+    const criticalFindings = securityFindings.filter((f) => f.severity === 'critical')
+    const highFindings = securityFindings.filter((f) => f.severity === 'high')
+    console.log(
+      `  Security findings: ${securityFindings.length} total (${criticalFindings.length} critical, ${highFindings.length} high)`,
+    )
     if (securityFindings.length > 0) {
       const dateStr = new Date().toISOString().split('T')[0]
       const reportPath = await writeSecurityReport(securityFindings, dateStr)
@@ -186,15 +220,19 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
   const discordManifestPaths: string[] = []
   const approvedDiscordMessages: import('./filter-discord').EligibleDiscordMessage[] = []
   if (hasGuilds) {
-    const discordDispatchMode = (options.dispatchMode
-      ?? getValue(config, ['dispatch', 'discord_mode'], 'approval')) as DispatchMode
-    const investigationRepo = options.investigationRepo ?? (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
-    const collaborators = (getValue(config, ['github', 'collaborators'], []) as string[])
+    const discordDispatchMode = (options.dispatchMode ??
+      getValue(config, ['dispatch', 'discord_mode'], 'approval')) as DispatchMode
+    const investigationRepo =
+      options.investigationRepo ??
+      (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
+    const collaborators = getValue(config, ['github', 'collaborators'], []) as string[]
 
     for (const guild of guilds) {
       console.log(`Filtering Discord messages for guild "${guild.name}"...`)
       const discordFilter = await filterDiscordMessages(guild)
-      console.log(`  Eligible: ${discordFilter.eligible.length}, Skipped: ${discordFilter.skippedCount}`)
+      console.log(
+        `  Eligible: ${discordFilter.eligible.length}, Skipped: ${discordFilter.skippedCount}`,
+      )
       for (const [reason, count] of Object.entries(discordFilter.skipReasons)) {
         console.log(`    ${reason}: ${count}`)
       }
@@ -213,17 +251,29 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
           dryRun,
         })
 
-        console.log(`  Discord dispatch: ${dispatchResult.detectionsCreated} created, ${dispatchResult.approvedMessages.length} approved, ${dispatchResult.pending} pending`)
+        console.log(
+          `  Discord dispatch: ${dispatchResult.detectionsCreated} created, ${dispatchResult.approvedMessages.length} approved, ${dispatchResult.pending} pending`,
+        )
 
         if (dispatchResult.approvedMessages.length > 0) {
           approvedDiscordMessages.push(...dispatchResult.approvedMessages)
           // Write manifest for approved messages only
           const manifestDir = join(DATA_DIR, 'discord')
-          const path = await writeDiscordManifest(guild.name, {
-            eligible: dispatchResult.approvedMessages,
-            skippedCount: discordFilter.skippedCount + (discordFilter.eligible.length - dispatchResult.approvedMessages.length),
-            skipReasons: { ...discordFilter.skipReasons, 'dispatch-pending': discordFilter.eligible.length - dispatchResult.approvedMessages.length },
-          }, manifestDir)
+          const path = await writeDiscordManifest(
+            guild.name,
+            {
+              eligible: dispatchResult.approvedMessages,
+              skippedCount:
+                discordFilter.skippedCount +
+                (discordFilter.eligible.length - dispatchResult.approvedMessages.length),
+              skipReasons: {
+                ...discordFilter.skipReasons,
+                'dispatch-pending':
+                  discordFilter.eligible.length - dispatchResult.approvedMessages.length,
+              },
+            },
+            manifestDir,
+          )
           discordManifestPaths.push(path)
         }
       }
@@ -235,9 +285,11 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
   let approvedIssues: import('../core/filter-issues').EligibleIssue[] | undefined
   if (githubOnly && options.repos?.length && dispatchConfig.mode !== 'auto') {
     const repoSlug = options.repos[0].replace(/\//g, '-')
-    const filterResult = cachedFilterResult ?? await filterIssues(repoSlug)
-    const collaborators = (getValue(config, ['github', 'collaborators'], []) as string[])
-    const investigationRepo = options.investigationRepo ?? (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
+    const filterResult = cachedFilterResult ?? (await filterIssues(repoSlug))
+    const collaborators = getValue(config, ['github', 'collaborators'], []) as string[]
+    const investigationRepo =
+      options.investigationRepo ??
+      (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
 
     console.log(`Running dispatch (mode: ${dispatchConfig.mode})...`)
     const dispatchResult = await runDispatch({
@@ -250,7 +302,9 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
       dryRun,
     })
 
-    console.log(`  Dispatch: ${dispatchResult.detectionsCreated} created, ${dispatchResult.approved.length} approved, ${dispatchResult.pending} pending, ${dispatchResult.cancelled} cancelled, ${dispatchResult.expired} auto-dispatched, ${dispatchResult.warningsPosted} warnings posted`)
+    console.log(
+      `  Dispatch: ${dispatchResult.detectionsCreated} created, ${dispatchResult.approved.length} approved, ${dispatchResult.pending} pending, ${dispatchResult.cancelled} cancelled, ${dispatchResult.expired} auto-dispatched, ${dispatchResult.warningsPosted} warnings posted`,
+    )
 
     if (dispatchResult.skipLlm) {
       console.log('  No approved issues. Skipping LLM.')
@@ -267,7 +321,8 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
     approvedIssues = dispatchResult.approved
     const approvedFilterResult = {
       eligible: dispatchResult.approved,
-      skippedCount: filterResult.skippedCount + (filterResult.eligible.length - dispatchResult.approved.length),
+      skippedCount:
+        filterResult.skippedCount + (filterResult.eligible.length - dispatchResult.approved.length),
       skipReasons: {
         ...filterResult.skipReasons,
         'dispatch-pending': filterResult.eligible.length - dispatchResult.approved.length,
@@ -281,7 +336,7 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
   // For a more granular per-channel approach, individual LLM calls per channel would be needed.
   const systemPrompt = hasGuilds
     ? getSystemPrompt(discordConfig, guilds[0], guilds[0]?.channels?.[0])
-    : getValue(discordConfig, ['system_prompt'], '') as string
+    : (getValue(discordConfig, ['system_prompt'], '') as string)
 
   // Note: CLAUDE.md is NOT loaded here — it's auto-loaded by Claude Code from cwd,
   // and llm.ts includes it for non-Claude providers. Avoids triple-loading.
@@ -309,7 +364,9 @@ export async function runCycle(options: CycleOptions = {}): Promise<void> {
   if (githubOnly) {
     const sections: string[] = []
 
-    sections.push(`You are running a GitHub-only help cycle for the GameCI Community Help Bot.${repoContext}`)
+    sections.push(
+      `You are running a GitHub-only help cycle for the GameCI Community Help Bot.${repoContext}`,
+    )
 
     // Local repo instructions — reference files are copied into data/reference/ within the sandbox
     if (options.repoDir) {
@@ -514,7 +571,9 @@ Every response MUST follow this tight structure:
 
     if (options.repos?.length) {
       const slug = options.repos[0].replace(/\//g, '-')
-      sections.push(`The manifest file for this cycle is: data/github/filtered-${slug}.md — read this FIRST.`)
+      sections.push(
+        `The manifest file for this cycle is: data/github/filtered-${slug}.md — read this FIRST.`,
+      )
     }
 
     prompt = sections.join('\n\n')
@@ -534,7 +593,7 @@ on previous bot responses. Learn from positive and negative feedback patterns.`)
 
     // Discord-specific instructions
     if (approvedDiscordMessages.length > 0) {
-      const manifestList = discordManifestPaths.map(p => `- ${p}`).join('\n')
+      const manifestList = discordManifestPaths.map((p) => `- ${p}`).join('\n')
       sections.push(`## Discord Messages
 
 The following Discord message manifests have been approved for response:
@@ -581,7 +640,9 @@ Follow the standard investigation and response workflow.`)
 
   // React 'eyes' on detection issues to indicate investigation is starting
   if (dispatchConfig.mode !== 'auto' && approvedIssues && options.repos?.length) {
-    const investigationRepo = options.investigationRepo ?? (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
+    const investigationRepo =
+      options.investigationRepo ??
+      (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
     await reactInvestigationStarted({
       approvedIssues,
       fullRepo: options.repos[0],
@@ -591,20 +652,27 @@ Follow the standard investigation and response workflow.`)
   }
 
   // Determine model override (investigation_model from config or --model CLI flag)
-  const rawInvestigationModel = options.modelOverride
-    ?? (getValue(config, ['llm', 'claude', 'investigation_model'], '') as string)
+  const rawInvestigationModel =
+    options.modelOverride ??
+    (getValue(config, ['llm', 'claude', 'investigation_model'], '') as string)
   const investigationModel = rawInvestigationModel || undefined
 
   console.log('Running LLM provider...')
   let llmFailed = false
   try {
-    await runProvider(prompt, { provider: options.provider, systemPrompt, modelOverride: investigationModel })
+    await runProvider(prompt, {
+      provider: options.provider,
+      systemPrompt,
+      modelOverride: investigationModel,
+    })
   } catch (error: any) {
     console.error(`LLM provider failed: ${error.message ?? error}`)
     llmFailed = true
     // React 'confused' on detection issues to indicate failure
     if (dispatchConfig.mode !== 'auto' && approvedIssues && options.repos?.length) {
-      const investigationRepo = options.investigationRepo ?? (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
+      const investigationRepo =
+        options.investigationRepo ??
+        (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
       await reactInvestigationFailed({
         approvedIssues,
         fullRepo: options.repos[0],
@@ -627,7 +695,8 @@ Follow the standard investigation and response workflow.`)
     console.log('Posting Discord responses (dry run: ' + dryRun + ')...')
     const seenYouMessage =
       options.seenYouMessage ?? (getValue(config, ['discord', 'seen_you_message'], '') as string)
-    const seenYouEmoji = options.seenYouEmoji ?? (getValue(config, ['discord', 'seen_you_emoji'], '') as string)
+    const seenYouEmoji =
+      options.seenYouEmoji ?? (getValue(config, ['discord', 'seen_you_emoji'], '') as string)
     await postDiscordResponses({
       dryRun,
       allowOfficial: options.allowOfficial,
@@ -636,7 +705,11 @@ Follow the standard investigation and response workflow.`)
       seenYouEmoji: seenYouEmoji || undefined,
     })
   } else {
-    console.log(githubOnly ? 'GitHub-only mode. Skipping Discord posting.' : 'No Discord guilds configured. Skipping Discord posting.')
+    console.log(
+      githubOnly
+        ? 'GitHub-only mode. Skipping Discord posting.'
+        : 'No Discord guilds configured. Skipping Discord posting.',
+    )
   }
 
   if (skipGithubPost) {
@@ -654,10 +727,17 @@ Follow the standard investigation and response workflow.`)
   const stats = getStats()
 
   // Post investigation issues and cycle report if enabled
-  const investigationIssues = options.investigationIssues ?? Boolean(getValue(config, ['investigations', 'enabled'], false))
+  const investigationIssues =
+    options.investigationIssues ?? Boolean(getValue(config, ['investigations', 'enabled'], false))
   if (investigationIssues) {
-    const investigationRepo = options.investigationRepo ?? (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
-    const investigationLabels = (getValue(config, ['investigations', 'labels'], ['help-bot', 'investigation']) as string[])
+    const investigationRepo =
+      options.investigationRepo ??
+      (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
+    const investigationLabels = getValue(
+      config,
+      ['investigations', 'labels'],
+      ['help-bot', 'investigation'],
+    ) as string[]
     console.log(`Posting investigation issues to ${investigationRepo} (dry run: ${dryRun})...`)
     await postInvestigationIssues({
       dryRun,
@@ -683,7 +763,9 @@ Follow the standard investigation and response workflow.`)
 
   // Post-dispatch cleanup: mark dispatched detections, react with status, and close them
   if (dispatchConfig.mode !== 'auto' && approvedIssues && options.repos?.length) {
-    const investigationRepo = options.investigationRepo ?? (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
+    const investigationRepo =
+      options.investigationRepo ??
+      (getValue(config, ['investigations', 'target_repo'], 'game-ci/help-bot') as string)
     await markDispatched(approvedIssues, options.repos[0])
 
     // React with checkmark on detection issues to indicate successful completion
@@ -716,10 +798,18 @@ function getDispatchConfig(config: Record<string, unknown>, options: CycleOption
   return {
     mode: (options.dispatchMode ?? getValue(config, ['dispatch', 'mode'], 'auto')) as DispatchMode,
     warnings_required: Number(getValue(config, ['dispatch', 'warnings_required'], 3)),
-    warning_interval_hours: options.countdownHours ?? Number(getValue(config, ['dispatch', 'warning_interval_hours'], 24)),
-    approve_reactions: getValue(config, ['dispatch', 'approve_reactions'], ['+1', 'rocket']) as string[],
+    warning_interval_hours:
+      options.countdownHours ??
+      Number(getValue(config, ['dispatch', 'warning_interval_hours'], 24)),
+    approve_reactions: getValue(
+      config,
+      ['dispatch', 'approve_reactions'],
+      ['+1', 'rocket'],
+    ) as string[],
     cancel_reactions: getValue(config, ['dispatch', 'cancel_reactions'], ['-1']) as string[],
-    max_detections_per_cycle: Number(getValue(config, ['dispatch', 'max_detections_per_cycle'], 10)),
+    max_detections_per_cycle: Number(
+      getValue(config, ['dispatch', 'max_detections_per_cycle'], 10),
+    ),
     close_on_dispatch: Boolean(getValue(config, ['dispatch', 'close_on_dispatch'], true)),
   }
 }

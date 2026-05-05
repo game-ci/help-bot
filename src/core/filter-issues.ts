@@ -24,8 +24,12 @@ export interface EligibleIssue {
 
 export async function filterIssues(repoSlug: string, fullRepo?: string): Promise<FilterResult> {
   const config = await getConfig()
-  const collaborators = (getValue(config, ['github', 'collaborators'], []) as string[]).map(c => c.toLowerCase())
-  const skipLabels = (getValue(config, ['github', 'skip_labels'], ['wontfix', 'invalid', 'duplicate']) as string[]).map(l => l.toLowerCase())
+  const collaborators = (getValue(config, ['github', 'collaborators'], []) as string[]).map((c) =>
+    c.toLowerCase(),
+  )
+  const skipLabels = (
+    getValue(config, ['github', 'skip_labels'], ['wontfix', 'invalid', 'duplicate']) as string[]
+  ).map((l) => l.toLowerCase())
 
   const repoDir = join(GITHUB_DATA_DIR, repoSlug)
   let files: string[] = []
@@ -55,7 +59,7 @@ export async function filterIssues(repoSlug: string, fullRepo?: string): Promise
   const SYNC_CUTOFF = syncDays * 24 * 60 * 60 * 1000
   const NINETY_DAYS = 90 * 24 * 60 * 60 * 1000
 
-  for (const file of files.filter(f => f.endsWith('.md'))) {
+  for (const file of files.filter((f) => f.endsWith('.md'))) {
     const fullPath = join(repoDir, file)
     const content = await readFile(fullPath, 'utf-8')
     const { meta, body } = parseFrontMatter(content)
@@ -93,7 +97,7 @@ export async function filterIssues(repoSlug: string, fullRepo?: string): Promise
     }
 
     // SKIP: has skip labels
-    if (labels.some(l => skipLabels.includes(l))) {
+    if (labels.some((l) => skipLabels.includes(l))) {
       skip('skip-label')
       continue
     }
@@ -106,7 +110,7 @@ export async function filterIssues(repoSlug: string, fullRepo?: string): Promise
 
     // SKIP: double-check by scanning comment body for collaborator usernames
     // This catches cases where official_response wasn't set correctly
-    const hasCollaboratorComment = collaborators.some(collab => {
+    const hasCollaboratorComment = collaborators.some((collab) => {
       const pattern = `### @${collab} (`
       return body.toLowerCase().includes(pattern)
     })
@@ -181,7 +185,10 @@ export async function filterIssues(repoSlug: string, fullRepo?: string): Promise
  * Write a filtered issue manifest that the LLM reads instead of scanning all files.
  * This prevents the LLM from seeing or responding to issues it should skip.
  */
-export async function writeFilteredManifest(repoSlug: string, result: FilterResult): Promise<string> {
+export async function writeFilteredManifest(
+  repoSlug: string,
+  result: FilterResult,
+): Promise<string> {
   const manifestPath = join(DATA_DIR, 'github', `filtered-${repoSlug}.md`)
 
   const lines: string[] = []
@@ -213,7 +220,9 @@ export async function writeFilteredManifest(repoSlug: string, result: FilterResu
   for (const issue of sorted) {
     const labelStr = issue.labels.length ? ` [${issue.labels.join(', ')}]` : ''
     const pScore = priorityScore(issue)
-    lines.push(`- **#${issue.number}** (${issue.type}, ${issue.commentCount} comments${labelStr}, priority: ${pScore}): ${issue.title}`)
+    lines.push(
+      `- **#${issue.number}** (${issue.type}, ${issue.commentCount} comments${labelStr}, priority: ${pScore}): ${issue.title}`,
+    )
     lines.push(`  File: data/github/issues/${repoSlug}/${issue.file}`)
   }
 
@@ -256,7 +265,11 @@ export function deduplicateAutomatedPRs(issues: EligibleIssue[]): EligibleIssue[
       continue
     }
     const title = issue.title.toLowerCase()
-    if (!title.includes('[snyk]') && !title.includes('bump ') && !title.includes('security upgrade')) {
+    if (
+      !title.includes('[snyk]') &&
+      !title.includes('bump ') &&
+      !title.includes('security upgrade')
+    ) {
       nonAutomated.push(issue)
       continue
     }
@@ -297,66 +310,75 @@ export function deduplicateAutomatedPRs(issues: EligibleIssue[]): EligibleIssue[
  * - Empty issues with no body content
  * - Issues that are purely administrative
  */
-function isRelevantForHelpBot(title: string, body: string, labels: string[], type: string): boolean {
+function isRelevantForHelpBot(
+  title: string,
+  body: string,
+  labels: string[],
+  type: string,
+): boolean {
   const combined = `${title}\n${body}`.toLowerCase()
 
   // Always relevant if has priority labels
   const relevantLabels = ['bug', 'help wanted', 'good first issue', 'question', 'support']
-  if (labels.some(l => relevantLabels.includes(l))) {
+  if (labels.some((l) => relevantLabels.includes(l))) {
     return true
   }
 
   // Skip pure feature requests unless they also contain a question or error
   const featureLabels = ['enhancement', 'feature request', 'feature', 'rfc', 'proposal']
-  const isPureFeatureRequest = labels.some(l => featureLabels.includes(l))
+  const isPureFeatureRequest = labels.some((l) => featureLabels.includes(l))
 
   // Has a question?
-  const hasQuestion = combined.includes('?')
-    || combined.includes('how to')
-    || combined.includes('how do')
-    || combined.includes('is there a way')
-    || combined.includes('is it possible')
-    || combined.includes('does anyone')
-    || combined.includes('anyone know')
-    || combined.includes('any idea')
+  const hasQuestion =
+    combined.includes('?') ||
+    combined.includes('how to') ||
+    combined.includes('how do') ||
+    combined.includes('is there a way') ||
+    combined.includes('is it possible') ||
+    combined.includes('does anyone') ||
+    combined.includes('anyone know') ||
+    combined.includes('any idea')
 
   // Has error/bug indicators?
-  const hasError = combined.includes('error')
-    || combined.includes('fail')
-    || combined.includes('exception')
-    || combined.includes('crash')
-    || combined.includes('broken')
-    || combined.includes('not working')
-    || combined.includes('doesn\'t work')
-    || combined.includes('does not work')
-    || combined.includes('can\'t')
-    || combined.includes('cannot')
-    || combined.includes('unable to')
-    || combined.includes('unexpected')
-    || combined.includes('stack trace')
-    || combined.includes('exit code')
-    || combined.includes('build failed')
+  const hasError =
+    combined.includes('error') ||
+    combined.includes('fail') ||
+    combined.includes('exception') ||
+    combined.includes('crash') ||
+    combined.includes('broken') ||
+    combined.includes('not working') ||
+    combined.includes("doesn't work") ||
+    combined.includes('does not work') ||
+    combined.includes("can't") ||
+    combined.includes('cannot') ||
+    combined.includes('unable to') ||
+    combined.includes('unexpected') ||
+    combined.includes('stack trace') ||
+    combined.includes('exit code') ||
+    combined.includes('build failed')
 
   // Has configuration/setup keywords?
-  const hasConfig = combined.includes('action.yml')
-    || combined.includes('workflow')
-    || combined.includes('yaml')
-    || combined.includes('.yml')
-    || combined.includes('configuration')
-    || combined.includes('unity version')
-    || combined.includes('docker')
-    || combined.includes('self-hosted')
-    || combined.includes('github actions')
-    || combined.includes('ci/cd')
-    || combined.includes('pipeline')
+  const hasConfig =
+    combined.includes('action.yml') ||
+    combined.includes('workflow') ||
+    combined.includes('yaml') ||
+    combined.includes('.yml') ||
+    combined.includes('configuration') ||
+    combined.includes('unity version') ||
+    combined.includes('docker') ||
+    combined.includes('self-hosted') ||
+    combined.includes('github actions') ||
+    combined.includes('ci/cd') ||
+    combined.includes('pipeline')
 
   // Has help-seeking language?
-  const needsHelp = combined.includes('help')
-    || combined.includes('stuck')
-    || combined.includes('struggling')
-    || combined.includes('confused')
-    || combined.includes('need assistance')
-    || combined.includes('please')
+  const needsHelp =
+    combined.includes('help') ||
+    combined.includes('stuck') ||
+    combined.includes('struggling') ||
+    combined.includes('confused') ||
+    combined.includes('need assistance') ||
+    combined.includes('please')
 
   // If it's a pure feature request with no question or error, skip
   if (isPureFeatureRequest && !hasQuestion && !hasError) {
@@ -380,4 +402,3 @@ function isRelevantForHelpBot(title: string, body: string, labels: string[], typ
   // Default: include (better to over-include than miss something)
   return true
 }
-

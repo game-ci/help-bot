@@ -9,38 +9,38 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Dry run (draft responses but do not post them)"
+        description: 'Dry run (draft responses but do not post them)'
         required: false
-        default: "false"
+        default: 'false'
         type: choice
         options:
-          - "false"
-          - "true"
+          - 'false'
+          - 'true'
       sync_hours:
-        description: "Hours of Discord history to sync"
+        description: 'Hours of Discord history to sync'
         required: false
-        default: "6"
+        default: '6'
       sync_days:
-        description: "Days of GitHub history to sync"
+        description: 'Days of GitHub history to sync'
         required: false
-        default: "7"
+        default: '7'
       skip_sync:
-        description: "Skip data syncing (use cached data)"
+        description: 'Skip data syncing (use cached data)'
         required: false
-        default: "false"
+        default: 'false'
         type: choice
         options:
-          - "false"
-          - "true"
+          - 'false'
+          - 'true'
       llm_provider:
-        description: "LLM provider to use"
+        description: 'LLM provider to use'
         required: false
-        default: "claude"
+        default: 'claude'
         type: choice
         options:
-          - "claude"
-          - "lm_studio"
-          - "continue"
+          - 'claude'
+          - 'lm_studio'
+          - 'continue'
 
 jobs:
   help-cycle:
@@ -122,16 +122,17 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "## Help Cycle Results (Self-Hosted)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
           DISCORD_COUNT=$(find data/responses/discord -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
           GITHUB_COUNT=$(find data/responses/github -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
 
-          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Discord responses | ${DISCORD_COUNT} |" >> $GITHUB_STEP_SUMMARY
-          echo "| GitHub responses | ${GITHUB_COUNT} |" >> $GITHUB_STEP_SUMMARY
-          echo "| LLM provider | ${{ github.event.inputs.llm_provider || 'claude' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Dry run | ${{ github.event.inputs.dry_run || 'false' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Runner | self-hosted |" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Help Cycle Results (Self-Hosted)"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| Discord responses | ${DISCORD_COUNT} |"
+            echo "| GitHub responses | ${GITHUB_COUNT} |"
+            echo "| LLM provider | ${{ github.event.inputs.llm_provider || 'claude' }} |"
+            echo "| Dry run | ${{ github.event.inputs.dry_run || 'false' }} |"
+            echo "| Runner | self-hosted |"
+          } >> "$GITHUB_STEP_SUMMARY"

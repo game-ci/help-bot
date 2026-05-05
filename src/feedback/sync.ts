@@ -50,19 +50,21 @@ export async function syncFeedback(): Promise<FeedbackRecord[]> {
   await ensureDir(feedbackDir)
 
   const records: FeedbackRecord[] = []
-  const feedbackState: Record<string, FeedbackRecord> = (state.meta?.feedback as Record<string, FeedbackRecord>) ?? {}
+  const feedbackState: Record<string, FeedbackRecord> =
+    (state.meta?.feedback as Record<string, FeedbackRecord>) ?? {}
 
   for (const [key, comment] of Object.entries(botComments)) {
     try {
       const { stdout } = await execFileAsync('gh', [
         'api',
         `repos/${comment.repo}/issues/comments/${comment.commentId}/reactions`,
-        '--header', 'Accept: application/vnd.github+json',
+        '--header',
+        'Accept: application/vnd.github+json',
       ])
       const reactions: ReactionData[] = JSON.parse(stdout)
 
-      const thumbsUp = reactions.filter(r => r.content === '+1')
-      const thumbsDown = reactions.filter(r => r.content === '-1')
+      const thumbsUp = reactions.filter((r) => r.content === '+1')
+      const thumbsDown = reactions.filter((r) => r.content === '-1')
 
       const record: FeedbackRecord = {
         repo: comment.repo,
@@ -71,13 +73,17 @@ export async function syncFeedback(): Promise<FeedbackRecord[]> {
         postedAt: comment.postedAt,
         thumbsUp: thumbsUp.length,
         thumbsDown: thumbsDown.length,
-        thumbsUpUsers: thumbsUp.map(r => r.user.login),
-        thumbsDownUsers: thumbsDown.map(r => r.user.login),
+        thumbsUpUsers: thumbsUp.map((r) => r.user.login),
+        thumbsDownUsers: thumbsDown.map((r) => r.user.login),
         lastChecked: new Date().toISOString(),
-        netSentiment: thumbsUp.length > thumbsDown.length ? 'positive'
-          : thumbsDown.length > thumbsUp.length ? 'negative'
-          : (thumbsUp.length > 0 || thumbsDown.length > 0) ? 'neutral'
-          : 'unknown',
+        netSentiment:
+          thumbsUp.length > thumbsDown.length
+            ? 'positive'
+            : thumbsDown.length > thumbsUp.length
+              ? 'negative'
+              : thumbsUp.length > 0 || thumbsDown.length > 0
+                ? 'neutral'
+                : 'unknown',
       }
 
       feedbackState[key] = record
@@ -113,18 +119,18 @@ async function writeFeedbackSummary(records: FeedbackRecord[], feedbackDir: stri
   lines.push('# Response Feedback Summary')
   lines.push('')
   lines.push('This file contains user feedback on previous bot responses.')
-  lines.push('Use this to improve future responses — learn from what worked and what didn\'t.')
+  lines.push("Use this to improve future responses — learn from what worked and what didn't.")
   lines.push('')
 
-  const withFeedback = records.filter(r => r.thumbsUp > 0 || r.thumbsDown > 0)
+  const withFeedback = records.filter((r) => r.thumbsUp > 0 || r.thumbsDown > 0)
   if (withFeedback.length === 0) {
     lines.push('No feedback received yet.')
   } else {
     // Stats
     const totalUp = withFeedback.reduce((sum, r) => sum + r.thumbsUp, 0)
     const totalDown = withFeedback.reduce((sum, r) => sum + r.thumbsDown, 0)
-    const positiveCount = withFeedback.filter(r => r.netSentiment === 'positive').length
-    const negativeCount = withFeedback.filter(r => r.netSentiment === 'negative').length
+    const positiveCount = withFeedback.filter((r) => r.netSentiment === 'positive').length
+    const negativeCount = withFeedback.filter((r) => r.netSentiment === 'negative').length
 
     lines.push(`## Overall Stats`)
     lines.push('')
@@ -136,15 +142,19 @@ async function writeFeedbackSummary(records: FeedbackRecord[], feedbackDir: stri
     lines.push('')
 
     // Negative feedback — most important for improvement
-    const negative = withFeedback.filter(r => r.netSentiment === 'negative')
+    const negative = withFeedback.filter((r) => r.netSentiment === 'negative')
     if (negative.length > 0) {
       lines.push('## Responses Needing Improvement')
       lines.push('')
-      lines.push('These responses received negative feedback. Read the response files to understand what went wrong:')
+      lines.push(
+        'These responses received negative feedback. Read the response files to understand what went wrong:',
+      )
       lines.push('')
       for (const r of negative) {
         const responseFile = `data/responses/github/${r.repo.replace(/\//g, '-')}-${r.issueNumber}.md`
-        lines.push(`- **${r.repo}#${r.issueNumber}**: ${r.thumbsDown} thumbs down, ${r.thumbsUp} thumbs up`)
+        lines.push(
+          `- **${r.repo}#${r.issueNumber}**: ${r.thumbsDown} thumbs down, ${r.thumbsUp} thumbs up`,
+        )
         lines.push(`  Response file: ${responseFile}`)
         lines.push(`  → Read this file to understand what went wrong and avoid similar patterns.`)
       }
@@ -152,7 +162,7 @@ async function writeFeedbackSummary(records: FeedbackRecord[], feedbackDir: stri
     }
 
     // Positive feedback — what's working
-    const positive = withFeedback.filter(r => r.netSentiment === 'positive')
+    const positive = withFeedback.filter((r) => r.netSentiment === 'positive')
     if (positive.length > 0) {
       lines.push('## Well-Received Responses')
       lines.push('')
@@ -160,7 +170,9 @@ async function writeFeedbackSummary(records: FeedbackRecord[], feedbackDir: stri
       lines.push('')
       for (const r of positive) {
         const responseFile = `data/responses/github/${r.repo.replace(/\//g, '-')}-${r.issueNumber}.md`
-        lines.push(`- **${r.repo}#${r.issueNumber}**: ${r.thumbsUp} thumbs up, ${r.thumbsDown} thumbs down`)
+        lines.push(
+          `- **${r.repo}#${r.issueNumber}**: ${r.thumbsUp} thumbs up, ${r.thumbsDown} thumbs down`,
+        )
         lines.push(`  Response file: ${responseFile}`)
         lines.push(`  → Read this file to replicate successful patterns.`)
       }

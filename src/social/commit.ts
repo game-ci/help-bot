@@ -47,7 +47,9 @@ export async function commitAndPushContent(
     stdio: ['pipe', 'pipe', 'inherit'],
   })
   let commitOutput = ''
-  commitProc.stdout.on('data', (d: Buffer) => { commitOutput += d.toString() })
+  commitProc.stdout.on('data', (d: Buffer) => {
+    commitOutput += d.toString()
+  })
   commitProc.stdin.end()
   const [commitCode] = await once(commitProc, 'exit')
   if (commitCode !== 0) throw new Error(`git commit failed with code ${commitCode}`)
@@ -57,7 +59,10 @@ export async function commitAndPushContent(
   const commitSha = shaMatch?.[1] ?? 'unknown'
 
   // git pull --rebase then push (handle concurrent pushes)
-  const pullProc = spawn('git', ['pull', '--rebase', 'origin', 'main'], { cwd: REPO_ROOT, stdio: 'inherit' })
+  const pullProc = spawn('git', ['pull', '--rebase', 'origin', 'main'], {
+    cwd: REPO_ROOT,
+    stdio: 'inherit',
+  })
   await once(pullProc, 'exit')
 
   const pushProc = spawn('git', ['push', 'origin', 'main'], { cwd: REPO_ROOT, stdio: 'inherit' })

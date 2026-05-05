@@ -62,7 +62,10 @@ export function getDetections(state: SyncState): Record<DetectionKey, DetectionR
   return (state.meta?.detections as Record<DetectionKey, DetectionRecord>) ?? {}
 }
 
-export function setDetections(state: SyncState, detections: Record<DetectionKey, DetectionRecord>): void {
+export function setDetections(
+  state: SyncState,
+  detections: Record<DetectionKey, DetectionRecord>,
+): void {
   state.meta ??= {}
   state.meta.detections = detections
 }
@@ -208,11 +211,20 @@ export function setContentRecord(state: SyncState, key: string, record: ContentR
 
 // --- Guild-namespaced cursor helpers ---
 
-export function getGuildCursor(state: SyncState, guildName: string, channelId: string): string | undefined {
+export function getGuildCursor(
+  state: SyncState,
+  guildName: string,
+  channelId: string,
+): string | undefined {
   return state.cursors?.discord?.[guildName]?.[channelId]
 }
 
-export function setGuildCursor(state: SyncState, guildName: string, channelId: string, cursor: string): void {
+export function setGuildCursor(
+  state: SyncState,
+  guildName: string,
+  channelId: string,
+  cursor: string,
+): void {
   state.cursors ??= {}
   state.cursors.discord ??= {}
   state.cursors.discord[guildName] ??= {}

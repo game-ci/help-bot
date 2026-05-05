@@ -44,37 +44,43 @@ const SECURITY_PATTERNS: SecurityPattern[] = [
   // CRITICAL: Direct prompt injection
   {
     name: 'ignore-instructions',
-    pattern: /ignore\s+(all\s+)?(previous|prior|above|earlier|system)\s+(instructions?|prompts?|rules?|guidelines?)/i,
+    pattern:
+      /ignore\s+(all\s+)?(previous|prior|above|earlier|system)\s+(instructions?|prompts?|rules?|guidelines?)/i,
     severity: 'critical',
     description: 'Attempt to override system instructions',
   },
   {
     name: 'new-instructions',
-    pattern: /(?:from\s+now\s+on|henceforth|going\s+forward)\s*[,:]?\s*(?:you\s+(?:are|will|should|must)|ignore|forget|disregard)/i,
+    pattern:
+      /(?:from\s+now\s+on|henceforth|going\s+forward)\s*[,:]?\s*(?:you\s+(?:are|will|should|must)|ignore|forget|disregard)/i,
     severity: 'critical',
     description: 'Attempt to inject new persistent instructions',
   },
   {
     name: 'system-prompt-override',
-    pattern: /(?:<<\s*SYS|<\|system\|>|\[INST\]|\[\/INST\]|<\/?system>|###\s*(?:SYSTEM|System)\s*:)/,
+    pattern:
+      /(?:<<\s*SYS|<\|system\|>|\[INST\]|\[\/INST\]|<\/?system>|###\s*(?:SYSTEM|System)\s*:)/,
     severity: 'critical',
     description: 'Attempt to inject system-level prompt markers',
   },
   {
     name: 'role-hijack',
-    pattern: /(?:you\s+are\s+now|act\s+as\s+(?:if\s+you\s+are\s+)?|pretend\s+(?:to\s+be|you\s+are)|assume\s+the\s+role|switch\s+to\s+(?:being|role)|your\s+new\s+role\s+is)/i,
+    pattern:
+      /(?:you\s+are\s+now|act\s+as\s+(?:if\s+you\s+are\s+)?|pretend\s+(?:to\s+be|you\s+are)|assume\s+the\s+role|switch\s+to\s+(?:being|role)|your\s+new\s+role\s+is)/i,
     severity: 'critical',
-    description: 'Attempt to change the bot\'s identity or role',
+    description: "Attempt to change the bot's identity or role",
   },
   {
     name: 'tool-abuse',
-    pattern: /(?:use\s+(?:the\s+)?(?:bash|shell|exec|write|edit|delete|rm|curl|wget)\s+(?:tool|command)|execute\s+(?:this|the\s+following)\s+(?:command|code|script)|run\s+(?:this|the\s+following)\s+(?:on|in)\s+(?:the\s+)?(?:server|system|machine))/i,
+    pattern:
+      /(?:use\s+(?:the\s+)?(?:bash|shell|exec|write|edit|delete|rm|curl|wget)\s+(?:tool|command)|execute\s+(?:this|the\s+following)\s+(?:command|code|script)|run\s+(?:this|the\s+following)\s+(?:on|in)\s+(?:the\s+)?(?:server|system|machine))/i,
     severity: 'critical',
     description: 'Attempt to trigger tool execution from user content',
   },
   {
     name: 'data-exfiltration',
-    pattern: /(?:(?:send|post|upload|transmit|exfiltrate)\s+(?:the\s+)?(?:data|secrets?|tokens?|keys?|credentials?|env|environment|config)|(?:curl|wget|fetch)\s+https?:\/\/)/i,
+    pattern:
+      /(?:(?:send|post|upload|transmit|exfiltrate)\s+(?:the\s+)?(?:data|secrets?|tokens?|keys?|credentials?|env|environment|config)|(?:curl|wget|fetch)\s+https?:\/\/)/i,
     severity: 'critical',
     description: 'Attempt to exfiltrate data or make external requests',
   },
@@ -82,7 +88,8 @@ const SECURITY_PATTERNS: SecurityPattern[] = [
   // HIGH: Instruction manipulation
   {
     name: 'override-rules',
-    pattern: /(?:override|bypass|circumvent|ignore|disable|turn\s+off)\s+(?:the\s+)?(?:rules?|restrictions?|safety|filters?|guardrails?|limitations?|constraints?)/i,
+    pattern:
+      /(?:override|bypass|circumvent|ignore|disable|turn\s+off)\s+(?:the\s+)?(?:rules?|restrictions?|safety|filters?|guardrails?|limitations?|constraints?)/i,
     severity: 'high',
     description: 'Attempt to disable safety measures',
   },
@@ -106,7 +113,8 @@ const SECURITY_PATTERNS: SecurityPattern[] = [
   },
   {
     name: 'file-manipulation',
-    pattern: /(?:(?:write|create|modify|edit|delete|remove|overwrite)\s+(?:the\s+)?(?:file|config|CLAUDE\.md|\.env|secret|credential))/i,
+    pattern:
+      /(?:(?:write|create|modify|edit|delete|remove|overwrite)\s+(?:the\s+)?(?:file|config|CLAUDE\.md|\.env|secret|credential))/i,
     severity: 'high',
     description: 'Attempt to manipulate system files',
   },
@@ -114,19 +122,22 @@ const SECURITY_PATTERNS: SecurityPattern[] = [
   // MEDIUM: Social engineering
   {
     name: 'authority-claim',
-    pattern: /(?:i\s+am\s+(?:a\s+)?(?:maintainer|admin|administrator|developer|owner|moderator)|as\s+(?:a\s+)?(?:maintainer|admin)\s*[,:]?\s*(?:i\s+)?(?:need|want|require|order|command)\s+you)/i,
+    pattern:
+      /(?:i\s+am\s+(?:a\s+)?(?:maintainer|admin|administrator|developer|owner|moderator)|as\s+(?:a\s+)?(?:maintainer|admin)\s*[,:]?\s*(?:i\s+)?(?:need|want|require|order|command)\s+you)/i,
     severity: 'medium',
     description: 'False authority claim to influence bot behavior',
   },
   {
     name: 'urgency-manipulation',
-    pattern: /(?:(?:urgent|emergency|critical|immediately)\s*[!:]\s*(?:you\s+must|please\s+(?:immediately\s+)?(?:do|execute|run|delete|post|send)))/i,
+    pattern:
+      /(?:(?:urgent|emergency|critical|immediately)\s*[!:]\s*(?:you\s+must|please\s+(?:immediately\s+)?(?:do|execute|run|delete|post|send)))/i,
     severity: 'medium',
     description: 'Urgency-based manipulation attempt',
   },
   {
     name: 'output-manipulation',
-    pattern: /(?:(?:respond|reply|answer|output|say|print|echo)\s+(?:only\s+)?(?:with|exactly|the\s+following|this\s*:))/i,
+    pattern:
+      /(?:(?:respond|reply|answer|output|say|print|echo)\s+(?:only\s+)?(?:with|exactly|the\s+following|this\s*:))/i,
     severity: 'medium',
     description: 'Attempt to control bot output format',
   },
@@ -140,7 +151,8 @@ const SECURITY_PATTERNS: SecurityPattern[] = [
   },
   {
     name: 'jailbreak-keywords',
-    pattern: /(?:jailbreak|DAN\s*mode|do\s+anything\s+now|developer\s+mode|maintenance\s+mode|debug\s+mode|god\s+mode|unrestricted\s+mode)/i,
+    pattern:
+      /(?:jailbreak|DAN\s*mode|do\s+anything\s+now|developer\s+mode|maintenance\s+mode|debug\s+mode|god\s+mode|unrestricted\s+mode)/i,
     severity: 'low',
     description: 'Known jailbreak technique keywords',
   },
@@ -172,7 +184,7 @@ export function scanForInjection(content: string, location: string): SecurityFin
     // Also scan full content for multi-line patterns
     if (sp.pattern.flags.includes('s')) {
       const match = content.match(sp.pattern)
-      if (match && !findings.some(f => f.pattern === sp.name && f.location === location)) {
+      if (match && !findings.some((f) => f.pattern === sp.name && f.location === location)) {
         findings.push({
           pattern: sp.name,
           severity: sp.severity,
@@ -205,11 +217,11 @@ export function sanitizeContent(content: string): string {
  * Determine if content should be blocked entirely (not passed to LLM).
  */
 export function shouldBlock(findings: SecurityFinding[]): { blocked: boolean; reason?: string } {
-  const criticalFindings = findings.filter(f => f.severity === 'critical')
+  const criticalFindings = findings.filter((f) => f.severity === 'critical')
   if (criticalFindings.length >= 2) {
     return {
       blocked: true,
-      reason: `Multiple critical injection patterns detected: ${criticalFindings.map(f => f.pattern).join(', ')}`,
+      reason: `Multiple critical injection patterns detected: ${criticalFindings.map((f) => f.pattern).join(', ')}`,
     }
   }
   return { blocked: false }
@@ -218,7 +230,10 @@ export function shouldBlock(findings: SecurityFinding[]): { blocked: boolean; re
 /**
  * Write a security report for all findings from a scan.
  */
-export async function writeSecurityReport(findings: SecurityFinding[], cycleDate: string): Promise<string> {
+export async function writeSecurityReport(
+  findings: SecurityFinding[],
+  cycleDate: string,
+): Promise<string> {
   const reportDir = join(DATA_DIR, 'security')
   await ensureDir(reportDir)
 
@@ -285,7 +300,7 @@ export async function scanSyncedIssues(repoSlug: string): Promise<SecurityFindin
 
   const allFindings: SecurityFinding[] = []
 
-  for (const file of files.filter(f => f.endsWith('.md'))) {
+  for (const file of files.filter((f) => f.endsWith('.md'))) {
     const content = await readFile(join(issueDir, file), 'utf-8')
     const findings = scanForInjection(content, `${repoSlug}/${file}`)
     allFindings.push(...findings)

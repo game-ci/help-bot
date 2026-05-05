@@ -24,7 +24,8 @@ async function fetchPage(page: string, baseUrl: string): Promise<void> {
     }
     const html = await response.body.text()
     const root = parse(html)
-    const article = root.querySelector('article') ?? root.querySelector('main') ?? root.querySelector('.markdown')
+    const article =
+      root.querySelector('article') ?? root.querySelector('main') ?? root.querySelector('.markdown')
     if (!article) {
       throw new Error('No article content found')
     }
@@ -45,17 +46,23 @@ ${markdown}
 
 export async function syncDocs(): Promise<void> {
   const config = await getConfig()
-  const baseUrl = (getValue(config, ['docs', 'base_url'], 'https://game.ci/docs') as string).replace(/\/$/, '')
-  const pages = (getValue(config, ['docs', 'pages'], [
-    'github/getting-started',
-    'github/activation',
-    'github/builder',
-    'github/test-runner',
-    'github/returning-a-license',
-    'docker/docker-images',
-    'docker/versions',
-    'github/deployment/steam',
-  ]) as string[])
+  const baseUrl = (
+    getValue(config, ['docs', 'base_url'], 'https://game.ci/docs') as string
+  ).replace(/\/$/, '')
+  const pages = getValue(
+    config,
+    ['docs', 'pages'],
+    [
+      'github/getting-started',
+      'github/activation',
+      'github/builder',
+      'github/test-runner',
+      'github/returning-a-license',
+      'docker/docker-images',
+      'docker/versions',
+      'github/deployment/steam',
+    ],
+  ) as string[]
 
   await ensureDir(DOCS_DATA_DIR)
   for (const entry of pages) {

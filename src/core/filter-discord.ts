@@ -87,15 +87,22 @@ interface SyncedMessage {
  * Returns messages that are likely questions or help requests
  * and haven't been responded to yet.
  */
-export async function filterDiscordMessages(guildConfig: GuildConfig): Promise<DiscordFilterResult> {
+export async function filterDiscordMessages(
+  guildConfig: GuildConfig,
+): Promise<DiscordFilterResult> {
   const config = await getConfig()
-  const officialRoles = (getValue(config, ['discord', 'official_roles'], []) as string[]).map(r => r.toLowerCase())
-  const officialUsers = (getValue(config, ['discord', 'official_users'], []) as string[]).map(u => u.toLowerCase())
+  const officialRoles = (getValue(config, ['discord', 'official_roles'], []) as string[]).map((r) =>
+    r.toLowerCase(),
+  )
+  const officialUsers = (getValue(config, ['discord', 'official_users'], []) as string[]).map((u) =>
+    u.toLowerCase(),
+  )
   const ignoreBots = Boolean(getValue(config, ['discord', 'ignore_bots'], true))
   const minLength = Number(getValue(config, ['discord', 'min_message_length'], 15))
 
   const state = await loadState()
-  const postedDiscordResponses = (state.meta?.postedDiscordResponses as Record<string, string>) ?? {}
+  const postedDiscordResponses =
+    (state.meta?.postedDiscordResponses as Record<string, string>) ?? {}
 
   const eligible: EligibleDiscordMessage[] = []
   const skipReasons: Record<string, number> = {}
@@ -125,7 +132,11 @@ export async function filterDiscordMessages(guildConfig: GuildConfig): Promise<D
       }
 
       // Only process recent JSONL files (last 7 days by default)
-      const jsonlFiles = files.filter(f => f.endsWith('.jsonl')).sort().reverse().slice(0, 7)
+      const jsonlFiles = files
+        .filter((f) => f.endsWith('.jsonl'))
+        .sort()
+        .reverse()
+        .slice(0, 7)
 
       for (const file of jsonlFiles) {
         const fullPath = join(channelDir, file)
@@ -176,7 +187,8 @@ export async function filterDiscordMessages(guildConfig: GuildConfig): Promise<D
             continue
           }
 
-          const title = msg.content.split('\n')[0].substring(0, 120) || msg.content.substring(0, 120)
+          const title =
+            msg.content.split('\n')[0].substring(0, 120) || msg.content.substring(0, 120)
 
           eligible.push({
             messageId: msg.id,
@@ -186,12 +198,14 @@ export async function filterDiscordMessages(guildConfig: GuildConfig): Promise<D
             content: msg.content,
             timestamp: msg.timestamp,
             reactions: msg.reactions ?? {},
-            replyContext: msg.referenced_message ? {
-              author: msg.referenced_message.author,
-              content: msg.referenced_message.content,
-              messageId: msg.referenced_message.id,
-            } : undefined,
-            threadMessages: msg.thread_messages?.map(tm => ({
+            replyContext: msg.referenced_message
+              ? {
+                  author: msg.referenced_message.author,
+                  content: msg.referenced_message.content,
+                  messageId: msg.referenced_message.id,
+                }
+              : undefined,
+            threadMessages: msg.thread_messages?.map((tm) => ({
               author: tm.author,
               content: tm.content,
               messageId: tm.id,
@@ -233,17 +247,41 @@ function isLikelyHelpRequest(content: string): boolean {
 
   // Help/error keywords
   const helpKeywords = [
-    'help', 'error', 'issue', 'problem', 'fail', 'broken',
-    'not working', 'doesn\'t work', 'can\'t', 'cannot', 'unable',
-    'how do i', 'how to', 'any idea', 'anyone know',
-    'getting an error', 'stuck', 'struggling', 'confused',
-    'exception', 'crash', 'bug', 'unexpected', 'wrong',
-    'please help', 'need help', 'having trouble',
-    'does anyone', 'is there a way', 'is it possible',
-    'what am i doing wrong', 'what\'s wrong',
+    'help',
+    'error',
+    'issue',
+    'problem',
+    'fail',
+    'broken',
+    'not working',
+    "doesn't work",
+    "can't",
+    'cannot',
+    'unable',
+    'how do i',
+    'how to',
+    'any idea',
+    'anyone know',
+    'getting an error',
+    'stuck',
+    'struggling',
+    'confused',
+    'exception',
+    'crash',
+    'bug',
+    'unexpected',
+    'wrong',
+    'please help',
+    'need help',
+    'having trouble',
+    'does anyone',
+    'is there a way',
+    'is it possible',
+    'what am i doing wrong',
+    "what's wrong",
   ]
 
-  return helpKeywords.some(kw => lower.includes(kw))
+  return helpKeywords.some((kw) => lower.includes(kw))
 }
 
 /**
@@ -286,7 +324,9 @@ export async function writeDiscordManifest(
     lines.push(`### ${msg.discord.guildName}/${loc} — ${msg.author} (${msg.timestamp})`)
     lines.push(`Message ID: ${msg.messageId}`)
     if (msg.replyContext) {
-      lines.push(`> Replying to @${msg.replyContext.author}: ${msg.replyContext.content.substring(0, 200)}`)
+      lines.push(
+        `> Replying to @${msg.replyContext.author}: ${msg.replyContext.content.substring(0, 200)}`,
+      )
     }
     lines.push('')
     lines.push(msg.content)
@@ -298,7 +338,9 @@ export async function writeDiscordManifest(
       }
     }
     if (Object.keys(msg.reactions).length > 0) {
-      const reactionStr = Object.entries(msg.reactions).map(([k, v]) => `${k}: ${v}`).join(', ')
+      const reactionStr = Object.entries(msg.reactions)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(', ')
       lines.push(`Reactions: ${reactionStr}`)
     }
     lines.push('')

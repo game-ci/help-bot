@@ -10,12 +10,12 @@ import { type ContentStatus, type SocialAction, buildSocialButtonId } from './ty
 
 const STATUS_COLORS: Record<ContentStatus, number> = {
   topic_received: 0xffa500, // orange
-  drafting: 0x3498db,       // blue
-  draft_ready: 0x2ecc71,    // green
-  revising: 0x3498db,       // blue
-  approved: 0x9b59b6,       // purple
-  committed: 0x95a5a6,      // gray
-  discarded: 0x7f8c8d,      // dark gray
+  drafting: 0x3498db, // blue
+  draft_ready: 0x2ecc71, // green
+  revising: 0x3498db, // blue
+  approved: 0x9b59b6, // purple
+  committed: 0x95a5a6, // gray
+  discarded: 0x7f8c8d, // dark gray
 }
 
 export interface ContentEmbedOptions {
@@ -36,9 +36,7 @@ function truncate(s: string, max: number): string {
 }
 
 export function buildContentEmbed(options: ContentEmbedOptions): EmbedBuilder {
-  const embed = new EmbedBuilder()
-    .setColor(STATUS_COLORS[options.status])
-    .setTimestamp()
+  const embed = new EmbedBuilder().setColor(STATUS_COLORS[options.status]).setTimestamp()
 
   const statusLabel = options.status.toUpperCase().replace(/_/g, ' ')
   embed.setTitle(`[${statusLabel}] ${options.platform}: ${truncate(options.topic, 200)}`)
@@ -58,7 +56,10 @@ export function buildContentEmbed(options: ContentEmbedOptions): EmbedBuilder {
   }
 
   if (options.committedFile && options.commitSha) {
-    embed.addFields({ name: 'Committed', value: `\`${options.commitSha}\` — ${options.committedFile}` })
+    embed.addFields({
+      name: 'Committed',
+      value: `\`${options.commitSha}\` — ${options.committedFile}`,
+    })
   }
 
   const footerParts: string[] = []
