@@ -34,6 +34,7 @@ import {
   setLastOnlineAt,
   getTriageRecord,
   setTriageRecord,
+  setContentRecord,
 } from '../state'
 import { ensureDir } from '../utils/fs'
 import { REPO_ROOT, RESPONSES_DIR, DATA_DIR } from '../utils/paths'
@@ -55,6 +56,8 @@ import {
   type TriageHandlerContext,
 } from '../triage'
 import { handleSocialRequest, handleSocialInteraction, type SocialHandlerContext } from '../social'
+import { buildContentId, type ContentRecord } from '../social/types'
+import { postContentNotification } from '../social/notification'
 import { syncGitHub } from '../sync/github'
 import { filterIssues, type EligibleIssue } from './filter-issues'
 import { resolveClaude } from '../utils/claude'
@@ -165,7 +168,7 @@ async function postDeployChangelog(
     }
     lines.push(
       '',
-      '**Commands:** `!status` `!channels` `!settings` `!channel` `!sync-data` `!help` | `/ask` | `@bot social <topic>`',
+      '**Commands:** `!status` `!channels` `!settings` `!channel` `!config` `!sync-data` `!help` | `/ask` `/post` | `@bot social <topic>`',
     )
 
     const msg = lines.join('\n')
@@ -353,13 +356,19 @@ export async function runLive(options: LiveOptions): Promise<void> {
     for (const [guildId, mapping] of guildMappings) {
       const discordGuild = readyClient.guilds.cache.get(guildId)
       if (discordGuild) {
-        // Build channel map from actual Discord channels
+        // Build channel map from actual Discord channels (by name match)
         for (const [, channel] of discordGuild.channels.cache) {
           if (channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildForum) {
             const channelConfig = mapping.channelNameMap.get(channel.name)
             if (channelConfig) {
               mapping.channelMap.set(channel.id, channelConfig)
             }
+          }
+        }
+        // Also index channels by explicit channel_id (overrides name-based resolution)
+        for (const ch of mapping.guildConfig.channels) {
+          if (ch.channel_id) {
+            mapping.channelMap.set(ch.channel_id, ch)
           }
         }
 
@@ -416,8 +425,18 @@ export async function runLive(options: LiveOptions): Promise<void> {
                 },
               ],
             },
+            {
+              name: 'post',
+              description: 'Draft a social media post or community announcement',
+              options: [{
+                name: 'topic',
+                description: 'What the post should be about (feature, release, tip, announcement, etc.)',
+                type: 3, // STRING
+                required: true,
+              }],
+            },
           ])
-          console.log(`  ✓ Registered /ask slash command`)
+          console.log(`  ✓ Registered /ask and /post slash commands`)
         }
       } catch (err: any) {
         console.warn(`  ⚠ Failed to register slash commands: ${err.message ?? err}`)
@@ -715,7 +734,9 @@ export async function runLive(options: LiveOptions): Promise<void> {
                   ch.monitor !== false ? 'monitoring' : 'not monitored',
                   ch.read_threads !== false ? 'threads' : 'no threads',
                   ch.reply_mode ?? 'bot_api',
+                  `trigger: ${ch.trigger_mode ?? 'mention'}`,
                 ]
+                if (ch.channel_id) props.push(`id: ${ch.channel_id}`)
                 lines.push(`\`#${ch.name}\` — ${props.join(', ')}`)
                 if (ch.system_prompt)
                   lines.push(
@@ -772,6 +793,8 @@ export async function runLive(options: LiveOptions): Promise<void> {
                 'channel_type',
                 'reply_mode',
                 'system_prompt',
+                'channel_id',
+                'trigger_mode',
               ]
               if (!validKeys.includes(key)) {
                 await message
@@ -919,6 +942,72 @@ export async function runLive(options: LiveOptions): Promise<void> {
             return
           }
 
+          // --- Config management commands ---
+          if (stripped.startsWith('config ')) {
+            const parts = stripped.slice('config '.length).trim().split(/\s+/)
+            const sub = parts[0]
+
+            if (sub === 'get') {
+              const path = parts.slice(1).join('.').split('.')
+              if (path.length === 0 || !path[0]) {
+                await message.reply({ content: 'Usage: `!config get <key.path>` (e.g. `!config get dispatch.mode`)', allowedMentions: { repliedUser: false } }).catch(() => {})
+                return
+              }
+              const val = getValue(config, path, undefined as unknown)
+              const display = val === undefined ? '(not set)' : typeof val === 'object' ? '```json\n' + JSON.stringify(val, null, 2) + '\n```' : `\`${val}\``
+              await message.reply({ content: `**${path.join('.')}** = ${display}`, allowedMentions: { repliedUser: false } }).catch(() => {})
+              return
+            }
+
+            if (sub === 'set') {
+              if (parts.length < 3) {
+                await message.reply({ content: 'Usage: `!config set <key.path> <value>` (e.g. `!config set dispatch.mode triage`)', allowedMentions: { repliedUser: false } }).catch(() => {})
+                return
+              }
+              const keyPath = parts[1].split('.')
+              const rawValue = parts.slice(2).join(' ')
+
+              // Navigate to parent and set the value
+              let current: any = config
+              for (let i = 0; i < keyPath.length - 1; i++) {
+                if (!current[keyPath[i]] || typeof current[keyPath[i]] !== 'object') {
+                  current[keyPath[i]] = {}
+                }
+                current = current[keyPath[i]]
+              }
+              const lastKey = keyPath[keyPath.length - 1]
+
+              // Parse value types
+              let parsed: unknown = rawValue
+              if (rawValue === 'true') parsed = true
+              else if (rawValue === 'false') parsed = false
+              else if (/^\d+$/.test(rawValue)) parsed = Number(rawValue)
+
+              current[lastKey] = parsed
+              await saveConfig()
+              await message.reply({ content: `Set \`${parts[1]}\` = \`${rawValue}\``, allowedMentions: { repliedUser: false } }).catch(() => {})
+              return
+            }
+
+            if (sub === 'sync') {
+              const pushResult = await commitAndPushConfig('config sync from Discord')
+              await message.reply({ content: pushResult, allowedMentions: { repliedUser: false } }).catch(() => {})
+              return
+            }
+
+            if (sub === 'reload') {
+              await reloadConfig()
+              await message.reply({ content: 'Config reloaded from disk.', allowedMentions: { repliedUser: false } }).catch(() => {})
+              return
+            }
+
+            await message.reply({
+              content: '**Config commands:**\n`!config get <key.path>` — Read a config value\n`!config set <key.path> <value>` — Set a config value\n`!config sync` — Commit & push config to repo\n`!config reload` — Reload config from disk',
+              allowedMentions: { repliedUser: false },
+            }).catch(() => {})
+            return
+          }
+
           if (stripped === 'help') {
             const lines = [
               '**Triage commands** (`!` or `+` prefix):',
@@ -927,10 +1016,12 @@ export async function runLive(options: LiveOptions): Promise<void> {
               '`!settings` — Show current configuration',
               '`!sync-data` — Sync data to private GitHub repo',
               '`!channel list|set|add|remove` — Manage channel config',
+              '`!config get|set|sync|reload` — Manage bot configuration',
               '`!help` — This message',
               '',
               '**Slash commands:**',
               '`/ask <question>` — Submit a help question for triage',
+              '`/post <topic>` — Draft a social media post on a topic',
               '',
               '**In any monitored channel:**',
               '`@bot <question>` — Ask a help question (sent to triage)',
@@ -958,7 +1049,8 @@ export async function runLive(options: LiveOptions): Promise<void> {
       return
     }
 
-    // Only respond if the user @mentions the bot or is replying to the bot
+    // Determine trigger mode: 'all' means every message triggers pipeline, 'mention' (default) requires @mention
+    const triggerMode = channelConfig.trigger_mode ?? 'mention'
     const botId = client.user?.id
     const isMentioned = botId ? message.mentions.users.has(botId) : false
     const isReplyToBot = message.reference?.messageId
@@ -968,8 +1060,14 @@ export async function runLive(options: LiveOptions): Promise<void> {
           .catch(() => false)
       : false
 
-    if (!isMentioned && !isReplyToBot) {
+    if (triggerMode === 'mention' && !isMentioned && !isReplyToBot) {
       return
+    }
+
+    // For trigger_mode:'all', apply additional filters to reduce noise
+    if (triggerMode === 'all' && !isMentioned && !isReplyToBot) {
+      // Skip very short messages (likely greetings, reactions, etc.)
+      if (message.content.trim().length < minMessageLength) return
     }
 
     // Skip: messages older than firstOnlineAt — never process pre-existing messages
@@ -1029,7 +1127,8 @@ export async function runLive(options: LiveOptions): Promise<void> {
       return
     }
 
-    console.log(`  → Responding to ${isMentioned ? '@mention' : 'reply'}...`)
+    const triggerLabel = isMentioned ? '@mention' : isReplyToBot ? 'reply' : 'message'
+    console.log(`  → Responding to ${triggerLabel}...`)
 
     // Dispatch gate
     if (dispatchMode === 'auto') {
@@ -1145,6 +1244,72 @@ export async function runLive(options: LiveOptions): Promise<void> {
   // --- Interaction handler (slash commands + triage/social buttons) ---
   client.on(Events.InteractionCreate, async (interaction) => {
     try {
+      // Handle /post slash command — social content creation
+      if (interaction.isChatInputCommand() && interaction.commandName === 'post') {
+        const topic = interaction.options.getString('topic', true)
+        const guildId = interaction.guildId
+        if (!guildId) {
+          await interaction.reply({ content: 'This command only works in a server.', ephemeral: true })
+          return
+        }
+        const socialEnabled = getValue(config, ['social', 'enabled'], false)
+        if (!socialEnabled) {
+          await interaction.reply({ content: 'Social content module is not enabled.', ephemeral: true })
+          return
+        }
+        const triageChannel = triageChannels.get(guildId)
+        if (!triageChannel) {
+          await interaction.reply({ content: 'No triage channel configured for social content.', ephemeral: true })
+          return
+        }
+
+        // Permission check
+        const userId = interaction.user.id
+        const username = interaction.user.tag ?? interaction.user.username
+        const isCollaborator = (collaborators as string[]).some((c: string) => c.toLowerCase() === username.toLowerCase())
+        const isTriageUser = (triageUserIds as string[]).includes(userId)
+        if (!isCollaborator && !isTriageUser) {
+          await interaction.reply({ content: 'Only maintainers can create social content.', ephemeral: true })
+          return
+        }
+
+        await interaction.reply({ content: `Social content request received for topic: "${topic}". Check the triage channel for drafting controls.`, ephemeral: true })
+
+        const contentId = buildContentId(userId)
+        const contentKey = `content:linkedin:${contentId}`
+
+        const notificationMsg = await postContentNotification(triageChannel, {
+          platform: 'LinkedIn',
+          topic,
+          requestedBy: username,
+          status: 'topic_received',
+        }, contentId)
+
+        const record: ContentRecord = {
+          contentKey,
+          notificationMessageId: notificationMsg.id,
+          notificationChannelId: triageChannel.id,
+          platform: 'linkedin',
+          topic,
+          requestedBy: username,
+          requestedByUserId: userId,
+          sourceGuildId: guildId,
+          sourceChannelId: interaction.channelId ?? '',
+          sourceMessageId: interaction.id,
+          status: 'topic_received',
+          revisionCount: 0,
+          createdAt: new Date().toISOString(),
+        }
+
+        await updateState((s) => {
+          setContentRecord(s, contentKey, record)
+        })
+
+        console.log(`[${formatTime()}] /post from @${username}: ${topic.substring(0, 80)}`)
+        console.log(`  → Social content notification posted`)
+        return
+      }
+
       // Handle /ask slash command
       if (interaction.isChatInputCommand() && interaction.commandName === 'ask') {
         const question = interaction.options.getString('question', true)
@@ -2151,7 +2316,8 @@ async function catchUpMissedMessages(
           // Same filters as the live handler
           if (filters.ignoreBots && message.author.bot) continue
 
-          // Only process @mentions or replies to the bot
+          // Respect trigger_mode: 'all' processes every message, 'mention' requires @mention
+          const triggerMode = channelConfig.trigger_mode ?? 'mention'
           const botId = client.user?.id
           const isMentioned = botId ? message.mentions.users.has(botId) : false
           const isReplyToBot = message.reference?.messageId
@@ -2160,7 +2326,10 @@ async function catchUpMissedMessages(
                 .then((ref) => ref.author.id === botId)
                 .catch(() => false)
             : false
-          if (!isMentioned && !isReplyToBot) continue
+          if (triggerMode === 'mention' && !isMentioned && !isReplyToBot) continue
+          if (triggerMode === 'all' && !isMentioned && !isReplyToBot) {
+            if (message.content.trim().length < filters.minMessageLength) continue
+          }
 
           const content = message.content.trim()
           if (filters.ignorePrefixes.some((p) => content.startsWith(p))) continue
