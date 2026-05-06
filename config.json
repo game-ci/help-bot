@@ -50,11 +50,13 @@
         "channels": [
           {
             "name": "help",
+            "channel_id": "710946344457732176",
             "system_prompt": "Focus on troubleshooting Unity build issues and CI pipeline problems. Users here are often stuck and need step-by-step guidance.",
             "channel_type": "text",
             "reply_mode": "bot_api",
             "read_threads": true,
-            "monitor": true
+            "monitor": true,
+            "trigger_mode": "all"
           },
           {
             "name": "unity-builder",
@@ -65,10 +67,12 @@
           },
           {
             "name": "support",
+            "channel_id": "1032374191254675496",
             "channel_type": "text",
             "reply_mode": "bot_api",
             "read_threads": true,
-            "monitor": true
+            "monitor": true,
+            "trigger_mode": "all"
           },
           {
             "name": "general",

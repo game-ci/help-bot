@@ -1,5 +1,7 @@
 import type { Interaction, ButtonInteraction, Client, TextChannel, ThreadChannel } from 'discord.js'
 import { readFile } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { join } from 'node:path'
 import { parseButtonId, parseDiscordCompactId, parseGithubCompactId } from './types'
 import type { TriageRecord } from './types'
@@ -115,6 +117,9 @@ export async function handleTriageInteraction(
         displayName,
         interaction as ButtonInteraction,
       )
+      break
+    case 'file_bug':
+      await handleFileBug(record, triageKey, triageChannel, sourceType, compactId, displayName)
       break
   }
 }
@@ -432,6 +437,184 @@ async function handleView(
   }
 }
 
+/**
+ * Handle "File Bug" button click.
+ * Creates a GitHub issue in the source repo (or help-bot repo for Discord sources)
+ * based on the investigation's bug discovery section.
+ */
+async function handleFileBug(
+  record: TriageRecord,
+  triageKey: string,
+  triageChannel: TextChannel,
+  sourceType: 'd' | 'g',
+  compactId: string,
+  username: string,
+): Promise<void> {
+  if (record.status !== 'ready') {
+    console.log(`  Triage ${triageKey}: not ready, skipping file_bug`)
+    return
+  }
+
+  if (record.filedBugUrl) {
+    // Already filed — post the URL to the thread
+    try {
+      const triageMsg = await triageChannel.messages.fetch(record.triageMessageId)
+      const thread = triageMsg.thread
+      if (thread) {
+        await thread.send(`Bug already filed: ${record.filedBugUrl}`)
+      }
+    } catch {
+      /* best-effort */
+    }
+    return
+  }
+
+  console.log(`  Triage: ${username} clicked File Bug for ${triageKey}`)
+
+  // Read the investigation response to extract bug details
+  if (!record.responseFile) {
+    console.warn(`  Triage: no response file for bug filing ${triageKey}`)
+    return
+  }
+
+  const filePath = record.responseFile.startsWith('data/')
+    ? join(REPO_ROOT, record.responseFile)
+    : record.responseFile
+
+  let responseBody: string
+  try {
+    const content = await readFile(filePath, 'utf-8')
+    const { body } = parseFrontMatter(content)
+    responseBody = body.trim()
+  } catch {
+    console.warn(`  Triage: could not read response for bug filing ${triageKey}`)
+    return
+  }
+
+  // Also try to read analysis file for more detail
+  const analysisPath = filePath.replace(/\.md$/, '-analysis.md')
+  let analysisBody = ''
+  try {
+    analysisBody = (await readFile(analysisPath, 'utf-8')).trim()
+  } catch {
+    /* analysis is optional */
+  }
+
+  // Determine target repo
+  const targetRepo = record.sourceRepo ?? 'game-ci/help-bot'
+
+  // Build issue title and body
+  const sourceRef =
+    record.sourceRepo && record.sourceIssueNumber
+      ? `${record.sourceRepo}#${record.sourceIssueNumber}`
+      : record.sourceDiscordPath
+        ? `Discord: ${record.sourceDiscordPath}`
+        : 'Investigation'
+
+  const issueTitle = `[Bug] ${record.sourceTitle ?? 'Bug discovered during investigation'}`
+
+  const bodyParts: string[] = [
+    `## Bug Report (from help bot investigation)`,
+    ``,
+    `**Source:** ${sourceRef}`,
+    `**Reported by:** ${record.sourceAuthor ?? 'unknown'}`,
+    `**Filed by:** ${username} via help bot triage`,
+    ``,
+    `## Investigation Summary`,
+    ``,
+    responseBody.substring(0, 3000),
+  ]
+
+  if (analysisBody) {
+    bodyParts.push(``, `## Detailed Analysis`, ``, analysisBody.substring(0, 3000))
+  }
+
+  bodyParts.push(``, `---`, `-# Filed by GameCI Help Bot from triage investigation`)
+
+  const issueBody = bodyParts.join('\n')
+
+  // Create the GitHub issue via gh CLI
+  const execFileAsync = promisify(execFile)
+  try {
+    // Try with 'bug' label first, fall back without label if it doesn't exist
+    let stdout: string
+    try {
+      const result = await execFileAsync('gh', [
+        'issue',
+        'create',
+        '--repo',
+        targetRepo,
+        '--title',
+        issueTitle,
+        '--body',
+        issueBody,
+        '--label',
+        'bug',
+      ])
+      stdout = result.stdout
+    } catch {
+      // Label might not exist — create without it
+      const result = await execFileAsync('gh', [
+        'issue',
+        'create',
+        '--repo',
+        targetRepo,
+        '--title',
+        issueTitle,
+        '--body',
+        issueBody,
+      ])
+      stdout = result.stdout
+    }
+    const issueUrl = stdout.trim()
+    console.log(`  Triage: Bug filed at ${issueUrl}`)
+
+    // Update record
+    record.filedBugUrl = issueUrl
+    record.filedBugRepo = targetRepo
+    await updateState((s) => setTriageRecord(s, triageKey, record))
+
+    // Update embed
+    const embedOptions = buildEmbedOptions(record)
+    await updateTriageNotification(
+      triageChannel,
+      record.triageMessageId,
+      embedOptions,
+      sourceType,
+      compactId,
+    )
+
+    // Post to thread
+    try {
+      const triageMsg = await triageChannel.messages.fetch(record.triageMessageId)
+      let thread: ThreadChannel | null = triageMsg.thread
+      if (!thread) {
+        thread = await triageMsg.startThread({
+          name: `Investigation: ${(record.sourceTitle ?? 'Help request').substring(0, 84)}`,
+          autoArchiveDuration: 1440,
+        })
+      } else if (thread.archived) {
+        await thread.setArchived(false)
+      }
+      await thread.send(`**Bug filed** by ${username}: ${issueUrl}`)
+    } catch {
+      /* thread post is best-effort */
+    }
+  } catch (err: any) {
+    console.error(`  Triage: Bug filing failed for ${triageKey}: ${err.message ?? err}`)
+    // Post error to thread
+    try {
+      const triageMsg = await triageChannel.messages.fetch(record.triageMessageId)
+      const thread = triageMsg.thread
+      if (thread) {
+        await thread.send(`**Bug filing failed:** ${err.message ?? err}`)
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+}
+
 // --- Helpers ---
 
 const MAX_DISCORD_LENGTH = 2000
@@ -665,6 +848,7 @@ function buildEmbedOptions(record: TriageRecord, responsePreview?: string): Tria
     investigatedBy: record.investigatedBy,
     responsePreview,
     reinvestigationCount: record.reinvestigationCount,
+    filedBugUrl: record.filedBugUrl,
   }
 }
 

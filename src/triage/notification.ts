@@ -44,6 +44,8 @@ export interface TriageEmbedOptions {
   responsePreview?: string
   /** Reinvestigation count */
   reinvestigationCount?: number
+  /** URL of filed GitHub bug issue */
+  filedBugUrl?: string
 }
 
 function truncate(s: string, max: number): string {
@@ -92,6 +94,10 @@ export function buildTriageEmbed(options: TriageEmbedOptions): EmbedBuilder {
 
   if (options.status === 'ready' && options.responsePreview) {
     embed.addFields({ name: 'Response Preview', value: truncate(options.responsePreview, 1024) })
+  }
+
+  if (options.filedBugUrl) {
+    embed.addFields({ name: 'Bug Filed', value: options.filedBugUrl, inline: true })
   }
 
   const footerParts: string[] = []
@@ -146,7 +152,7 @@ export function buildTriageButtons(
       )
       break
 
-    case 'ready':
+    case 'ready': {
       row.addComponents(
         new ButtonBuilder()
           .setCustomId(buildButtonId('send', sourceType, compactId))
@@ -165,7 +171,16 @@ export function buildTriageButtons(
           .setLabel('Discard')
           .setStyle(ButtonStyle.Danger),
       )
-      break
+      // Second row: File Bug button (for GitHub source issues where investigation found a bug)
+      const row2 = new ActionRowBuilder<ButtonBuilder>()
+      row2.addComponents(
+        new ButtonBuilder()
+          .setCustomId(buildButtonId('file_bug', sourceType, compactId))
+          .setLabel('File Bug')
+          .setStyle(ButtonStyle.Secondary),
+      )
+      return [row, row2]
+    }
 
     case 'sent':
       row.addComponents(

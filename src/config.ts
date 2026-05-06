@@ -48,6 +48,8 @@ export function getValue<T>(config: Record<string, unknown>, path: string[], fal
 
 export interface ChannelConfig {
   name: string
+  /** Explicit Discord channel snowflake ID (optional — resolved by name at runtime if omitted) */
+  channel_id?: string
   /** Per-channel system prompt appended to the base prompt */
   system_prompt?: string
   /** Channel type: 'text' (default), 'forum', 'announcement' */
@@ -58,6 +60,12 @@ export interface ChannelConfig {
   read_threads?: boolean
   /** Whether the bot should monitor this channel for help requests (default: true) */
   monitor?: boolean
+  /**
+   * How messages trigger the bot pipeline:
+   * - 'mention' (default): Only @mentions and replies-to-bot trigger triage/investigation
+   * - 'all': Every message (passing basic filters) triggers triage pipeline — no @mention needed
+   */
+  trigger_mode?: 'mention' | 'all'
 }
 
 export interface GuildConfig {

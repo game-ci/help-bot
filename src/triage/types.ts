@@ -47,6 +47,10 @@ export interface TriageRecord {
   instructionThreadId?: string
   /** Number of re-investigations performed */
   reinvestigationCount: number
+  /** URL of filed GitHub bug issue (if maintainer confirmed bug) */
+  filedBugUrl?: string
+  /** Repo where bug was filed */
+  filedBugRepo?: string
 }
 
 // --- Button custom ID helpers ---
@@ -54,7 +58,7 @@ export interface TriageRecord {
 /** Max custom_id length in Discord */
 const MAX_CUSTOM_ID = 100
 
-export type TriageAction = 'investigate' | 'ignore' | 'send' | 'reinvestigate' | 'view'
+export type TriageAction = 'investigate' | 'ignore' | 'send' | 'reinvestigate' | 'view' | 'file_bug'
 
 /** Guild shortname mapping for compact button IDs */
 const GUILD_SHORT: Record<string, string> = {
