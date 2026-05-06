@@ -1,7 +1,7 @@
-import { spawn } from 'node:child_process'
+import { execSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { getValue } from '../config'
 import { ensureDir } from '../utils/fs'
 import { REPO_ROOT, RESPONSES_DIR } from '../utils/paths'
@@ -47,15 +47,21 @@ export async function runContentDraft(
     'professional, technically credible, community-focused',
   ) as string
 
+  // Gather recent activity from configured GitHub repos
+  const repos = getValue(options.config, ['github', 'repos'], []) as string[]
+  const repoContext = gatherRepoContext(repos)
+
   const prompt = buildPrompt(record, responseId, {
     maxLength,
     defaultHashtags,
     tone,
     previousDraft: options.previousDraft,
     feedback: options.feedback,
+    repoContext,
   })
 
-  // Spawn Claude
+  // Spawn Claude with cwd set to parent so it can explore sibling repos
+  const workspaceCwd = dirname(REPO_ROOT)
   const maxTurns = 15
   const args = ['-p', '--model', options.model, '--max-turns', String(maxTurns)]
   args.push(
@@ -88,7 +94,7 @@ export async function runContentDraft(
 
   try {
     const proc = spawn(resolveClaude(), args, {
-      cwd: REPO_ROOT,
+      cwd: workspaceCwd,
       stdio: ['pipe', 'inherit', 'inherit'],
       env,
     })
@@ -143,6 +149,62 @@ interface PromptConfig {
   tone: string
   previousDraft?: string
   feedback?: string
+  repoContext?: string
+}
+
+/**
+ * Gather recent activity from configured GitHub repos using gh CLI.
+ * Returns a markdown summary of recent commits, PRs, and releases.
+ */
+function gatherRepoContext(repos: string[]): string {
+  if (repos.length === 0) return ''
+
+  const sections: string[] = []
+
+  for (const repo of repos) {
+    try {
+      const repoName = repo.split('/').pop() || repo
+
+      // Recent commits (last 7 days)
+      let commits = ''
+      try {
+        commits = execSync(
+          `gh api repos/${repo}/commits --jq '.[0:10] | .[] | "- \\(.commit.message | split("\\n") | .[0]) (\\(.sha[0:7]), \\(.commit.author.date[0:10]))"'`,
+          { encoding: 'utf8', timeout: 15_000, stdio: ['pipe', 'pipe', 'pipe'] },
+        ).trim()
+      } catch {}
+
+      // Recent merged PRs
+      let prs = ''
+      try {
+        prs = execSync(
+          `gh pr list --repo ${repo} --state merged --limit 5 --json title,number,mergedAt --jq '.[] | "- #\\(.number) \\(.title) (\\(.mergedAt[0:10]))"'`,
+          { encoding: 'utf8', timeout: 15_000, stdio: ['pipe', 'pipe', 'pipe'] },
+        ).trim()
+      } catch {}
+
+      // Latest release
+      let release = ''
+      try {
+        release = execSync(
+          `gh api repos/${repo}/releases/latest --jq '"\\(.tag_name) — \\(.name) (\\(.published_at[0:10]))"'`,
+          { encoding: 'utf8', timeout: 10_000, stdio: ['pipe', 'pipe', 'pipe'] },
+        ).trim()
+      } catch {}
+
+      if (commits || prs || release) {
+        const lines = [`### ${repoName} (\`${repo}\`)`]
+        if (release) lines.push(`**Latest release:** ${release}`)
+        if (prs) lines.push('**Recent merged PRs:**', prs)
+        if (commits) lines.push('**Recent commits:**', commits)
+        sections.push(lines.join('\n'))
+      }
+    } catch {
+      // Skip repos that fail
+    }
+  }
+
+  return sections.length > 0 ? '## Recent Repository Activity\n\n' + sections.join('\n\n') : ''
 }
 
 function buildPrompt(record: ContentRecord, responseId: string, cfg: PromptConfig): string {
@@ -158,6 +220,15 @@ Create a LinkedIn post plan document about the following topic:
 **Requested by:** ${record.requestedBy}
 **Platform:** LinkedIn
 
+## Research Phase
+
+Before writing, investigate the topic using the tools available to you. The working directory is the game-ci workspace root with sibling repos (orchestrator, unity-builder, documentation, docker, etc.). Use Bash with \`gh\` CLI, Read, Glob, and Grep to:
+
+1. Check recent commits, PRs, and releases related to the topic
+2. Read relevant source code or changelogs for technical accuracy
+3. Find specific details, numbers, or improvements to cite in the post
+
+${cfg.repoContext ? `Here is a summary of recent activity to start from:\n\n${cfg.repoContext}\n` : ''}
 ## LinkedIn Content Guidelines
 
 - **Tone:** ${cfg.tone}. Write as the GameCI project speaking to the broader gamedev and DevOps community.
@@ -184,7 +255,7 @@ Do NOT generate images. Just describe concepts.
 
 ## Output Format
 
-Write the final content plan to: data/responses/social/${responseId}.md
+Write the final content plan to: help-bot/data/responses/social/${responseId}.md
 
 Use this exact frontmatter format:
 
