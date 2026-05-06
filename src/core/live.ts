@@ -402,48 +402,58 @@ export async function runLive(options: LiveOptions): Promise<void> {
       }
     }
 
-    // --- Clear stale slash commands and register /ask ---
+    // --- Register guild-scoped slash commands (avoids DM permission issues) ---
+    const slashCommands = [
+      {
+        name: 'ask',
+        description: 'Ask the help bot a question (sent to triage for investigation)',
+        options: [
+          {
+            name: 'question',
+            description: 'Your question about GameCI, Unity CI/CD, Docker, etc.',
+            type: 3, // STRING
+            required: true,
+          },
+        ],
+      },
+      {
+        name: 'post',
+        description: 'Draft a social media post or community announcement',
+        options: [
+          {
+            name: 'topic',
+            description:
+              'What the post should be about (feature, release, tip, announcement, etc.)',
+            type: 3, // STRING
+            required: true,
+          },
+        ],
+      },
+      {
+        name: 'help',
+        description: 'Show bot info, available commands, and how to get help',
+      },
+    ]
+
     const registerSlashCommands = async () => {
       try {
+        // Clear stale global commands (we now use guild-scoped commands)
         if (readyClient.application) {
-          const existing = await readyClient.application.commands.fetch()
-          if (existing.size > 0) {
+          const globalCmds = await readyClient.application.commands.fetch()
+          if (globalCmds.size > 0) {
             console.log(
-              `  Clearing ${existing.size} stale slash command(s): ${existing.map((c) => `/${c.name}`).join(', ')}`,
+              `  Clearing ${globalCmds.size} stale global command(s): ${globalCmds.map((c) => `/${c.name}`).join(', ')}`,
             )
+            await readyClient.application.commands.set([])
           }
-          await readyClient.application.commands.set([
-            {
-              name: 'ask',
-              description: 'Ask the help bot a question (sent to triage for investigation)',
-              options: [
-                {
-                  name: 'question',
-                  description: 'Your question about GameCI, Unity CI/CD, Docker, etc.',
-                  type: 3, // STRING
-                  required: true,
-                },
-              ],
-            },
-            {
-              name: 'post',
-              description: 'Draft a social media post or community announcement',
-              options: [
-                {
-                  name: 'topic',
-                  description:
-                    'What the post should be about (feature, release, tip, announcement, etc.)',
-                  type: 3, // STRING
-                  required: true,
-                },
-              ],
-            },
-            {
-              name: 'help',
-              description: 'Show bot info, available commands, and how to get help',
-            },
-          ])
-          console.log(`  ✓ Registered /ask, /post, and /help slash commands`)
+        }
+
+        // Register commands per guild so they appear immediately and don't require DM scope
+        for (const [guildId] of guildMappings) {
+          const discordGuild = readyClient.guilds.cache.get(guildId)
+          if (!discordGuild) continue
+          await discordGuild.commands.set(slashCommands)
+          console.log(`  ✓ Registered /ask, /post, /help in ${discordGuild.name}`)
         }
       } catch (err: any) {
         console.warn(`  ⚠ Failed to register slash commands: ${err.message ?? err}`)
