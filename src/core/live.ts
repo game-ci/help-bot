@@ -72,6 +72,44 @@ const FEEDBACK_PROMPT =
 // --- Status management ---
 let idleStatusText = 'help requests'
 let activeInvestigations = 0
+const onlineSince = Date.now()
+let deployedSha = ''
+let deployedAt = 0
+
+function getDeployInfo(): { sha: string; deployedAt: number } {
+  if (!deployedSha) {
+    try {
+      deployedSha = require('child_process')
+        .execSync('git rev-parse --short HEAD', { encoding: 'utf8', timeout: 5000 })
+        .trim()
+      const commitDateStr = require('child_process')
+        .execSync('git log -1 --format=%ct', { encoding: 'utf8', timeout: 5000 })
+        .trim()
+      deployedAt = Number(commitDateStr) * 1000
+    } catch {
+      deployedSha = 'unknown'
+      deployedAt = onlineSince
+    }
+  }
+  return { sha: deployedSha, deployedAt }
+}
+
+function formatAge(ms: number): string {
+  const minutes = Math.floor(ms / 60_000)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h${minutes % 60}m`
+  const days = Math.floor(hours / 24)
+  return `${days}d${hours % 24}h`
+}
+
+function buildIdleStatusText(monitoredCount: number): string {
+  const { sha, deployedAt: depAt } = getDeployInfo()
+  const now = Date.now()
+  const onlineAge = formatAge(now - onlineSince)
+  const deployAge = formatAge(now - depAt)
+  return `${sha} | up ${onlineAge} | deployed ${deployAge} | ${monitoredCount}ch`
+}
 
 function setIdleStatus(client: Client): void {
   client.user?.setPresence({
@@ -469,8 +507,16 @@ export async function runLive(options: LiveOptions): Promise<void> {
       (acc, m) => acc + [...m.channelNameMap.values()].filter((ch) => ch.monitor !== false).length,
       0,
     )
-    idleStatusText = `${monitoredCount} channels for help requests`
+    idleStatusText = buildIdleStatusText(monitoredCount)
     setIdleStatus(readyClient)
+
+    // Refresh status every 5 minutes so ages stay current
+    setInterval(() => {
+      if (activeInvestigations === 0) {
+        idleStatusText = buildIdleStatusText(monitoredCount)
+        setIdleStatus(readyClient)
+      }
+    }, 5 * 60_000)
 
     console.log('')
     console.log(`Ready. Listening for messages...`)
@@ -1335,14 +1381,37 @@ export async function runLive(options: LiveOptions): Promise<void> {
             '**Admin Info:**',
             `Dispatch: \`${dispatchMode}\` | Model: \`${llmModel}\``,
             `Uptime: ${h}h ${m}m | Claude: \`${resolveClaude()}\``,
+          )
+
+          // Inline channel list
+          lines.push('', '**Guilds & Channels:**')
+          for (const [gId, gm] of guildMappings) {
+            const dGuild = client.guilds.cache.get(gId)
+            const status = dGuild ? 'online' : 'not in server'
+            lines.push(`**${gm.guildConfig.name}** (${status})`)
+            for (const ch of gm.guildConfig.channels ?? []) {
+              const mon = ch.monitor !== false ? 'monitoring' : 'not monitored'
+              const typ = ch.channel_type ?? 'text'
+              lines.push(`  \`#${ch.name}\` — ${typ}, ${mon}`)
+            }
+          }
+
+          // Inline settings
+          const dc = getValue(config, ['dispatch'], {} as Record<string, unknown>)
+          const gc = getValue(config, ['github'], {} as Record<string, unknown>)
+          const lc = getValue(config, ['llm'], {} as Record<string, unknown>)
+          lines.push(
+            '',
+            '**Settings:**',
+            `Dispatch: \`${getValue(dc, ['mode'], 'auto')}\` | Discord: \`${getValue(dc, ['discord_mode'], 'auto')}\` | GitHub triage: \`${getValue(dc, ['github_triage'], false)}\``,
+            `Model: \`${getValue(lc, ['claude', 'model'], 'claude-sonnet-4-20250514')}\` | Max turns: \`${getValue(lc, ['claude', 'max_turns'], 25)}\``,
+            `Repos: ${(getValue(gc, ['repos'], []) as string[]).map((r) => `\`${r}\``).join(', ')}`,
+          )
+
+          lines.push(
             '',
             '**Triage channel commands** (`!` or `+` prefix):',
-            '`!status` — Bot uptime, version, dispatch mode',
-            '`!channels` — List monitored guilds and channels',
-            '`!settings` — Show current configuration',
-            '`!channel list|set|add|remove` — Manage channel config',
-            '`!config get|set|sync|reload` — Manage bot configuration',
-            '`!sync-data` — Sync data to private GitHub repo',
+            '`!status` `!channels` `!settings` `!channel` `!config` `!sync-data` `!help`',
           )
         }
 
@@ -1350,13 +1419,35 @@ export async function runLive(options: LiveOptions): Promise<void> {
         return
       }
 
-      // Handle /post slash command — social content creation
+      // Handle /post slash command — social content creation (admin only)
       if (interaction.isChatInputCommand() && interaction.commandName === 'post') {
+        const postUserId = interaction.user.id
+        const postUsername = interaction.user.username
+        const postIsCollaborator = (collaborators as string[]).some(
+          (c: string) => c.toLowerCase() === postUsername.toLowerCase(),
+        )
+        const postIsTriageUser = (triageUserIds as string[]).includes(postUserId)
+        if (!postIsCollaborator && !postIsTriageUser) {
+          await interaction.reply({
+            content: 'This command is restricted to maintainers.',
+            ephemeral: true,
+          })
+          return
+        }
         const topic = interaction.options.getString('topic', true)
         const guildId = interaction.guildId
         if (!guildId) {
           await interaction.reply({
             content: 'This command only works in a server.',
+            ephemeral: true,
+          })
+          return
+        }
+        // Restrict /post to the designated social content channel (if configured)
+        const allowedPostChannel = getValue(config, ['social', 'post_channel_id'], '') as string
+        if (allowedPostChannel && interaction.channelId !== allowedPostChannel) {
+          await interaction.reply({
+            content: `\`/post\` can only be used in <#${allowedPostChannel}>.`,
             ephemeral: true,
           })
           return

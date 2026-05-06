@@ -1,0 +1,149 @@
+{
+  "bot": {
+    "name": "GameCI Help Bot",
+    "version": "3.0.0",
+    "max_responses_per_cycle": 10,
+    "response_cooldown_minutes": 60,
+    "dry_run": false,
+    "cycle_interval_minutes": 30
+  },
+  "llm": {
+    "provider": "claude",
+    "claude": {
+      "model": "claude-sonnet-4-20250514",
+      "investigation_model": "",
+      "max_turns": 75,
+      "command": "claude -p"
+    },
+    "lm_studio": {
+      "base_url": "http://localhost:1234/v1",
+      "model": "default",
+      "api_key": "lm-studio"
+    },
+    "continue_cli": {
+      "command": "continue",
+      "model": "default"
+    },
+    "codex": {
+      "model": "code-davinci-002",
+      "temperature": 0.2,
+      "max_tokens": 8192,
+      "api_base": "https://api.openai.com/v1"
+    },
+    "discord": {
+      "enabled": false,
+      "session_label": "help-bot-assistant",
+      "model": "claude-sonnet-4-20250514",
+      "timeout_seconds": 300,
+      "workspace_path": null
+    }
+  },
+  "discord": {
+    "system_prompt": "You are the GameCI help bot. You assist with Unity CI/CD, Docker, and build automation.",
+    "guilds": [
+      {
+        "name": "my-server",
+        "guild_id": "YOUR_GUILD_ID",
+        "triage_channel_id": "YOUR_TRIAGE_CHANNEL_ID",
+        "webhook_url_env": "DISCORD_WEBHOOK_URL",
+        "system_prompt": "You are helping users in the Discord server.",
+        "channels": [
+          {
+            "name": "help",
+            "channel_id": "YOUR_HELP_CHANNEL_ID",
+            "system_prompt": "Focus on troubleshooting.",
+            "channel_type": "text",
+            "reply_mode": "bot_api",
+            "read_threads": true,
+            "monitor": true,
+            "trigger_mode": "all"
+          }
+        ]
+      }
+    ],
+    "triage_user_ids": ["YOUR_DISCORD_USER_ID"],
+    "sync_hours": 6,
+    "ignore_bots": true,
+    "ignore_prefixes": ["!", "/", "$", "."],
+    "min_message_length": 15,
+    "official_roles": [],
+    "official_users": [],
+    "seen_you_message": "I see an official reply already; react with \ud83d\udc40 or reply to me to continue.",
+    "seen_you_emoji": "\ud83d\udc40"
+  },
+  "github": {
+    "repos": ["your-org/your-repo"],
+    "sync_days": 7,
+    "max_issues_per_repo": 200,
+    "max_discussions_per_repo": 50,
+    "skip_labels": ["wontfix", "invalid", "duplicate"],
+    "priority_labels": ["bug", "help wanted", "good first issue"],
+    "collaborators": ["your-github-username"],
+    "label_prompts": [
+      {
+        "label": "bug",
+        "system_prompt": "This issue is labeled as a bug. Investigate the root cause thoroughly."
+      }
+    ]
+  },
+  "docs": {
+    "base_url": "https://game.ci/docs",
+    "pages": ["github/getting-started", "github/builder"]
+  },
+  "vector_search": {
+    "enabled": false,
+    "engine": "llamaindex",
+    "collection_name": "gameci-docs",
+    "embedding_model": "local:BAAI/bge-small-en-v1.5",
+    "persist_directory": "data/vector-store"
+  },
+  "social": {
+    "enabled": false,
+    "post_channel_id": "",
+    "content_dir": "content",
+    "platforms": ["linkedin"],
+    "linkedin": {
+      "max_length": 3000,
+      "default_hashtags": ["#GameCI", "#Unity", "#CICD", "#GameDev"],
+      "tone": "professional, technically credible, community-focused"
+    }
+  },
+  "triage": {
+    "acknowledge_user": true
+  },
+  "dispatch": {
+    "mode": "triage",
+    "discord_mode": "triage",
+    "warnings_required": 3,
+    "warning_interval_hours": 24,
+    "approve_reactions": ["+1", "rocket"],
+    "cancel_reactions": ["-1"],
+    "max_detections_per_cycle": 10,
+    "close_on_dispatch": true,
+    "github_triage": true,
+    "github_poll_interval_minutes": 10
+  },
+  "investigations": {
+    "enabled": false,
+    "target_repo": "your-org/help-bot",
+    "labels": ["help-bot", "investigation"]
+  },
+  "notifications": {
+    "discord_dm": {
+      "enabled": false,
+      "recipients": []
+    }
+  },
+  "docker": {
+    "image_name": "gameci-help-bot",
+    "container_name": "gameci-help-bot",
+    "restart_policy": "unless-stopped"
+  },
+  "runner": {
+    "labels": ["help-bot"],
+    "work_directory": "_work"
+  },
+  "data_backup": {
+    "remote_repo": "your-org/help-bot-data"
+  }
+}
