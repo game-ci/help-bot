@@ -72,6 +72,44 @@ const FEEDBACK_PROMPT =
 // --- Status management ---
 let idleStatusText = 'help requests'
 let activeInvestigations = 0
+const onlineSince = Date.now()
+let deployedSha = ''
+let deployedAt = 0
+
+function getDeployInfo(): { sha: string; deployedAt: number } {
+  if (!deployedSha) {
+    try {
+      deployedSha = require('child_process')
+        .execSync('git rev-parse --short HEAD', { encoding: 'utf8', timeout: 5000 })
+        .trim()
+      const commitDateStr = require('child_process')
+        .execSync('git log -1 --format=%ct', { encoding: 'utf8', timeout: 5000 })
+        .trim()
+      deployedAt = Number(commitDateStr) * 1000
+    } catch {
+      deployedSha = 'unknown'
+      deployedAt = onlineSince
+    }
+  }
+  return { sha: deployedSha, deployedAt }
+}
+
+function formatAge(ms: number): string {
+  const minutes = Math.floor(ms / 60_000)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h${minutes % 60}m`
+  const days = Math.floor(hours / 24)
+  return `${days}d${hours % 24}h`
+}
+
+function buildIdleStatusText(monitoredCount: number): string {
+  const { sha, deployedAt: depAt } = getDeployInfo()
+  const now = Date.now()
+  const onlineAge = formatAge(now - onlineSince)
+  const deployAge = formatAge(now - depAt)
+  return `${sha} | up ${onlineAge} | deployed ${deployAge} | ${monitoredCount}ch`
+}
 
 function setIdleStatus(client: Client): void {
   client.user?.setPresence({
@@ -469,8 +507,16 @@ export async function runLive(options: LiveOptions): Promise<void> {
       (acc, m) => acc + [...m.channelNameMap.values()].filter((ch) => ch.monitor !== false).length,
       0,
     )
-    idleStatusText = `${monitoredCount} channels for help requests`
+    idleStatusText = buildIdleStatusText(monitoredCount)
     setIdleStatus(readyClient)
+
+    // Refresh status every 5 minutes so ages stay current
+    setInterval(() => {
+      if (activeInvestigations === 0) {
+        idleStatusText = buildIdleStatusText(monitoredCount)
+        setIdleStatus(readyClient)
+      }
+    }, 5 * 60_000)
 
     console.log('')
     console.log(`Ready. Listening for messages...`)
