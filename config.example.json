@@ -72,9 +72,7 @@
     "seen_you_emoji": "\ud83d\udc40"
   },
   "github": {
-    "repos": [
-      "your-org/your-repo"
-    ],
+    "repos": ["your-org/your-repo"],
     "sync_days": 7,
     "max_issues_per_repo": 200,
     "max_discussions_per_repo": 50,
@@ -90,10 +88,7 @@
   },
   "docs": {
     "base_url": "https://game.ci/docs",
-    "pages": [
-      "github/getting-started",
-      "github/builder"
-    ]
+    "pages": ["github/getting-started", "github/builder"]
   },
   "vector_search": {
     "enabled": false,
