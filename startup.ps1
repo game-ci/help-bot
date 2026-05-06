@@ -14,6 +14,31 @@ New-Item -ItemType Directory -Force -Path "$repoDir\logs" | Out-Null
 
 Log "=== Service starting ==="
 
+# Pull private config from game-ci/help-bot-config
+$configFile = Join-Path $repoDir "config.json"
+$configRepoDir = Join-Path $repoDir ".help-bot-config"
+try {
+    if (Test-Path $configRepoDir) {
+        Log "Updating private config..."
+        git -C $configRepoDir pull --ff-only 2>&1 | Out-Null
+    } else {
+        Log "Cloning private config..."
+        gh repo clone game-ci/help-bot-config $configRepoDir -- --depth 1 2>&1 | Out-Null
+    }
+    if (Test-Path "$configRepoDir\config.json") {
+        Copy-Item "$configRepoDir\config.json" $configFile -Force
+        Log "Config loaded from help-bot-config"
+    } else {
+        Log "WARNING: No config.json in help-bot-config repo"
+    }
+} catch {
+    Log "WARNING: Failed to pull private config: $_"
+    if (-not (Test-Path $configFile)) {
+        Log "Falling back to config.example.json"
+        Copy-Item (Join-Path $repoDir "config.example.json") $configFile -Force
+    }
+}
+
 $distCli = Join-Path $repoDir "dist\cli.js"
 $nodeModulesDir = Join-Path $repoDir "node_modules"
 $needsRepair = -not (Test-Path $distCli) -or -not (Test-Path $nodeModulesDir)

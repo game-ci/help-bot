@@ -45,6 +45,10 @@ __pycache__/
 .venv/
 venv/
 
+# Private config (pulled from game-ci/help-bot-config)
+config.json
+.help-bot-config/
+
 # Environment and secrets
 .env
 .env.*

@@ -1335,14 +1335,37 @@ export async function runLive(options: LiveOptions): Promise<void> {
             '**Admin Info:**',
             `Dispatch: \`${dispatchMode}\` | Model: \`${llmModel}\``,
             `Uptime: ${h}h ${m}m | Claude: \`${resolveClaude()}\``,
+          )
+
+          // Inline channel list
+          lines.push('', '**Guilds & Channels:**')
+          for (const [gId, gm] of guildMappings) {
+            const dGuild = client.guilds.cache.get(gId)
+            const status = dGuild ? 'online' : 'not in server'
+            lines.push(`**${gm.guildConfig.name}** (${status})`)
+            for (const ch of gm.guildConfig.channels ?? []) {
+              const mon = ch.monitor !== false ? 'monitoring' : 'not monitored'
+              const typ = ch.channel_type ?? 'text'
+              lines.push(`  \`#${ch.name}\` — ${typ}, ${mon}`)
+            }
+          }
+
+          // Inline settings
+          const dc = getValue(config, ['dispatch'], {} as Record<string, unknown>)
+          const gc = getValue(config, ['github'], {} as Record<string, unknown>)
+          const lc = getValue(config, ['llm'], {} as Record<string, unknown>)
+          lines.push(
+            '',
+            '**Settings:**',
+            `Dispatch: \`${getValue(dc, ['mode'], 'auto')}\` | Discord: \`${getValue(dc, ['discord_mode'], 'auto')}\` | GitHub triage: \`${getValue(dc, ['github_triage'], false)}\``,
+            `Model: \`${getValue(lc, ['claude', 'model'], 'claude-sonnet-4-20250514')}\` | Max turns: \`${getValue(lc, ['claude', 'max_turns'], 25)}\``,
+            `Repos: ${(getValue(gc, ['repos'], []) as string[]).map((r) => `\`${r}\``).join(', ')}`,
+          )
+
+          lines.push(
             '',
             '**Triage channel commands** (`!` or `+` prefix):',
-            '`!status` — Bot uptime, version, dispatch mode',
-            '`!channels` — List monitored guilds and channels',
-            '`!settings` — Show current configuration',
-            '`!channel list|set|add|remove` — Manage channel config',
-            '`!config get|set|sync|reload` — Manage bot configuration',
-            '`!sync-data` — Sync data to private GitHub repo',
+            '`!status` `!channels` `!settings` `!channel` `!config` `!sync-data` `!help`',
           )
         }
 
@@ -1357,6 +1380,15 @@ export async function runLive(options: LiveOptions): Promise<void> {
         if (!guildId) {
           await interaction.reply({
             content: 'This command only works in a server.',
+            ephemeral: true,
+          })
+          return
+        }
+        // Restrict /post to the designated social content channel (if configured)
+        const allowedPostChannel = getValue(config, ['social', 'post_channel_id'], '') as string
+        if (allowedPostChannel && interaction.channelId !== allowedPostChannel) {
+          await interaction.reply({
+            content: `\`/post\` can only be used in <#${allowedPostChannel}>.`,
             ephemeral: true,
           })
           return
