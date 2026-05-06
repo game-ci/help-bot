@@ -31,13 +31,13 @@ Maintainers can opt in to receive direct messages from the bot on Discord when n
 
 ### Notification Types
 
-| Filter | Triggers When |
-|--------|--------------|
-| `new_detections` | New detection issues are created for eligible source issues |
-| `approvals` | Issues are approved for investigation (by reaction or countdown expiry) |
-| `countdown_warnings` | Countdown warning stages are posted to detection issues |
-| `investigations_complete` | Investigation issues are posted after LLM analysis |
-| `cycle_reports` | A cycle completes with meaningful activity |
+| Filter                    | Triggers When                                                           |
+| ------------------------- | ----------------------------------------------------------------------- |
+| `new_detections`          | New detection issues are created for eligible source issues             |
+| `approvals`               | Issues are approved for investigation (by reaction or countdown expiry) |
+| `countdown_warnings`      | Countdown warning stages are posted to detection issues                 |
+| `investigations_complete` | Investigation issues are posted after LLM analysis                      |
+| `cycle_reports`           | A cycle completes with meaningful activity                              |
 
 ### Requirements
 
@@ -47,10 +47,10 @@ Maintainers can opt in to receive direct messages from the bot on Discord when n
 
 ### Source Files
 
-| File | Purpose |
-|------|---------|
+| File                       | Purpose                                        |
+| -------------------------- | ---------------------------------------------- |
 | `src/notify/discord-dm.ts` | DM notification logic, Discord API integration |
-| `src/notify/index.ts` | Barrel exports |
+| `src/notify/index.ts`      | Barrel exports                                 |
 
 ## Cycle Reports
 

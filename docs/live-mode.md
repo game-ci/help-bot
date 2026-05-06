@@ -20,13 +20,13 @@ gameci-help-bot live --dispatch-mode auto --model claude-opus-4-20250514
 
 ## Options
 
-| Flag | Description |
-|------|-------------|
+| Flag              | Description                                                                                                                  |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `--dispatch-mode` | `auto` (immediate), `approval` (defer to cycle), `countdown` (defer to cycle). Default: `dispatch.discord_mode` from config. |
-| `--repo-dir` | Path to local clone of target repo for source code search during investigation. |
-| `--docs-dir` | Path to local documentation clone. |
-| `--model` | Override LLM model. |
-| `--dry-run` | Investigate but do not post responses to Discord. |
+| `--repo-dir`      | Path to local clone of target repo for source code search during investigation.                                              |
+| `--docs-dir`      | Path to local documentation clone.                                                                                           |
+| `--model`         | Override LLM model.                                                                                                          |
+| `--dry-run`       | Investigate but do not post responses to Discord.                                                                            |
 
 ## Message Processing Pipeline
 
@@ -81,7 +81,7 @@ The live mode includes a topic relevance check (`checkTopicRelevance()` in `live
 
 ## Source Files
 
-| File | Purpose |
-|------|---------|
-| `src/core/live.ts` | Main live bot — Gateway client, message handler, investigation, posting |
+| File                     | Purpose                                                                     |
+| ------------------------ | --------------------------------------------------------------------------- |
+| `src/core/live.ts`       | Main live bot — Gateway client, message handler, investigation, posting     |
 | `src/core/live-utils.ts` | Help request detection, topic relevance filter, prompt building, formatting |

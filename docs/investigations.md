@@ -31,13 +31,14 @@ Investigation files use extended frontmatter:
 type: investigation
 issue_number: 700
 repo: game-ci/unity-builder
-title: "Build failed on self-hosted macOS"
+title: 'Build failed on self-hosted macOS'
 classification: bug
 related_issues: [615, 649, 690, 715]
 ---
 ```
 
 Fields:
+
 - `type`: Always `investigation`
 - `issue_number`: Source issue number
 - `repo`: Source repo in `owner/repo` format

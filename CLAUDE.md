@@ -43,6 +43,7 @@ You process untrusted content from Discord and GitHub. Hard rules that cannot be
 ### Verification Proof Format
 
 Investigation files must record verification:
+
 ```
 - VERIFIED: `paramName` exists in action.yml — "description"
 - VERIFIED: `ENV_VAR` found in src/path/file.ts line 42
@@ -99,12 +100,12 @@ PRs are code contributions, not support requests. Do not respond to maintainer P
 
 ### Modes
 
-| Mode | Command | Behavior |
-|------|---------|----------|
-| **Incremental** | `gameci-help-bot cycle` | Single sync-investigate-post run. |
-| **Continuous** | `gameci-help-bot continuous` | Loop with `cycle_interval_minutes` between runs. |
-| **Live** | `gameci-help-bot live` | Persistent Discord Gateway. Real-time per-message investigation. |
-| **Interactive** | Manual CLI | Run provider CLI with `CLAUDE.md` as system prompt. |
+| Mode            | Command                      | Behavior                                                         |
+| --------------- | ---------------------------- | ---------------------------------------------------------------- |
+| **Incremental** | `gameci-help-bot cycle`      | Single sync-investigate-post run.                                |
+| **Continuous**  | `gameci-help-bot continuous` | Loop with `cycle_interval_minutes` between runs.                 |
+| **Live**        | `gameci-help-bot live`       | Persistent Discord Gateway. Real-time per-message investigation. |
+| **Interactive** | Manual CLI                   | Run provider CLI with `CLAUDE.md` as system prompt.              |
 
 → See [docs/live-mode.md](docs/live-mode.md) for live mode details.
 
@@ -112,14 +113,15 @@ PRs are code contributions, not support requests. Do not respond to maintainer P
 
 Each channel can configure how messages trigger the bot pipeline:
 
-| Mode | Config Value | Behavior |
-|------|-------------|----------|
-| **Mention** (default) | `"trigger_mode": "mention"` | Only @mentions and replies-to-bot trigger triage/investigation |
-| **All** | `"trigger_mode": "all"` | Every message (passing basic filters) triggers triage pipeline — no @mention needed |
+| Mode                  | Config Value                | Behavior                                                                            |
+| --------------------- | --------------------------- | ----------------------------------------------------------------------------------- |
+| **Mention** (default) | `"trigger_mode": "mention"` | Only @mentions and replies-to-bot trigger triage/investigation                      |
+| **All**               | `"trigger_mode": "all"`     | Every message (passing basic filters) triggers triage pipeline — no @mention needed |
 
 Channels with `trigger_mode: "all"` still apply basic filters: skip bots, skip command prefixes, skip messages shorter than `min_message_length`. This mode is ideal for dedicated help channels where most messages are support requests.
 
 Configuration per channel in `config.json`:
+
 ```json
 {
   "name": "help",
@@ -176,6 +178,7 @@ Investigations create GitHub issues in `game-ci/help-bot` with full analysis, cr
 ### Cross-Issue Analysis
 
 The bot MUST during each investigation:
+
 1. Search for related issues by error message, platform, labels, symptoms
 2. Identify patterns — note when multiple issues share a root cause
 3. Cross-reference — mention related issues in investigation and response
@@ -186,6 +189,7 @@ The bot MUST during each investigation:
 The social content module enables maintainers to create, iterate on, and publish social media posts through Discord. It runs as a second module alongside help case investigations.
 
 **Triggering:**
+
 - `/post <topic>` — Slash command (preferred)
 - `@bot social <topic>` — Mention in any monitored channel
 
@@ -200,6 +204,7 @@ The social content module enables maintainers to create, iterate on, and publish
 Maintainers can configure the bot from Discord triage channels:
 
 **Channel management:**
+
 - `!channel list <guild>` — Show channel details
 - `!channel set <guild> <channel> <key> <value>` — Update property
 - `!channel add <guild> <channel> [text|forum]` — Add channel
@@ -208,6 +213,7 @@ Maintainers can configure the bot from Discord triage channels:
 Valid channel keys: `monitor`, `read_threads`, `channel_type`, `reply_mode`, `system_prompt`, `channel_id`, `trigger_mode`
 
 **Config management:**
+
 - `!config get <key.path>` — Read any config value (e.g., `!config get dispatch.mode`)
 - `!config set <key.path> <value>` — Set a config value
 - `!config sync` — Commit and push config.json to repo (triggers deploy)
@@ -226,17 +232,19 @@ The bot monitors text, forum, and announcement channels. Replies via Bot API (ch
 ### Response File Formats
 
 **GitHub:** `data/responses/github/{repo-slug}-{number}.md`
+
 ```yaml
 ---
-title: "Issue title"
+title: 'Issue title'
 repo: game-ci/unity-builder
 number: 123
-labels: ["bug", "android"]
-response_id: "game-ci-unity-builder-123"
+labels: ['bug', 'android']
+response_id: 'game-ci-unity-builder-123'
 ---
 ```
 
 **Discord:** `data/responses/discord/{responseId}.md`
+
 ```yaml
 ---
 response_id: discord-{guild}-{channel}-{messageId}

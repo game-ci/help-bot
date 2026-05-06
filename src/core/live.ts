@@ -428,12 +428,15 @@ export async function runLive(options: LiveOptions): Promise<void> {
             {
               name: 'post',
               description: 'Draft a social media post or community announcement',
-              options: [{
-                name: 'topic',
-                description: 'What the post should be about (feature, release, tip, announcement, etc.)',
-                type: 3, // STRING
-                required: true,
-              }],
+              options: [
+                {
+                  name: 'topic',
+                  description:
+                    'What the post should be about (feature, release, tip, announcement, etc.)',
+                  type: 3, // STRING
+                  required: true,
+                },
+              ],
             },
           ])
           console.log(`  ✓ Registered /ask and /post slash commands`)
@@ -950,18 +953,39 @@ export async function runLive(options: LiveOptions): Promise<void> {
             if (sub === 'get') {
               const path = parts.slice(1).join('.').split('.')
               if (path.length === 0 || !path[0]) {
-                await message.reply({ content: 'Usage: `!config get <key.path>` (e.g. `!config get dispatch.mode`)', allowedMentions: { repliedUser: false } }).catch(() => {})
+                await message
+                  .reply({
+                    content: 'Usage: `!config get <key.path>` (e.g. `!config get dispatch.mode`)',
+                    allowedMentions: { repliedUser: false },
+                  })
+                  .catch(() => {})
                 return
               }
               const val = getValue(config, path, undefined as unknown)
-              const display = val === undefined ? '(not set)' : typeof val === 'object' ? '```json\n' + JSON.stringify(val, null, 2) + '\n```' : `\`${val}\``
-              await message.reply({ content: `**${path.join('.')}** = ${display}`, allowedMentions: { repliedUser: false } }).catch(() => {})
+              const display =
+                val === undefined
+                  ? '(not set)'
+                  : typeof val === 'object'
+                    ? '```json\n' + JSON.stringify(val, null, 2) + '\n```'
+                    : `\`${val}\``
+              await message
+                .reply({
+                  content: `**${path.join('.')}** = ${display}`,
+                  allowedMentions: { repliedUser: false },
+                })
+                .catch(() => {})
               return
             }
 
             if (sub === 'set') {
               if (parts.length < 3) {
-                await message.reply({ content: 'Usage: `!config set <key.path> <value>` (e.g. `!config set dispatch.mode triage`)', allowedMentions: { repliedUser: false } }).catch(() => {})
+                await message
+                  .reply({
+                    content:
+                      'Usage: `!config set <key.path> <value>` (e.g. `!config set dispatch.mode triage`)',
+                    allowedMentions: { repliedUser: false },
+                  })
+                  .catch(() => {})
                 return
               }
               const keyPath = parts[1].split('.')
@@ -985,26 +1009,41 @@ export async function runLive(options: LiveOptions): Promise<void> {
 
               current[lastKey] = parsed
               await saveConfig()
-              await message.reply({ content: `Set \`${parts[1]}\` = \`${rawValue}\``, allowedMentions: { repliedUser: false } }).catch(() => {})
+              await message
+                .reply({
+                  content: `Set \`${parts[1]}\` = \`${rawValue}\``,
+                  allowedMentions: { repliedUser: false },
+                })
+                .catch(() => {})
               return
             }
 
             if (sub === 'sync') {
               const pushResult = await commitAndPushConfig('config sync from Discord')
-              await message.reply({ content: pushResult, allowedMentions: { repliedUser: false } }).catch(() => {})
+              await message
+                .reply({ content: pushResult, allowedMentions: { repliedUser: false } })
+                .catch(() => {})
               return
             }
 
             if (sub === 'reload') {
               await reloadConfig()
-              await message.reply({ content: 'Config reloaded from disk.', allowedMentions: { repliedUser: false } }).catch(() => {})
+              await message
+                .reply({
+                  content: 'Config reloaded from disk.',
+                  allowedMentions: { repliedUser: false },
+                })
+                .catch(() => {})
               return
             }
 
-            await message.reply({
-              content: '**Config commands:**\n`!config get <key.path>` — Read a config value\n`!config set <key.path> <value>` — Set a config value\n`!config sync` — Commit & push config to repo\n`!config reload` — Reload config from disk',
-              allowedMentions: { repliedUser: false },
-            }).catch(() => {})
+            await message
+              .reply({
+                content:
+                  '**Config commands:**\n`!config get <key.path>` — Read a config value\n`!config set <key.path> <value>` — Set a config value\n`!config sync` — Commit & push config to repo\n`!config reload` — Reload config from disk',
+                allowedMentions: { repliedUser: false },
+              })
+              .catch(() => {})
             return
           }
 
@@ -1249,41 +1288,62 @@ export async function runLive(options: LiveOptions): Promise<void> {
         const topic = interaction.options.getString('topic', true)
         const guildId = interaction.guildId
         if (!guildId) {
-          await interaction.reply({ content: 'This command only works in a server.', ephemeral: true })
+          await interaction.reply({
+            content: 'This command only works in a server.',
+            ephemeral: true,
+          })
           return
         }
         const socialEnabled = getValue(config, ['social', 'enabled'], false)
         if (!socialEnabled) {
-          await interaction.reply({ content: 'Social content module is not enabled.', ephemeral: true })
+          await interaction.reply({
+            content: 'Social content module is not enabled.',
+            ephemeral: true,
+          })
           return
         }
         const triageChannel = triageChannels.get(guildId)
         if (!triageChannel) {
-          await interaction.reply({ content: 'No triage channel configured for social content.', ephemeral: true })
+          await interaction.reply({
+            content: 'No triage channel configured for social content.',
+            ephemeral: true,
+          })
           return
         }
 
         // Permission check
         const userId = interaction.user.id
         const username = interaction.user.tag ?? interaction.user.username
-        const isCollaborator = (collaborators as string[]).some((c: string) => c.toLowerCase() === username.toLowerCase())
+        const isCollaborator = (collaborators as string[]).some(
+          (c: string) => c.toLowerCase() === username.toLowerCase(),
+        )
         const isTriageUser = (triageUserIds as string[]).includes(userId)
         if (!isCollaborator && !isTriageUser) {
-          await interaction.reply({ content: 'Only maintainers can create social content.', ephemeral: true })
+          await interaction.reply({
+            content: 'Only maintainers can create social content.',
+            ephemeral: true,
+          })
           return
         }
 
-        await interaction.reply({ content: `Social content request received for topic: "${topic}". Check the triage channel for drafting controls.`, ephemeral: true })
+        await interaction.reply({
+          content: `Social content request received for topic: "${topic}". Check the triage channel for drafting controls.`,
+          ephemeral: true,
+        })
 
         const contentId = buildContentId(userId)
         const contentKey = `content:linkedin:${contentId}`
 
-        const notificationMsg = await postContentNotification(triageChannel, {
-          platform: 'LinkedIn',
-          topic,
-          requestedBy: username,
-          status: 'topic_received',
-        }, contentId)
+        const notificationMsg = await postContentNotification(
+          triageChannel,
+          {
+            platform: 'LinkedIn',
+            topic,
+            requestedBy: username,
+            status: 'topic_received',
+          },
+          contentId,
+        )
 
         const record: ContentRecord = {
           contentKey,

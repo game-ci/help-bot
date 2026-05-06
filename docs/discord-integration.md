@@ -4,20 +4,20 @@ The bot monitors configured Discord channels (text, forum, announcement) and can
 
 ## Supported Channel Types
 
-| Type | Config Value | Behavior |
-|------|-------------|----------|
-| Text channel | `"channel_type": "text"` (default) | Syncs messages, optionally reads threads |
-| Forum channel | `"channel_type": "forum"` | Syncs all forum post threads and their messages |
-| Announcement channel | `"channel_type": "announcement"` | Syncs messages like text channels |
+| Type                 | Config Value                       | Behavior                                        |
+| -------------------- | ---------------------------------- | ----------------------------------------------- |
+| Text channel         | `"channel_type": "text"` (default) | Syncs messages, optionally reads threads        |
+| Forum channel        | `"channel_type": "forum"`          | Syncs all forum post threads and their messages |
+| Announcement channel | `"channel_type": "announcement"`   | Syncs messages like text channels               |
 
 ## Trigger Modes
 
 Each channel can configure how messages enter the investigation pipeline:
 
-| Mode | Config Value | Behavior |
-|------|-------------|----------|
-| Mention (default) | `"trigger_mode": "mention"` | Only @mentions and replies to the bot trigger investigation |
-| Auto | `"trigger_mode": "auto"` | All messages in the channel trigger investigation (no @mention needed) |
+| Mode              | Config Value                | Behavior                                                               |
+| ----------------- | --------------------------- | ---------------------------------------------------------------------- |
+| Mention (default) | `"trigger_mode": "mention"` | Only @mentions and replies to the bot trigger investigation            |
+| Auto              | `"trigger_mode": "auto"`    | All messages in the channel trigger investigation (no @mention needed) |
 
 Use `trigger_mode: "auto"` for dedicated help/support channels where every message is a potential help request. Use `trigger_mode: "mention"` (default) for general channels where the bot should only respond when explicitly asked.
 
@@ -27,11 +27,11 @@ Auto-trigger channels still respect all other filters (bot messages, command pre
 
 Each channel can configure how the bot replies:
 
-| Mode | Config Value | Behavior |
-|------|-------------|----------|
+| Mode              | Config Value              | Behavior                                                                       |
+| ----------------- | ------------------------- | ------------------------------------------------------------------------------ |
 | Bot API (default) | `"reply_mode": "bot_api"` | Posts directly via Discord Bot API with `message_reference` for chain-replying |
-| Thread | `"reply_mode": "thread"` | Creates a new thread for the response |
-| Webhook (legacy) | `"reply_mode": "webhook"` | Posts via webhook URL (no reply chains) |
+| Thread            | `"reply_mode": "thread"`  | Creates a new thread for the response                                          |
+| Webhook (legacy)  | `"reply_mode": "webhook"` | Posts via webhook URL (no reply chains)                                        |
 
 ## Discord Sync Enhancements
 
@@ -94,6 +94,7 @@ The `dispatch.discord_mode` config key controls the Discord-specific dispatch mo
 ```
 
 Channel config fields:
+
 - `name` (required): Discord channel name
 - `channel_id` (optional): Discord channel snowflake ID. When set, used for direct ID matching instead of name-based resolution.
 - `system_prompt` (optional): Per-channel system prompt, appended to base + guild prompts
@@ -125,7 +126,7 @@ channel_name: help
 channel_id: 123456789
 reply_to_message_id: 987654321
 thread_id: 111222333
-title: "Short description"
+title: 'Short description'
 ---
 
 [Response body]
@@ -133,8 +134,8 @@ title: "Short description"
 
 ## Source Files
 
-| File | Purpose |
-|------|---------|
-| `src/sync/discord.ts` | Discord sync — channels, forums, threads, reactions, reply context |
-| `src/post/discord.ts` | Discord posting — Bot API, webhooks, thread creation, chain-replies |
-| `src/core/filter-discord.ts` | Discord message filtering and manifest writing |
+| File                         | Purpose                                                             |
+| ---------------------------- | ------------------------------------------------------------------- |
+| `src/sync/discord.ts`        | Discord sync — channels, forums, threads, reactions, reply context  |
+| `src/post/discord.ts`        | Discord posting — Bot API, webhooks, thread creation, chain-replies |
+| `src/core/filter-discord.ts` | Discord message filtering and manifest writing                      |

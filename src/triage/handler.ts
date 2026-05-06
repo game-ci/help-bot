@@ -463,7 +463,9 @@ async function handleFileBug(
       if (thread) {
         await thread.send(`Bug already filed: ${record.filedBugUrl}`)
       }
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
     return
   }
 
@@ -494,17 +496,20 @@ async function handleFileBug(
   let analysisBody = ''
   try {
     analysisBody = (await readFile(analysisPath, 'utf-8')).trim()
-  } catch { /* analysis is optional */ }
+  } catch {
+    /* analysis is optional */
+  }
 
   // Determine target repo
   const targetRepo = record.sourceRepo ?? 'game-ci/help-bot'
 
   // Build issue title and body
-  const sourceRef = record.sourceRepo && record.sourceIssueNumber
-    ? `${record.sourceRepo}#${record.sourceIssueNumber}`
-    : record.sourceDiscordPath
-      ? `Discord: ${record.sourceDiscordPath}`
-      : 'Investigation'
+  const sourceRef =
+    record.sourceRepo && record.sourceIssueNumber
+      ? `${record.sourceRepo}#${record.sourceIssueNumber}`
+      : record.sourceDiscordPath
+        ? `Discord: ${record.sourceDiscordPath}`
+        : 'Investigation'
 
   const issueTitle = `[Bug] ${record.sourceTitle ?? 'Bug discovered during investigation'}`
 
@@ -535,20 +540,29 @@ async function handleFileBug(
     let stdout: string
     try {
       const result = await execFileAsync('gh', [
-        'issue', 'create',
-        '--repo', targetRepo,
-        '--title', issueTitle,
-        '--body', issueBody,
-        '--label', 'bug',
+        'issue',
+        'create',
+        '--repo',
+        targetRepo,
+        '--title',
+        issueTitle,
+        '--body',
+        issueBody,
+        '--label',
+        'bug',
       ])
       stdout = result.stdout
     } catch {
       // Label might not exist — create without it
       const result = await execFileAsync('gh', [
-        'issue', 'create',
-        '--repo', targetRepo,
-        '--title', issueTitle,
-        '--body', issueBody,
+        'issue',
+        'create',
+        '--repo',
+        targetRepo,
+        '--title',
+        issueTitle,
+        '--body',
+        issueBody,
       ])
       stdout = result.stdout
     }
@@ -562,7 +576,13 @@ async function handleFileBug(
 
     // Update embed
     const embedOptions = buildEmbedOptions(record)
-    await updateTriageNotification(triageChannel, record.triageMessageId, embedOptions, sourceType, compactId)
+    await updateTriageNotification(
+      triageChannel,
+      record.triageMessageId,
+      embedOptions,
+      sourceType,
+      compactId,
+    )
 
     // Post to thread
     try {
@@ -577,7 +597,9 @@ async function handleFileBug(
         await thread.setArchived(false)
       }
       await thread.send(`**Bug filed** by ${username}: ${issueUrl}`)
-    } catch { /* thread post is best-effort */ }
+    } catch {
+      /* thread post is best-effort */
+    }
   } catch (err: any) {
     console.error(`  Triage: Bug filing failed for ${triageKey}: ${err.message ?? err}`)
     // Post error to thread
@@ -587,7 +609,9 @@ async function handleFileBug(
       if (thread) {
         await thread.send(`**Bug filing failed:** ${err.message ?? err}`)
       }
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
   }
 }
 
