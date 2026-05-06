@@ -23,6 +23,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Pull private config
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Self-hosted runner uses the host's gh CLI auth (no extra token needed)
+          $configDir = '.help-bot-config'
+          if (Test-Path $configDir) {
+            git -C $configDir pull --ff-only
+          } else {
+            gh repo clone game-ci/help-bot-config $configDir -- --depth 1
+          }
+          Copy-Item "$configDir\config.json" "config.json" -Force
+          Write-Host "Private config loaded"
+
       - name: Read Node version from mise.toml
         id: node
         shell: powershell
