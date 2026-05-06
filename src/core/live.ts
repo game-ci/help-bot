@@ -1419,8 +1419,21 @@ export async function runLive(options: LiveOptions): Promise<void> {
         return
       }
 
-      // Handle /post slash command — social content creation
+      // Handle /post slash command — social content creation (admin only)
       if (interaction.isChatInputCommand() && interaction.commandName === 'post') {
+        const postUserId = interaction.user.id
+        const postUsername = interaction.user.username
+        const postIsCollaborator = (collaborators as string[]).some(
+          (c: string) => c.toLowerCase() === postUsername.toLowerCase(),
+        )
+        const postIsTriageUser = (triageUserIds as string[]).includes(postUserId)
+        if (!postIsCollaborator && !postIsTriageUser) {
+          await interaction.reply({
+            content: 'This command is restricted to maintainers.',
+            ephemeral: true,
+          })
+          return
+        }
         const topic = interaction.options.getString('topic', true)
         const guildId = interaction.guildId
         if (!guildId) {
