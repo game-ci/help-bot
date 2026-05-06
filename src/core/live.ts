@@ -438,8 +438,12 @@ export async function runLive(options: LiveOptions): Promise<void> {
                 },
               ],
             },
+            {
+              name: 'help',
+              description: 'Show bot info, available commands, and how to get help',
+            },
           ])
-          console.log(`  ✓ Registered /ask and /post slash commands`)
+          console.log(`  ✓ Registered /ask, /post, and /help slash commands`)
         }
       } catch (err: any) {
         console.warn(`  ⚠ Failed to register slash commands: ${err.message ?? err}`)
@@ -1283,6 +1287,59 @@ export async function runLive(options: LiveOptions): Promise<void> {
   // --- Interaction handler (slash commands + triage/social buttons) ---
   client.on(Events.InteractionCreate, async (interaction) => {
     try {
+      // Handle /help slash command — info for everyone, extra details for admins
+      if (interaction.isChatInputCommand() && interaction.commandName === 'help') {
+        const userId = interaction.user.id
+        const username = interaction.user.username
+        const isCollaborator = (collaborators as string[]).some(
+          (c: string) => c.toLowerCase() === username.toLowerCase(),
+        )
+        const isTriageUser = (triageUserIds as string[]).includes(userId)
+        const isAdmin = isCollaborator || isTriageUser
+
+        const lines: string[] = [
+          `**${botName} v${botVersion}**`,
+          '',
+          'I help with GameCI, Unity CI/CD, Docker, and build automation questions.',
+          '',
+          '**Commands:**',
+          '`/ask <question>` — Submit a help question for investigation',
+          '`/help` — Show this message',
+        ]
+
+        const socialEnabled = getValue(config, ['social', 'enabled'], false)
+        if (socialEnabled && isAdmin) {
+          lines.push('`/post <topic>` — Draft a social media post (maintainers)')
+        }
+
+        lines.push('', '**In any monitored channel:**', '`@bot <question>` — Ask a help question')
+
+        if (isAdmin) {
+          const uptime = process.uptime()
+          const h = Math.floor(uptime / 3600)
+          const m = Math.floor((uptime % 3600) / 60)
+
+          lines.push(
+            '',
+            '---',
+            '**Admin Info:**',
+            `Dispatch: \`${dispatchMode}\` | Model: \`${llmModel}\``,
+            `Uptime: ${h}h ${m}m | Claude: \`${resolveClaude()}\``,
+            '',
+            '**Triage channel commands** (`!` or `+` prefix):',
+            '`!status` — Bot uptime, version, dispatch mode',
+            '`!channels` — List monitored guilds and channels',
+            '`!settings` — Show current configuration',
+            '`!channel list|set|add|remove` — Manage channel config',
+            '`!config get|set|sync|reload` — Manage bot configuration',
+            '`!sync-data` — Sync data to private GitHub repo',
+          )
+        }
+
+        await interaction.reply({ content: lines.join('\n'), ephemeral: true })
+        return
+      }
+
       // Handle /post slash command — social content creation
       if (interaction.isChatInputCommand() && interaction.commandName === 'post') {
         const topic = interaction.options.getString('topic', true)
