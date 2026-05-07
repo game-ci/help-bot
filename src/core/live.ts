@@ -28,6 +28,7 @@ import {
   updateState,
   setPostedDiscordResponse,
   loadState,
+  getPostedResponses,
   getPostedDiscordResponses,
   getLastOnlineAt,
   getFirstOnlineAt,
@@ -35,6 +36,7 @@ import {
   getTriageRecord,
   setTriageRecord,
   setContentRecord,
+  type SyncState,
 } from '../state'
 import { ensureDir } from '../utils/fs'
 import { REPO_ROOT, RESPONSES_DIR, DATA_DIR } from '../utils/paths'
@@ -71,9 +73,18 @@ const FEEDBACK_PROMPT =
 
 // --- Status management ---
 let idleStatusText = 'help requests'
+let idleStatusRotationIndex = 0
 let activeInvestigations = 0
 const onlineSince = Date.now()
 let deployedSha = ''
+const STATUS_ROTATION_INTERVAL_MS = 5 * 60_000
+const ANSWERED_WINDOWS = [
+  { label: 'daily', days: 1 },
+  { label: 'weekly', days: 7 },
+  { label: 'monthly', days: 30 },
+  { label: '6mo', days: 183 },
+  { label: 'yearly', days: 365 },
+] as const
 
 function getDeployInfo(): { sha: string } {
   if (!deployedSha) {
@@ -99,11 +110,44 @@ function formatAge(ms: number): string {
   return `${days}d${hours % 24}h`
 }
 
-function buildIdleStatusText(monitoredCount: number): string {
+function countAnsweredSince(state: SyncState, days: number): number {
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
+  const postedGitHub = Object.values(getPostedResponses(state))
+  const postedDiscord = Object.values(getPostedDiscordResponses(state))
+  return [...postedGitHub, ...postedDiscord].filter((iso) => {
+    const timestamp = new Date(iso).getTime()
+    return Number.isFinite(timestamp) && timestamp >= cutoff
+  }).length
+}
+
+async function buildIdleStatusRotation(monitoredCount: number): Promise<string[]> {
   const { sha } = getDeployInfo()
   const now = Date.now()
   const onlineAge = formatAge(now - onlineSince)
-  return `${sha} | up ${onlineAge} | ${monitoredCount}ch`
+  const state = await loadState()
+  const answeredCounts = ANSWERED_WINDOWS.map((window) => ({
+    count: countAnsweredSince(state, window.days),
+  }))
+
+  return [
+    `${sha} | up ${onlineAge}`,
+    `answered daily ${answeredCounts[0].count}`,
+    `answered weekly ${answeredCounts[1].count}`,
+    `answered monthly ${answeredCounts[2].count}`,
+    `answered 6mo ${answeredCounts[3].count}`,
+    `answered yearly ${answeredCounts[4].count}`,
+    `watching ${monitoredCount}ch`,
+  ]
+}
+
+async function refreshIdleStatus(client: Client, monitoredCount: number): Promise<void> {
+  const banners = await buildIdleStatusRotation(monitoredCount)
+  if (banners.length === 0) return
+  idleStatusText = banners[idleStatusRotationIndex % banners.length]
+  idleStatusRotationIndex = (idleStatusRotationIndex + 1) % banners.length
+  if (activeInvestigations === 0) {
+    setIdleStatus(client)
+  }
 }
 
 function getChannelTriggerText(channel: ChannelConfig): string {
@@ -136,6 +180,33 @@ function getHelpStateLines(dispatchMode: string, minMessageLength: number): stri
     '',
     '**Reply modes:**',
     '`bot_api` - replies in place. `thread` - uses a thread. `webhook` - legacy webhook posting.',
+  ]
+}
+
+function getMonitoredChannelCount(guildMappings: Map<string, GuildMapping>): number {
+  return [...guildMappings.values()].reduce(
+    (acc, m) => acc + [...m.channelNameMap.values()].filter((ch) => ch.monitor !== false).length,
+    0,
+  )
+}
+
+async function buildStatusLines(monitoredCount: number, dispatchMode: string): Promise<string[]> {
+  const { sha } = getDeployInfo()
+  const state = await loadState()
+  const answered = ANSWERED_WINDOWS.map((window) => ({
+    count: countAnsweredSince(state, window.days),
+  }))
+  const rotation = await buildIdleStatusRotation(monitoredCount)
+
+  return [
+    `Revision: \`${sha}\``,
+    `Current banner: \`${idleStatusText}\``,
+    `Answered responses: daily ${answered[0].count} | weekly ${answered[1].count} | monthly ${answered[2].count} | 6mo ${answered[3].count} | yearly ${answered[4].count}`,
+    `Watching: ${monitoredCount} channels`,
+    `Dispatch mode: \`${dispatchMode}\``,
+    '',
+    '**Rotation:**',
+    ...rotation.map((line) => `- ${line}`),
   ]
 }
 
@@ -413,7 +484,7 @@ export async function runLive(options: LiveOptions): Promise<void> {
   })
 
   // --- Ready handler ---
-  client.once(Events.ClientReady, (readyClient) => {
+  client.once(Events.ClientReady, async (readyClient) => {
     console.log(`  ✓ Logged in as ${readyClient.user.tag}`)
     console.log('')
 
@@ -531,20 +602,17 @@ export async function runLive(options: LiveOptions): Promise<void> {
     postDeployChangelog(triageChannels, botName).catch(() => {})
 
     // Set bot presence/status
-    const monitoredCount = [...guildMappings.values()].reduce(
-      (acc, m) => acc + [...m.channelNameMap.values()].filter((ch) => ch.monitor !== false).length,
-      0,
-    )
-    idleStatusText = buildIdleStatusText(monitoredCount)
-    setIdleStatus(readyClient)
+    const monitoredCount = getMonitoredChannelCount(guildMappings)
+    await refreshIdleStatus(readyClient, monitoredCount).catch((err: any) => {
+      console.warn(`  Failed to build idle status: ${err.message ?? err}`)
+    })
 
-    // Refresh status every 5 minutes so ages stay current
+    // Refresh status every 5 minutes so ages and counters stay current
     setInterval(() => {
-      if (activeInvestigations === 0) {
-        idleStatusText = buildIdleStatusText(monitoredCount)
-        setIdleStatus(readyClient)
-      }
-    }, 5 * 60_000)
+      refreshIdleStatus(readyClient, monitoredCount).catch((err: any) => {
+        console.warn(`  Failed to refresh idle status: ${err.message ?? err}`)
+      })
+    }, STATUS_ROTATION_INTERVAL_MS)
 
     console.log('')
     console.log(`Ready. Listening for messages...`)
@@ -677,16 +745,16 @@ export async function runLive(options: LiveOptions): Promise<void> {
             const lastOnline = getLastOnlineAt(st)
             const firstOnline = getFirstOnlineAt(st)
             const uptime = formatAge(process.uptime() * 1000)
-            const { sha } = getDeployInfo()
+            const monitoredCount = getMonitoredChannelCount(guildMappings)
             const lines = [
               `**${getValue(botConfig, ['name'], 'GameCI Help Bot')} v${getValue(botConfig, ['version'], '3.0.0')}**`,
-              `Revision: \`${sha}\``,
-              `Dispatch mode: \`${dispatchMode}\``,
-              `Model: \`${llmModel}\``,
               `Uptime: ${uptime}`,
+              `Model: \`${llmModel}\``,
               `First online: ${firstOnline ?? 'unknown'}`,
               `Last heartbeat: ${lastOnline ?? 'unknown'}`,
               `Claude CLI: \`${resolveClaude()}\``,
+              '',
+              ...(await buildStatusLines(monitoredCount, dispatchMode)),
             ]
             await message
               .reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } })
