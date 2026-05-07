@@ -73,11 +73,13 @@ const FEEDBACK_PROMPT =
 
 // --- Status management ---
 let idleStatusText = 'help requests'
+let idleStatusBanner = 'help requests'
 let idleStatusRotationIndex = 0
 let activeInvestigations = 0
 const onlineSince = Date.now()
 let deployedSha = ''
 const STATUS_ROTATION_INTERVAL_MS = 5 * 60_000
+const DEPLOY_AT_FILE = join(DATA_DIR, 'last-deploy-at.txt')
 const ANSWERED_WINDOWS = [
   { label: 'daily', days: 1 },
   { label: 'weekly', days: 7 },
@@ -86,7 +88,7 @@ const ANSWERED_WINDOWS = [
   { label: 'yearly', days: 365 },
 ] as const
 
-function getDeployInfo(): { sha: string } {
+async function getDeployInfo(): Promise<{ sha: string; deployedAt: string }> {
   if (!deployedSha) {
     try {
       deployedSha = execSync('git rev-parse --short HEAD', {
@@ -98,7 +100,16 @@ function getDeployInfo(): { sha: string } {
       deployedSha = 'unknown'
     }
   }
-  return { sha: deployedSha }
+  try {
+    const deployedAt = (await readFile(DEPLOY_AT_FILE, 'utf-8')).trim()
+    if (deployedAt) {
+      return { sha: deployedSha, deployedAt }
+    }
+  } catch {
+    // If the deploy marker is missing, the live bootstrap has not stamped it yet.
+  }
+
+  return { sha: deployedSha, deployedAt: '' }
 }
 
 function formatAge(ms: number): string {
@@ -121,16 +132,12 @@ function countAnsweredSince(state: SyncState, days: number): number {
 }
 
 async function buildIdleStatusRotation(monitoredCount: number): Promise<string[]> {
-  const { sha } = getDeployInfo()
-  const now = Date.now()
-  const onlineAge = formatAge(now - onlineSince)
   const state = await loadState()
   const answeredCounts = ANSWERED_WINDOWS.map((window) => ({
     count: countAnsweredSince(state, window.days),
   }))
 
   return [
-    `${sha} | up ${onlineAge}`,
     `answered daily ${answeredCounts[0].count}`,
     `answered weekly ${answeredCounts[1].count}`,
     `answered monthly ${answeredCounts[2].count}`,
@@ -141,9 +148,18 @@ async function buildIdleStatusRotation(monitoredCount: number): Promise<string[]
 }
 
 async function refreshIdleStatus(client: Client, monitoredCount: number): Promise<void> {
+  const { sha, deployedAt } = await getDeployInfo()
   const banners = await buildIdleStatusRotation(monitoredCount)
   if (banners.length === 0) return
-  idleStatusText = banners[idleStatusRotationIndex % banners.length]
+  const now = Date.now()
+  const onlineAge = formatAge(now - onlineSince)
+  const updateAge =
+    deployedAt && Number.isFinite(Date.parse(deployedAt))
+      ? formatAge(now - Date.parse(deployedAt))
+      : 'unknown'
+  const banner = banners[idleStatusRotationIndex % banners.length]
+  idleStatusBanner = banner
+  idleStatusText = `${sha} | up ${onlineAge} | updated ${updateAge} | ${banner}`
   idleStatusRotationIndex = (idleStatusRotationIndex + 1) % banners.length
   if (activeInvestigations === 0) {
     setIdleStatus(client)
@@ -191,22 +207,26 @@ function getMonitoredChannelCount(guildMappings: Map<string, GuildMapping>): num
 }
 
 async function buildStatusLines(monitoredCount: number, dispatchMode: string): Promise<string[]> {
-  const { sha } = getDeployInfo()
+  const { sha, deployedAt } = await getDeployInfo()
   const state = await loadState()
   const answered = ANSWERED_WINDOWS.map((window) => ({
     count: countAnsweredSince(state, window.days),
   }))
-  const rotation = await buildIdleStatusRotation(monitoredCount)
+  const onlineAge = formatAge(Date.now() - onlineSince)
+  const updateAge =
+    deployedAt && Number.isFinite(Date.parse(deployedAt))
+      ? formatAge(Date.now() - Date.parse(deployedAt))
+      : 'unknown'
+  const currentBanner = idleStatusBanner
 
   return [
     `Revision: \`${sha}\``,
-    `Current banner: \`${idleStatusText}\``,
+    `Online age: ${onlineAge}`,
+    `Since update: ${updateAge}`,
+    `Current banner: \`${currentBanner}\``,
     `Answered responses: daily ${answered[0].count} | weekly ${answered[1].count} | monthly ${answered[2].count} | 6mo ${answered[3].count} | yearly ${answered[4].count}`,
     `Watching: ${monitoredCount} channels`,
     `Dispatch mode: \`${dispatchMode}\``,
-    '',
-    '**Rotation:**',
-    ...rotation.map((line) => `- ${line}`),
   ]
 }
 
@@ -267,6 +287,7 @@ async function postDeployChangelog(
 ): Promise<void> {
   try {
     const currentSha = execSync('git rev-parse HEAD', { cwd: REPO_ROOT, encoding: 'utf-8' }).trim()
+    const currentAt = new Date().toISOString()
     let lastSha = ''
     try {
       lastSha = (await readFile(DEPLOY_SHA_FILE, 'utf-8')).trim()
@@ -278,6 +299,7 @@ async function postDeployChangelog(
     // Save SHA immediately so restarts don't re-post
     await ensureDir(DATA_DIR)
     await writeFile(DEPLOY_SHA_FILE, currentSha, 'utf-8')
+    await writeFile(DEPLOY_AT_FILE, currentAt, 'utf-8')
 
     const version = getGitVersion()
     const shortSha = currentSha.substring(0, 7)
@@ -415,6 +437,9 @@ export async function runLive(options: LiveOptions): Promise<void> {
   }
   console.log('')
   console.log('Connecting to Discord...')
+
+  await ensureDir(DATA_DIR)
+  await writeFile(DEPLOY_AT_FILE, new Date().toISOString(), 'utf-8')
 
   // --- Build guild lookup ---
   const guildMappings = new Map<string, GuildMapping>()
@@ -1198,7 +1223,7 @@ export async function runLive(options: LiveOptions): Promise<void> {
           if (stripped === 'help') {
             const lines = [
               '**Triage commands** (`!` or `+` prefix):',
-              '`!status` - Bot uptime, version, revision, dispatch mode',
+              '`!status` - Revision, online age, update age, dispatch mode, rotating banner',
               '`!channels` - List guilds/channels and whether @bot is required',
               '`!settings` - Show current configuration',
               '`!sync-data` - Sync data to private GitHub repo',
@@ -1463,7 +1488,7 @@ export async function runLive(options: LiveOptions): Promise<void> {
 
         if (isAdmin) {
           const uptime = formatAge(process.uptime() * 1000)
-          const { sha } = getDeployInfo()
+          const { sha } = await getDeployInfo()
 
           lines.push(
             '',
