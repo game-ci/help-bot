@@ -119,7 +119,7 @@ To find your Discord user ID: enable Developer Mode in Discord settings (App Set
 
 ### Live mode
 
-Connects to Discord via the Gateway WebSocket, stays online, and processes help requests as they arrive. The bot sets its presence to the current revision, process uptime, and monitored channel count.
+Connects to Discord via the Gateway WebSocket, stays online, and processes help requests as they arrive. The bot rotates its presence between revision, uptime, answered-question counters, and monitored channel count.
 
 ```bash
 gameci-help-bot live --dispatch-mode triage    # maintainer-controlled via buttons (recommended)
