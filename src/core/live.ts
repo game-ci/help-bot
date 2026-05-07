@@ -74,24 +74,20 @@ let idleStatusText = 'help requests'
 let activeInvestigations = 0
 const onlineSince = Date.now()
 let deployedSha = ''
-let deployedAt = 0
 
-function getDeployInfo(): { sha: string; deployedAt: number } {
+function getDeployInfo(): { sha: string } {
   if (!deployedSha) {
     try {
-      deployedSha = require('child_process')
-        .execSync('git rev-parse --short HEAD', { encoding: 'utf8', timeout: 5000 })
-        .trim()
-      const commitDateStr = require('child_process')
-        .execSync('git log -1 --format=%ct', { encoding: 'utf8', timeout: 5000 })
-        .trim()
-      deployedAt = Number(commitDateStr) * 1000
+      deployedSha = execSync('git rev-parse --short HEAD', {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+        timeout: 5000,
+      }).trim()
     } catch {
       deployedSha = 'unknown'
-      deployedAt = onlineSince
     }
   }
-  return { sha: deployedSha, deployedAt }
+  return { sha: deployedSha }
 }
 
 function formatAge(ms: number): string {
@@ -104,11 +100,43 @@ function formatAge(ms: number): string {
 }
 
 function buildIdleStatusText(monitoredCount: number): string {
-  const { sha, deployedAt: depAt } = getDeployInfo()
+  const { sha } = getDeployInfo()
   const now = Date.now()
   const onlineAge = formatAge(now - onlineSince)
-  const deployAge = formatAge(now - depAt)
-  return `${sha} | up ${onlineAge} | deployed ${deployAge} | ${monitoredCount}ch`
+  return `${sha} | up ${onlineAge} | ${monitoredCount}ch`
+}
+
+function getChannelTriggerText(channel: ChannelConfig): string {
+  if (channel.monitor === false) return 'off: ignored'
+  if ((channel.trigger_mode ?? 'mention') === 'all') {
+    return 'all: no @ required'
+  }
+  return 'mention: @ or bot reply required'
+}
+
+function getChannelSummary(channel: ChannelConfig): string {
+  const type = channel.channel_type ?? 'text'
+  const replyMode = channel.reply_mode ?? 'bot_api'
+  const threads = channel.read_threads === false ? 'threads off' : 'threads on'
+  return `${type}, ${getChannelTriggerText(channel)}, reply ${replyMode}, ${threads}`
+}
+
+function getHelpStateLines(dispatchMode: string, minMessageLength: number): string[] {
+  return [
+    '**Channel states:**',
+    '`monitor: false` - ignored. @mentions, replies, and normal messages are not processed.',
+    '`monitor: true` + `trigger_mode: mention` - monitored, but only @bot mentions and replies to the bot are queued.',
+    `\`monitor: true\` + \`trigger_mode: all\` - monitored, no @ needed. Bot/command messages and messages under ${minMessageLength} chars are still filtered.`,
+    '',
+    '**Dispatch states:**',
+    '`triage` - sends detected help requests to the admin triage channel for review.',
+    '`auto` - investigates and replies immediately.',
+    '`approval` / `countdown` - queues detections for the cycle dispatcher.',
+    `Current Discord dispatch: \`${dispatchMode}\``,
+    '',
+    '**Reply modes:**',
+    '`bot_api` - replies in place. `thread` - uses a thread. `webhook` - legacy webhook posting.',
+  ]
 }
 
 function setIdleStatus(client: Client): void {
@@ -648,14 +676,14 @@ export async function runLive(options: LiveOptions): Promise<void> {
             const st = await loadState()
             const lastOnline = getLastOnlineAt(st)
             const firstOnline = getFirstOnlineAt(st)
-            const uptime = process.uptime()
-            const h = Math.floor(uptime / 3600)
-            const m = Math.floor((uptime % 3600) / 60)
+            const uptime = formatAge(process.uptime() * 1000)
+            const { sha } = getDeployInfo()
             const lines = [
               `**${getValue(botConfig, ['name'], 'GameCI Help Bot')} v${getValue(botConfig, ['version'], '3.0.0')}**`,
+              `Revision: \`${sha}\``,
               `Dispatch mode: \`${dispatchMode}\``,
               `Model: \`${llmModel}\``,
-              `Uptime: ${h}h ${m}m`,
+              `Uptime: ${uptime}`,
               `First online: ${firstOnline ?? 'unknown'}`,
               `Last heartbeat: ${lastOnline ?? 'unknown'}`,
               `Claude CLI: \`${resolveClaude()}\``,
@@ -672,9 +700,7 @@ export async function runLive(options: LiveOptions): Promise<void> {
               const status = dGuild ? 'online' : 'not in server'
               lines.push(`\n**${gm.guildConfig.name}** (${status})`)
               for (const ch of gm.guildConfig.channels ?? []) {
-                const mon = ch.monitor !== false ? 'monitoring' : 'not monitored'
-                const typ = ch.channel_type ?? 'text'
-                lines.push(`  \`#${ch.name}\` — ${typ}, ${mon}`)
+                lines.push(`  \`#${ch.name}\` - ${getChannelSummary(ch)}`)
               }
             }
             await message
@@ -792,13 +818,7 @@ export async function runLive(options: LiveOptions): Promise<void> {
               }
               const lines = [`**Channels for ${guild.name}:**`]
               for (const ch of guild.channels) {
-                const props = [
-                  ch.channel_type ?? 'text',
-                  ch.monitor !== false ? 'monitoring' : 'not monitored',
-                  ch.read_threads !== false ? 'threads' : 'no threads',
-                  ch.reply_mode ?? 'bot_api',
-                  `trigger: ${ch.trigger_mode ?? 'mention'}`,
-                ]
+                const props = [getChannelSummary(ch)]
                 if (ch.channel_id) props.push(`id: ${ch.channel_id}`)
                 lines.push(`\`#${ch.name}\` — ${props.join(', ')}`)
                 if (ch.system_prompt)
@@ -818,7 +838,7 @@ export async function runLive(options: LiveOptions): Promise<void> {
                 await message
                   .reply({
                     content:
-                      'Usage: `!channel set <guild> <channel> <key> <value>`\nKeys: `monitor`, `read_threads`, `channel_type`, `reply_mode`, `system_prompt`',
+                      'Usage: `!channel set <guild> <channel> <key> <value>`\nKeys: `monitor`, `read_threads`, `channel_type`, `reply_mode`, `system_prompt`, `channel_id`, `trigger_mode`',
                     allowedMentions: { repliedUser: false },
                   })
                   .catch(() => {})
@@ -1110,21 +1130,23 @@ export async function runLive(options: LiveOptions): Promise<void> {
           if (stripped === 'help') {
             const lines = [
               '**Triage commands** (`!` or `+` prefix):',
-              '`!status` — Bot uptime, version, dispatch mode',
-              '`!channels` — List monitored guilds and channels',
-              '`!settings` — Show current configuration',
-              '`!sync-data` — Sync data to private GitHub repo',
-              '`!channel list|set|add|remove` — Manage channel config',
-              '`!config get|set|sync|reload` — Manage bot configuration',
-              '`!help` — This message',
+              '`!status` - Bot uptime, version, revision, dispatch mode',
+              '`!channels` - List guilds/channels and whether @bot is required',
+              '`!settings` - Show current configuration',
+              '`!sync-data` - Sync data to private GitHub repo',
+              '`!channel list|set|add|remove` - Manage channel config',
+              '`!config get|set|sync|reload` - Manage bot configuration',
+              '`!help` - This message',
               '',
               '**Slash commands:**',
-              '`/ask <question>` — Submit a help question for triage',
-              '`/post <topic>` — Draft a social media post on a topic',
+              '`/ask <question>` - Submit a help question for triage',
+              '`/post <topic>` - Draft a social media post on a topic',
               '',
               '**In any monitored channel:**',
-              '`@bot <question>` — Ask a help question (sent to triage)',
-              '`@bot social <topic>` — Draft a LinkedIn post on a topic',
+              '`@bot <question>` - Ask a help question in mention-trigger channels',
+              '`@bot social <topic>` - Draft a LinkedIn post on a topic',
+              '',
+              ...getHelpStateLines(dispatchMode, minMessageLength),
             ]
             await message
               .reply({ content: lines.join('\n'), allowedMentions: { repliedUser: false } })
@@ -1369,18 +1391,19 @@ export async function runLive(options: LiveOptions): Promise<void> {
         }
 
         lines.push('', '**In any monitored channel:**', '`@bot <question>` — Ask a help question')
+        lines.push('', ...getHelpStateLines(dispatchMode, minMessageLength))
 
         if (isAdmin) {
-          const uptime = process.uptime()
-          const h = Math.floor(uptime / 3600)
-          const m = Math.floor((uptime % 3600) / 60)
+          const uptime = formatAge(process.uptime() * 1000)
+          const { sha } = getDeployInfo()
 
           lines.push(
             '',
             '---',
             '**Admin Info:**',
             `Dispatch: \`${dispatchMode}\` | Model: \`${llmModel}\``,
-            `Uptime: ${h}h ${m}m | Claude: \`${resolveClaude()}\``,
+            `Revision: \`${sha}\` | Uptime: ${uptime}`,
+            `Claude: \`${resolveClaude()}\``,
           )
 
           // Inline channel list
@@ -1390,9 +1413,7 @@ export async function runLive(options: LiveOptions): Promise<void> {
             const status = dGuild ? 'online' : 'not in server'
             lines.push(`**${gm.guildConfig.name}** (${status})`)
             for (const ch of gm.guildConfig.channels ?? []) {
-              const mon = ch.monitor !== false ? 'monitoring' : 'not monitored'
-              const typ = ch.channel_type ?? 'text'
-              lines.push(`  \`#${ch.name}\` — ${typ}, ${mon}`)
+              lines.push(`  \`#${ch.name}\` - ${getChannelSummary(ch)}`)
             }
           }
 
@@ -1415,7 +1436,11 @@ export async function runLive(options: LiveOptions): Promise<void> {
           )
         }
 
-        await interaction.reply({ content: lines.join('\n'), ephemeral: true })
+        const helpChunks = splitContent(lines.join('\n'))
+        await interaction.reply({ content: helpChunks[0], ephemeral: true })
+        for (const chunk of helpChunks.slice(1)) {
+          await interaction.followUp({ content: chunk, ephemeral: true })
+        }
         return
       }
 
