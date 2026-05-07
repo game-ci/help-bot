@@ -1,6 +1,6 @@
 # Live Mode
 
-The `live` command connects to Discord via the Gateway WebSocket and stays online permanently. When a help request arrives, the bot investigates immediately and replies in-channel.
+The `live` command connects to Discord via the Gateway WebSocket and stays online permanently. Status keeps SHA, online age, and update age fixed, then rotates the final banner between answered counters and monitored channel count. When a help request arrives, the bot investigates immediately and replies in-channel.
 
 ## Usage
 
