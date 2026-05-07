@@ -97,9 +97,39 @@ jobs:
           if ($LASTEXITCODE -gt 7) { throw "robocopy dist failed with exit code $LASTEXITCODE" }
           $global:LASTEXITCODE = 0
 
-          foreach ($file in @('package.json', 'yarn.lock', '.yarnrc.yml', 'mise.toml', 'tsconfig.json', 'config.json', 'startup.ps1')) {
+          foreach ($file in @('package.json', 'yarn.lock', '.yarnrc.yml', 'mise.toml', 'tsconfig.json', 'config.example.json', 'startup.ps1')) {
             Copy-Item -Path $file -Destination (Join-Path $deployRoot $file) -Force
           }
+
+          $configFile = Join-Path $deployRoot 'config.json'
+          $configRepoDir = Join-Path $deployRoot '.help-bot-config'
+          try {
+            if (Test-Path (Join-Path $configRepoDir '.git')) {
+              Write-Host 'Updating private config'
+              git -C $configRepoDir pull --ff-only
+              if ($LASTEXITCODE -ne 0) { throw "private config pull failed with exit code $LASTEXITCODE" }
+            } else {
+              Write-Host 'Cloning private config'
+              gh repo clone game-ci/help-bot-config $configRepoDir -- --depth 1
+              if ($LASTEXITCODE -ne 0) { throw "private config clone failed with exit code $LASTEXITCODE" }
+            }
+
+            $privateConfig = Join-Path $configRepoDir 'config.json'
+            if (Test-Path $privateConfig) {
+              Copy-Item -Path $privateConfig -Destination $configFile -Force
+              Write-Host 'Config loaded from help-bot-config'
+            } elseif (-not (Test-Path $configFile)) {
+              Write-Host 'Private config missing; falling back to config.example.json'
+              Copy-Item -Path (Join-Path $deployRoot 'config.example.json') -Destination $configFile -Force
+            }
+          } catch {
+            Write-Host "Private config sync failed: $_"
+            if (-not (Test-Path $configFile)) {
+              Write-Host 'No existing config found; falling back to config.example.json'
+              Copy-Item -Path (Join-Path $deployRoot 'config.example.json') -Destination $configFile -Force
+            }
+          }
+          $global:LASTEXITCODE = 0
 
       - name: Repair live install
         shell: powershell
