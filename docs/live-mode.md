@@ -31,7 +31,7 @@ gameci-help-bot live --dispatch-mode auto --model claude-opus-4-20250514
 ## Message Processing Pipeline
 
 1. **Gateway filter**: Skip DMs, unconfigured guilds, unmonitored channels, bot messages, command prefixes, too-short messages.
-2. **Trigger mode check**: Channels with `trigger_mode: "auto"` process all messages. Channels with `trigger_mode: "mention"` (default) require @mention or reply-to-bot.
+2. **Trigger mode check**: Channels with `trigger_mode: "all"` process all messages. Channels with `trigger_mode: "mention"` (default) require @mention or reply-to-bot.
 3. **Topic relevance check**: Verify the message is about GameCI/CI/CD/Unity/Docker/build topics. Reject off-topic messages and security probes.
 4. **Duplicate check**: Skip if already responded (tracked in `state.json`).
 5. **Dispatch gate**:

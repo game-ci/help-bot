@@ -17,11 +17,11 @@ Each channel can configure how messages enter the investigation pipeline:
 | Mode              | Config Value                | Behavior                                                               |
 | ----------------- | --------------------------- | ---------------------------------------------------------------------- |
 | Mention (default) | `"trigger_mode": "mention"` | Only @mentions and replies to the bot trigger investigation            |
-| Auto              | `"trigger_mode": "auto"`    | All messages in the channel trigger investigation (no @mention needed) |
+| All               | `"trigger_mode": "all"`     | All messages in the channel trigger investigation (no @mention needed) |
 
-Use `trigger_mode: "auto"` for dedicated help/support channels where every message is a potential help request. Use `trigger_mode: "mention"` (default) for general channels where the bot should only respond when explicitly asked.
+Use `trigger_mode: "all"` for dedicated help/support channels where every message is a potential help request. Use `trigger_mode: "mention"` (default) for general channels where the bot should only respond when explicitly asked.
 
-Auto-trigger channels still respect all other filters (bot messages, command prefixes, min length, already-responded, dispatch gate).
+All-trigger channels still respect all other filters (bot messages, command prefixes, min length, already-responded, dispatch gate).
 
 ## Reply Modes
 
@@ -74,7 +74,7 @@ The `dispatch.discord_mode` config key controls the Discord-specific dispatch mo
             "name": "help",
             "system_prompt": "Channel-specific prompt.",
             "channel_type": "text",
-            "trigger_mode": "auto",
+            "trigger_mode": "all",
             "reply_mode": "bot_api",
             "read_threads": true,
             "monitor": true
@@ -99,7 +99,7 @@ Channel config fields:
 - `channel_id` (optional): Discord channel snowflake ID. When set, used for direct ID matching instead of name-based resolution.
 - `system_prompt` (optional): Per-channel system prompt, appended to base + guild prompts
 - `channel_type` (optional): `"text"` (default), `"forum"`, or `"announcement"`
-- `trigger_mode` (optional): `"mention"` (default) or `"auto"` — controls whether @mention is required
+- `trigger_mode` (optional): `"mention"` (default) or `"all"` — controls whether @mention is required
 - `reply_mode` (optional): `"bot_api"` (default), `"thread"`, or `"webhook"`
 - `read_threads` (optional): Whether to read threads in text channels (default: `true`)
 - `monitor` (optional): Whether to monitor this channel for help requests (default: `true`)
