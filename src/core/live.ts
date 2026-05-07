@@ -106,19 +106,10 @@ async function getDeployInfo(): Promise<{ sha: string; deployedAt: string }> {
       return { sha: deployedSha, deployedAt }
     }
   } catch {
-    // Fall back to the commit timestamp when the deploy marker does not exist yet.
+    // If the deploy marker is missing, the live bootstrap has not stamped it yet.
   }
 
-  try {
-    const deployedAt = execSync('git show -s --format=%cI HEAD', {
-      cwd: REPO_ROOT,
-      encoding: 'utf8',
-      timeout: 5000,
-    }).trim()
-    return { sha: deployedSha, deployedAt }
-  } catch {
-    return { sha: deployedSha, deployedAt: '' }
-  }
+  return { sha: deployedSha, deployedAt: '' }
 }
 
 function formatAge(ms: number): string {
@@ -446,6 +437,9 @@ export async function runLive(options: LiveOptions): Promise<void> {
   }
   console.log('')
   console.log('Connecting to Discord...')
+
+  await ensureDir(DATA_DIR)
+  await writeFile(DEPLOY_AT_FILE, new Date().toISOString(), 'utf-8')
 
   // --- Build guild lookup ---
   const guildMappings = new Map<string, GuildMapping>()
