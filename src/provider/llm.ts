@@ -8,8 +8,9 @@ import { getConfig, getValue } from '../config'
 import { REPO_ROOT } from '../utils/paths'
 import { resolveClaude } from '../utils/claude'
 import { runDiscordProvider, initializeDiscordSession, isDiscordProviderAvailable } from './discord'
+import { runPiProvider } from './pi-cli'
 
-type Provider = 'claude' | 'lm_studio' | 'continue' | 'codex' | 'discord'
+type Provider = 'claude' | 'lm_studio' | 'continue' | 'codex' | 'discord' | 'pi'
 
 async function readClaudeInstructions(): Promise<string> {
   try {
@@ -244,6 +245,14 @@ export async function runProvider(prompt: string, options: ProviderOptions = {})
       }
       const finalPrompt = combinePrompt(instructions, prompt, options.systemPrompt)
       await runCodex(finalPrompt, apiBase, apiKey, model, maxTokens, temperature)
+      break
+    }
+    case 'pi': {
+      const isConfigured = isPiConfigured(config)
+      if (!isConfigured) {
+        console.log('PI CLI not configured. Running without PI configuration.')
+      }
+      await runPiProvider(prompt, options)
       break
     }
     case 'discord': {
