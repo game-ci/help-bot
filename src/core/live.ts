@@ -439,7 +439,37 @@ export async function runLive(options: LiveOptions): Promise<void> {
   console.log('Connecting to Discord...')
 
   await ensureDir(DATA_DIR)
-  await writeFile(DEPLOY_AT_FILE, new Date().toISOString(), 'utf-8')
+
+  // Only update deploy timestamp if code has actually changed
+  let deployTimestampExists = false
+  try {
+    await readFile(DEPLOY_AT_FILE, 'utf-8')
+    deployTimestampExists = true
+  } catch {
+    // Deploy timestamp file doesn't exist yet
+  }
+
+  try {
+    const currentSha = execSync('git rev-parse HEAD', { cwd: REPO_ROOT, encoding: 'utf-8' }).trim()
+    let lastDeployedSha = ''
+    try {
+      lastDeployedSha = (await readFile(DEPLOY_SHA_FILE, 'utf-8')).trim()
+    } catch {
+      // First run — no previous SHA recorded
+    }
+
+    if (lastDeployedSha !== currentSha) {
+      // Code has changed — update both SHA and timestamp
+      await writeFile(DEPLOY_SHA_FILE, currentSha, 'utf-8')
+      await writeFile(DEPLOY_AT_FILE, new Date().toISOString(), 'utf-8')
+    }
+    // If SHA hasn't changed, preserve the existing deploy timestamp
+  } catch {
+    // If git operations fail, ensure deploy timestamp exists for first run
+    if (!deployTimestampExists) {
+      await writeFile(DEPLOY_AT_FILE, new Date().toISOString(), 'utf-8')
+    }
+  }
 
   // --- Build guild lookup ---
   const guildMappings = new Map<string, GuildMapping>()
