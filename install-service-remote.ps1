@@ -50,6 +50,9 @@ $result = Invoke-Command -ComputerName COOLMASTER-DESK -ScriptBlock {
         nssm set $serviceName AppStderr $logFile
         nssm set $serviceName AppStdoutCreationDisposition 1
         nssm set $serviceName AppStderrCreationDisposition 1
+        nssm set $serviceName AppExit Default Restart
+        nssm set $serviceName AppExit 78 Exit
+        nssm set $serviceName AppRestartDelay 30000
         $log += "  Logging configured"
 
         # Set environment variables

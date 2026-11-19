@@ -71,6 +71,16 @@ Ready. Listening for messages...
 - `DISCORD_BOT_TOKEN` environment variable (or stored via keytar)
 - **Message Content Intent** must be enabled in the [Discord Developer Portal](https://discord.com/developers/applications) → Bot → Privileged Gateway Intents → Message Content Intent
 
+## Protecting the bot token
+
+Every gateway login is an IDENTIFY. Discord resets a bot's token after about 1000 of them in a day, so a supervisor restarting a crashing bot can lose the token within minutes. Three layers prevent that:
+
+- **Contained failures**: event handlers, unhandled rejections and client `error` events are logged; they never exit the process.
+- **Login backoff**: each login is recorded in `logs/gateway-logins.json`. After two logins within an hour, the next waits 30 s, doubling up to 15 min, so a crash loop stays near 100 logins a day.
+- **Fatal exit code**: a rejected token, missing token or disallowed intent exits with code `78`. The NSSM service stops on `78` instead of restarting, and waits 30 s before restarting after any other exit.
+
+After replacing the token, start the service again (`gameci-help-bot nssm start`).
+
 ## Topic Relevance & Security Filter
 
 The live mode includes a topic relevance check (`checkTopicRelevance()` in `live-utils.ts`) that runs after help request detection:
@@ -81,7 +91,9 @@ The live mode includes a topic relevance check (`checkTopicRelevance()` in `live
 
 ## Source Files
 
-| File                     | Purpose                                                                     |
-| ------------------------ | --------------------------------------------------------------------------- |
-| `src/core/live.ts`       | Main live bot — Gateway client, message handler, investigation, posting     |
-| `src/core/live-utils.ts` | Help request detection, topic relevance filter, prompt building, formatting |
+| File                               | Purpose                                                                     |
+| ---------------------------------- | --------------------------------------------------------------------------- |
+| `src/core/live.ts`                 | Main live bot — Gateway client, message handler, investigation, posting     |
+| `src/core/live-utils.ts`           | Help request detection, topic relevance filter, prompt building, formatting |
+| `src/core/gateway-login-ledger.ts` | Persisted gateway login history and the backoff before each login           |
+| `src/core/gateway-resilience.ts`   | Guarded handlers, gateway logging, fatal exit code                          |

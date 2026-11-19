@@ -204,6 +204,10 @@ jobs:
           & $nssm set $serviceName AppStderr $logFile
           & $nssm set $serviceName AppStdoutCreationDisposition 4
           & $nssm set $serviceName AppStderrCreationDisposition 4
+          # Exit 78 means the token or intents are wrong: stop instead of burning gateway logins.
+          & $nssm set $serviceName AppExit Default Restart
+          & $nssm set $serviceName AppExit 78 Exit
+          & $nssm set $serviceName AppRestartDelay 30000
           & $nssm set $serviceName Start SERVICE_AUTO_START
 
       - name: Restart help-bot

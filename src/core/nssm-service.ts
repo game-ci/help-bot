@@ -3,6 +3,7 @@ import { once } from 'node:events'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { REPO_ROOT } from '../utils/paths'
+import { FATAL_CONFIGURATION_EXIT_CODE } from './gateway-resilience'
 
 export type Mode = 'live' | 'incremental'
 
@@ -70,6 +71,15 @@ export async function manageService(action: string, opts: ServiceOptions = {}): 
       await runCommand('nssm', ['set', serviceName, 'AppStderr', logFile])
       await runCommand('nssm', ['set', serviceName, 'AppStdoutCreationDisposition', '1'])
       await runCommand('nssm', ['set', serviceName, 'AppStderrCreationDisposition', '1'])
+      await runCommand('nssm', ['set', serviceName, 'AppExit', 'Default', 'Restart'])
+      await runCommand('nssm', [
+        'set',
+        serviceName,
+        'AppExit',
+        String(FATAL_CONFIGURATION_EXIT_CODE),
+        'Exit',
+      ])
+      await runCommand('nssm', ['set', serviceName, 'AppRestartDelay', '30000'])
       if (envEntries.length > 0) {
         await runCommand('nssm', ['set', serviceName, 'AppEnvironmentExtra', ...envEntries])
       }
