@@ -9,6 +9,10 @@ import {
   InteractionType,
   type TextChannel,
   type ChatInputCommandInteraction,
+  type MessageReaction,
+  type PartialMessageReaction,
+  type PartialUser,
+  type User,
 } from 'discord.js'
 import { spawn, execSync } from 'node:child_process'
 import { once } from 'node:events'
@@ -66,6 +70,16 @@ import { filterIssues, type EligibleIssue } from './filter-issues'
 import { resolveClaude } from '../utils/claude'
 import { initLogger, logInfo, logWarn, logError } from '../utils/logger'
 import { syncDataToGitHub } from '../sync/data-backup'
+import { awaitGatewayLoginSlot } from './gateway-login-ledger'
+import {
+  FATAL_CONFIGURATION_EXIT_CODE,
+  guardHandler,
+  installProcessSafetyNets,
+  isFatalLoginError,
+  observeGateway,
+} from './gateway-resilience'
+
+const GATEWAY_LOGIN_LEDGER_PATH = join(REPO_ROOT, 'logs', 'gateway-logins.json')
 
 const DISCORD_API = 'https://discord.com/api/v10'
 const MAX_DISCORD_LENGTH = 2000
@@ -416,7 +430,7 @@ export async function runLive(options: LiveOptions): Promise<void> {
     console.error('Error: DISCORD_BOT_TOKEN environment variable is not set.')
     console.error('Run: npx gameci-help-bot cycle  (it will prompt you to store the token)')
     console.error('Or set DISCORD_BOT_TOKEN in your environment.')
-    process.exit(1)
+    process.exit(FATAL_CONFIGURATION_EXIT_CODE)
   }
 
   // --- Startup banner ---
@@ -539,6 +553,8 @@ export async function runLive(options: LiveOptions): Promise<void> {
       GatewayIntentBits.GuildMessageReactions,
     ],
   })
+  observeGateway(client, stopProcess)
+  installProcessSafetyNets(stopProcess)
 
   const isMaintainer = (userId: string, username: string) => {
     const isCollaborator = (collaborators as string[]).some(
@@ -653,7 +669,7 @@ export async function runLive(options: LiveOptions): Promise<void> {
   }
 
   // --- Ready handler ---
-  client.once(Events.ClientReady, async (readyClient) => {
+  const handleClientReady = async (readyClient: Client<true>) => {
     console.log(`  ✓ Logged in as ${readyClient.user.tag}`)
     console.log('')
 
@@ -980,10 +996,11 @@ export async function runLive(options: LiveOptions): Promise<void> {
     })().catch((err) => {
       console.warn(`  Catch-up scan failed: ${err.message ?? err}`)
     })
-  })
+  }
+  client.once(Events.ClientReady, guardHandler(Events.ClientReady, handleClientReady))
 
   // --- Message handler ---
-  client.on(Events.MessageCreate, async (message: Message) => {
+  const handleMessageCreate = async (message: Message) => {
     // Skip DMs
     if (!message.guild) return
 
@@ -1229,7 +1246,8 @@ export async function runLive(options: LiveOptions): Promise<void> {
       console.log(`  → Dispatch mode is "${dispatchMode}" — message queued for next cycle.`)
       console.log(`    Run "gameci-help-bot cycle" to create detection issues and check approvals.`)
     }
-  })
+  }
+  client.on(Events.MessageCreate, guardHandler(Events.MessageCreate, handleMessageCreate))
 
   // --- Interaction handler (slash commands + triage/social buttons) ---
   client.on(Events.InteractionCreate, async (interaction) => {
@@ -1738,7 +1756,10 @@ export async function runLive(options: LiveOptions): Promise<void> {
   const REINVESTIGATE_EMOJI = '🔁'
   const FEEDBACK_DIR = join(DATA_DIR, 'feedback', 'negative')
 
-  client.on(Events.MessageReactionAdd, async (reaction, user) => {
+  const handleMessageReactionAdd = async (
+    reaction: MessageReaction | PartialMessageReaction,
+    user: User | PartialUser,
+  ) => {
     // Ignore bot's own reactions
     if (user.id === client.user?.id) return
 
@@ -1937,7 +1958,11 @@ export async function runLive(options: LiveOptions): Promise<void> {
         console.warn(`  → Failed to post investigation: ${err.message ?? err}`)
       }
     }
-  })
+  }
+  client.on(
+    Events.MessageReactionAdd,
+    guardHandler(Events.MessageReactionAdd, handleMessageReactionAdd),
+  )
 
   // --- GitHub triage polling ---
   let githubPollRunning = false
@@ -2054,11 +2079,18 @@ export async function runLive(options: LiveOptions): Promise<void> {
     process.exit(0)
   }
 
+  function stopProcess(exitCode: number, reason: string) {
+    console.error(`  ✗ Stopping (exit ${exitCode}): ${reason}`)
+    void client.destroy()
+    process.exit(exitCode)
+  }
+
   process.on('SIGINT', shutdown)
   process.on('SIGTERM', shutdown)
 
   // --- Login ---
   try {
+    await awaitGatewayLoginSlot(GATEWAY_LOGIN_LEDGER_PATH)
     await client.login(token)
   } catch (error: any) {
     console.error(`Failed to connect to Discord: ${error.message ?? error}`)
@@ -2071,7 +2103,7 @@ export async function runLive(options: LiveOptions): Promise<void> {
         'Go to https://discord.com/developers/applications → Bot → enable "Message Content Intent"',
       )
     }
-    process.exit(1)
+    process.exit(isFatalLoginError(error) ? FATAL_CONFIGURATION_EXIT_CODE : 1)
   }
 }
 
